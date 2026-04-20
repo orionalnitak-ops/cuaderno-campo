@@ -1,0 +1,1460 @@
+import os
+import bcrypt
+import requests as req_lib
+import datetime
+from functools import wraps
+from flask import Flask, jsonify, request, send_file, session
+from flask_cors import CORS
+from flask_login import (LoginManager, UserMixin, login_user, logout_user,
+                         login_required, current_user)
+from db import (get_db, init_db, is_pac_eligible)
+init_db()  # ejecutar siempre al importar (gunicorn + flask run)
+
+frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend'))
+app = Flask(__name__, static_folder=frontend_dir, static_url_path='')
+app.secret_key = os.environ.get('SECRET_KEY', 'cuaderno_campo_2025_secret')
+CORS(app, supports_credentials=True)
+
+# ─────────────────────────────────────────────
+# FLASK-LOGIN SETUP
+# ─────────────────────────────────────────────
+login_manager = LoginManager()
+login_manager.init_app(app)
+
+class User(UserMixin):
+    def __init__(self, id, email, nombre, role, active):
+        self.id = id
+        self.email = email
+        self.nombre = nombre
+        self.role = role
+        self.active = active
+
+@login_manager.user_loader
+def load_user(user_id):
+    conn = get_db()
+    u = one(conn, "SELECT * FROM users WHERE id=? AND active=1", (int(user_id),))
+    conn.close()
+    if not u:
+        return None
+    return User(u['id'], u['email'], u['nombre'], u['role'], u['active'])
+
+@login_manager.unauthorized_handler
+def unauthorized():
+    return jsonify({"error": "No autenticado"}), 401
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.role != 'admin':
+            return jsonify({"error": "No autorizado"}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+def get_uid():
+    """Devuelve el user_id efectivo (admite impersonación del admin)."""
+    if current_user.is_authenticated and current_user.role == 'admin':
+        imp = session.get('impersonate_id')
+        if imp:
+            return imp
+    return current_user.id
+
+
+# ─────────────────────────────────────────────
+# DB HELPERS
+# ─────────────────────────────────────────────
+def dicts(conn, sql, params=()):
+    import sqlite3
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute(sql, params)
+    return [dict(r) for r in c.fetchall()]
+
+def one(conn, sql, params=()):
+    import sqlite3
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute(sql, params)
+    r = c.fetchone()
+    return dict(r) if r else None
+
+
+# ─────────────────────────────────────────────
+# STATIC SERVING
+# ─────────────────────────────────────────────
+@app.route('/')
+def serve_index():
+    return app.send_static_file('index.html')
+
+@app.route('/<path:path>')
+def serve_static(path):
+    if path.startswith('api/'):
+        return jsonify({"error": "Not found"}), 404
+    try:
+        return app.send_static_file(path)
+    except Exception:
+        return app.send_static_file('index.html')
+
+
+# ─────────────────────────────────────────────
+# AUTH
+# ─────────────────────────────────────────────
+@app.route('/api/auth/login', methods=['POST'])
+def auth_login():
+    data = request.json or {}
+    email = (data.get('email') or '').strip().lower()
+    password = (data.get('password') or '').encode('utf-8')
+
+    conn = get_db()
+    u = one(conn, "SELECT * FROM users WHERE email=? AND active=1", (email,))
+    conn.close()
+
+    if not u or not bcrypt.checkpw(password, u['password_hash'].encode('utf-8')):
+        return jsonify({"error": "Email o contraseña incorrectos"}), 401
+
+    user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'])
+    login_user(user, remember=True)
+    return jsonify({"id": user.id, "email": user.email,
+                    "nombre": user.nombre, "role": user.role})
+
+@app.route('/api/auth/logout', methods=['POST'])
+@login_required
+def auth_logout():
+    session.pop('impersonate_id', None)
+    logout_user()
+    return jsonify({"status": "ok"})
+
+@app.route('/api/auth/me')
+@login_required
+def auth_me():
+    imp_id = session.get('impersonate_id') if current_user.role == 'admin' else None
+    imp_info = None
+    if imp_id:
+        conn = get_db()
+        t = one(conn, "SELECT id, email, nombre FROM users WHERE id=?", (imp_id,))
+        conn.close()
+        if t:
+            imp_info = t
+    return jsonify({
+        "id": current_user.id,
+        "email": current_user.email,
+        "nombre": current_user.nombre,
+        "role": current_user.role,
+        "impersonating": imp_info,
+    })
+
+@app.route('/api/auth/change-password', methods=['POST'])
+@login_required
+def auth_change_password():
+    data = request.json or {}
+    old_pw = (data.get('old_password') or '').encode('utf-8')
+    new_pw = (data.get('new_password') or '').encode('utf-8')
+    if len(new_pw) < 6:
+        return jsonify({"error": "La nueva contraseña debe tener al menos 6 caracteres"}), 400
+    conn = get_db()
+    u = one(conn, "SELECT * FROM users WHERE id=?", (current_user.id,))
+    if not u or not bcrypt.checkpw(old_pw, u['password_hash'].encode('utf-8')):
+        conn.close()
+        return jsonify({"error": "Contraseña actual incorrecta"}), 401
+    new_hash = bcrypt.hashpw(new_pw, bcrypt.gensalt()).decode('utf-8')
+    conn.execute("UPDATE users SET password_hash=? WHERE id=?", (new_hash, current_user.id))
+    conn.commit(); conn.close()
+    return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# ADMIN — gestión de usuarios
+# ─────────────────────────────────────────────
+@app.route('/api/admin/users', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def admin_users():
+    conn = get_db()
+    if request.method == 'GET':
+        users = dicts(conn, "SELECT id,email,nombre,role,active,created_at FROM users ORDER BY created_at DESC")
+        for u in users:
+            uid = u['id']
+            t = one(conn, "SELECT COUNT(*) as n FROM tratamientos WHERE user_id=?", (uid,))
+            p = one(conn, "SELECT COUNT(*) as n FROM parcelas WHERE user_id=? AND activa=1", (uid,))
+            l = one(conn, "SELECT COUNT(*) as n FROM labores WHERE user_id=?", (uid,))
+            u['stats'] = {
+                "tratamientos": t['n'] if t else 0,
+                "parcelas": p['n'] if p else 0,
+                "labores": l['n'] if l else 0,
+            }
+        conn.close()
+        return jsonify(users)
+
+    data = request.json or {}
+    email = (data.get('email') or '').strip().lower()
+    nombre = data.get('nombre') or ''
+    password = data.get('password') or ''
+    role = data.get('role', 'agricultor')
+
+    if not email or not password:
+        conn.close()
+        return jsonify({"error": "Email y contraseña son obligatorios"}), 400
+
+    pw_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    try:
+        c = conn.cursor()
+        c.execute("INSERT INTO users (email, password_hash, nombre, role) VALUES (?,?,?,?)",
+                  (email, pw_hash, nombre, role))
+        new_id = c.lastrowid
+        # Crear explotación vacía para el nuevo usuario
+        c.execute("INSERT INTO explotacion (user_id, titular, campana_activa) VALUES (?,?,?)",
+                  (new_id, nombre, '2025/2026'))
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        if 'UNIQUE' in str(e):
+            return jsonify({"error": "Ya existe un usuario con ese email"}), 409
+        return jsonify({"error": str(e)}), 500
+    conn.close()
+    return jsonify({"status": "ok", "id": new_id}), 201
+
+@app.route('/api/admin/users/<int:uid>', methods=['PUT', 'DELETE'])
+@login_required
+@admin_required
+def admin_user(uid):
+    conn = get_db()
+    if request.method == 'DELETE':
+        conn.execute("UPDATE users SET active=0 WHERE id=?", (uid,))
+        conn.commit(); conn.close()
+        return jsonify({"status": "ok"})
+
+    data = request.json or {}
+    sets, vals = [], []
+    if 'nombre' in data:
+        sets.append('nombre=?'); vals.append(data['nombre'])
+    if 'role' in data:
+        sets.append('role=?'); vals.append(data['role'])
+    if 'active' in data:
+        sets.append('active=?'); vals.append(1 if data['active'] else 0)
+    if data.get('password'):
+        sets.append('password_hash=?')
+        vals.append(bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))
+    if sets:
+        conn.execute(f"UPDATE users SET {','.join(sets)} WHERE id=?", vals + [uid])
+        conn.commit()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+@app.route('/api/admin/switch-user/<int:target_id>', methods=['POST'])
+@login_required
+@admin_required
+def admin_switch_user(target_id):
+    session['impersonate_id'] = target_id
+    return jsonify({"status": "ok"})
+
+@app.route('/api/admin/switch-back', methods=['POST'])
+@login_required
+def admin_switch_back():
+    session.pop('impersonate_id', None)
+    return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# EXPLOTACION
+# ─────────────────────────────────────────────
+@app.route('/api/explotacion', methods=['GET', 'PUT', 'POST'])
+@login_required
+def explotacion():
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'GET':
+        row = one(conn, "SELECT * FROM explotacion WHERE user_id=? LIMIT 1", (uid,))
+        # Admin sin explotación propia: usar la del agricultor principal (user_id=2)
+        if not row and current_user.role == 'admin':
+            row = one(conn, "SELECT * FROM explotacion WHERE user_id=2 LIMIT 1")
+        conn.close()
+        return jsonify(row or {})
+
+    data = request.json or {}
+    fields = ['titular', 'nif', 'municipio', 'provincia', 'cp',
+              'telefono', 'email', 'campana_activa', 'fecha_apertura']
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM explotacion WHERE user_id=?", (uid,))
+    if c.fetchone()[0] == 0:
+        cols = ', '.join(['user_id'] + fields)
+        vals = ', '.join(['?'] * (len(fields) + 1))
+        c.execute(f"INSERT INTO explotacion ({cols}) VALUES ({vals})",
+                  [uid] + [data.get(f) for f in fields])
+    else:
+        sets = ', '.join(f"{f}=?" for f in fields)
+        c.execute(f"UPDATE explotacion SET {sets} WHERE user_id=?",
+                  [data.get(f) for f in fields] + [uid])
+    conn.commit(); conn.close()
+    return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# STATS
+# ─────────────────────────────────────────────
+@app.route('/api/stats')
+@login_required
+def stats():
+    uid = get_uid()
+    conn = get_db()
+    today = datetime.date.today().isoformat()
+    next7 = (datetime.date.today() + datetime.timedelta(days=7)).isoformat()
+    campana = request.args.get('campana', '2025/2026')
+
+    all_p = dicts(conn, "SELECT uso_sigpac FROM parcelas WHERE user_id=? AND activa=1", (uid,))
+    pac_count = sum(1 for p in all_p if is_pac_eligible(p['uso_sigpac']))
+
+    t_count = one(conn, "SELECT COUNT(*) as n FROM tratamientos WHERE user_id=? AND campana=?", (uid, campana))
+    f_count = one(conn, "SELECT COUNT(*) as n FROM fertilizacion WHERE user_id=? AND campana=?", (uid, campana))
+    l_count = one(conn, "SELECT COUNT(*) as n FROM labores WHERE user_id=? AND campana=?", (uid, campana))
+    c_count = one(conn, "SELECT COUNT(*) as n FROM cosecha WHERE user_id=? AND campana=?", (uid, campana))
+
+    alertas = dicts(conn, """
+        SELECT parcela_etiqueta, producto_comercial, fecha_recoleccion_minima
+        FROM tratamientos WHERE user_id=? AND fecha_recoleccion_minima >= ? AND fecha_recoleccion_minima <= ?
+    """, (uid, today, next7))
+
+    last_row = one(conn, """
+        SELECT MAX(fecha) as last_fecha FROM (
+            SELECT fecha_aplicacion as fecha FROM tratamientos WHERE user_id=?
+            UNION ALL SELECT fecha FROM labores WHERE user_id=?
+            UNION ALL SELECT fecha_aplicacion as fecha FROM fertilizacion WHERE user_id=?
+        )
+    """, (uid, uid, uid))
+    days_inactive = 0
+    if last_row and last_row.get('last_fecha'):
+        try:
+            last_date = datetime.date.fromisoformat(last_row['last_fecha'])
+            days_inactive = (datetime.date.today() - last_date).days
+        except Exception:
+            days_inactive = 0
+
+    conn.close()
+    return jsonify({
+        "parcelas_activas": pac_count,
+        "tratamientos_mes": t_count['n'] if t_count else 0,
+        "total_tratamientos": t_count['n'] if t_count else 0,
+        "total_fertilizacion": f_count['n'] if f_count else 0,
+        "total_labores": l_count['n'] if l_count else 0,
+        "total_cosecha": c_count['n'] if c_count else 0,
+        "dias_sin_registro": days_inactive,
+        "alertas_plazo": alertas,
+    })
+
+
+# ─────────────────────────────────────────────
+# HISTORIAL
+# ─────────────────────────────────────────────
+@app.route('/api/historial')
+@login_required
+def historial():
+    uid = get_uid()
+    conn = get_db()
+    parcela_id = request.args.get('parcela_id')
+    modulo = request.args.get('modulo', 'todos')
+    fecha_desde = request.args.get('fecha_desde', '')
+    fecha_hasta = request.args.get('fecha_hasta', '')
+    campana = request.args.get('campana', '')
+
+    records = []
+
+    def apply_filters(rows, date_field='fecha'):
+        result = []
+        for r in rows:
+            if parcela_id and str(r.get('parcela_id')) != str(parcela_id):
+                continue
+            if campana and r.get('campana') != campana:
+                continue
+            f = r.get(date_field, '') or ''
+            if fecha_desde and f < fecha_desde:
+                continue
+            if fecha_hasta and f > fecha_hasta:
+                continue
+            result.append(r)
+        return result
+
+    if modulo in ('todos', 'tratamientos'):
+        rows = dicts(conn, "SELECT * FROM tratamientos WHERE user_id=? ORDER BY fecha_aplicacion DESC", (uid,))
+        for r in apply_filters(rows, 'fecha_aplicacion'):
+            records.append({**r, '_modulo': 'tratamientos', '_fecha': r.get('fecha_aplicacion', ''),
+                            '_resumen': f"{r.get('producto_comercial','')} — {r.get('plaga_objetivo','')}"})
+
+    if modulo in ('todos', 'fertilizacion'):
+        rows = dicts(conn, "SELECT * FROM fertilizacion WHERE user_id=? ORDER BY fecha_aplicacion DESC", (uid,))
+        for r in apply_filters(rows, 'fecha_aplicacion'):
+            records.append({**r, '_modulo': 'fertilizacion', '_fecha': r.get('fecha_aplicacion', ''),
+                            '_resumen': f"{r.get('tipo_fertilizante','')} — {r.get('producto','')}"})
+
+    if modulo in ('todos', 'labores'):
+        rows = dicts(conn, "SELECT * FROM labores WHERE user_id=? ORDER BY fecha DESC", (uid,))
+        for r in apply_filters(rows, 'fecha'):
+            desc = r.get('descripcion') or r.get('notas') or ''
+            records.append({**r, '_modulo': 'labores', '_fecha': r.get('fecha', ''),
+                            '_resumen': f"{r.get('tipo_labor','')} — {desc}".rstrip(' —')})
+
+    if modulo in ('todos', 'cosecha'):
+        rows = dicts(conn, "SELECT * FROM cosecha WHERE user_id=? ORDER BY fecha_inicio DESC", (uid,))
+        for r in apply_filters(rows, 'fecha_inicio'):
+            records.append({**r, '_modulo': 'cosecha', '_fecha': r.get('fecha_inicio', ''),
+                            '_resumen': f"{r.get('cultivo','')} — {r.get('produccion_total_valor','')} {r.get('produccion_total_unidad','')}"})
+
+    records.sort(key=lambda x: x.get('_fecha', '') or '', reverse=True)
+    conn.close()
+    return jsonify(records)
+
+
+# ─────────────────────────────────────────────
+# PARCELAS
+# ─────────────────────────────────────────────
+@app.route('/api/parcelas', methods=['GET', 'POST'])
+@login_required
+def manage_parcelas():
+    uid = get_uid()
+    conn = get_db()
+
+    if request.method == 'GET':
+        all_p = dicts(conn, "SELECT * FROM parcelas WHERE user_id=? AND activa=1 ORDER BY nombre_finca", (uid,))
+        pac_only = request.args.get('pac_only', 'false').lower() == 'true'
+        if pac_only:
+            all_p = [p for p in all_p if is_pac_eligible(p.get('uso_sigpac', ''))]
+        conn.close()
+        return jsonify(all_p)
+
+    data = request.json or {}
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO parcelas (
+            user_id, comunidad, provincia_cod, provincia_nombre,
+            municipio_cod, municipio_nombre, nombre_finca,
+            poligono, parcela_num, recinto, superficie_ha, uso_sigpac,
+            sistema_explotacion, masa_agua_cercana, notas
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (
+        uid, data.get('comunidad'), data.get('provincia_cod'), data.get('provincia_nombre'),
+        data.get('municipio_cod'), data.get('municipio_nombre'), data.get('nombre_finca'),
+        data.get('poligono'), data.get('parcela_num'), data.get('recinto'),
+        data.get('superficie_ha'), data.get('uso_sigpac'),
+        data.get('sistema_explotacion', 'Secano'),
+        1 if data.get('masa_agua_cercana') else 0,
+        data.get('notas'),
+    ))
+    new_id = c.lastrowid
+    conn.commit(); conn.close()
+    return jsonify({"status": "ok", "id": new_id}), 201
+
+
+@app.route('/api/parcelas/<int:pid>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def manage_parcela(pid):
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'GET':
+        row = one(conn, "SELECT * FROM parcelas WHERE id=? AND user_id=?", (pid, uid))
+        conn.close()
+        return jsonify(row or {})
+
+    if request.method == 'DELETE':
+        conn.execute("UPDATE parcelas SET activa=0 WHERE id=? AND user_id=?", (pid, uid))
+        conn.commit(); conn.close()
+        return jsonify({"status": "ok"})
+
+    data = request.json or {}
+    fields = ['comunidad','provincia_cod','provincia_nombre','municipio_cod','municipio_nombre',
+              'nombre_finca','poligono','parcela_num','recinto','superficie_ha','uso_sigpac',
+              'sistema_explotacion','masa_agua_cercana','notas']
+    sets = ', '.join(f"{f}=?" for f in fields)
+    vals = [data.get(f) for f in fields] + [pid, uid]
+    conn.execute(f"UPDATE parcelas SET {sets} WHERE id=? AND user_id=?", vals)
+    conn.commit(); conn.close()
+    return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# CULTIVOS CAMPAÑA
+# ─────────────────────────────────────────────
+@app.route('/api/cultivos-campana', methods=['GET', 'POST'])
+@login_required
+def manage_cultivos():
+    conn = get_db()
+    if request.method == 'GET':
+        parcela_id = request.args.get('parcela_id')
+        campana = request.args.get('campana')
+        sql = "SELECT * FROM cultivos_campana WHERE 1=1"
+        params = []
+        if parcela_id:
+            sql += " AND parcela_id=?"; params.append(parcela_id)
+        if campana:
+            sql += " AND campana=?"; params.append(campana)
+        rows = dicts(conn, sql, params)
+        conn.close()
+        return jsonify(rows)
+
+    data = request.json or {}
+    c = conn.cursor()
+    try:
+        c.execute('''
+            INSERT INTO cultivos_campana
+                (parcela_id, campana, cultivo, variedad, fecha_siembra,
+                 fecha_recoleccion_prevista, superficie_cultivada_ha, notas)
+            VALUES (?,?,?,?,?,?,?,?)
+        ''', (data.get('parcela_id'), data.get('campana'), data.get('cultivo'),
+              data.get('variedad'), data.get('fecha_siembra'),
+              data.get('fecha_recoleccion_prevista'), data.get('superficie_cultivada_ha'),
+              data.get('notas')))
+        new_id = c.lastrowid
+    except Exception:
+        c.execute('''
+            UPDATE cultivos_campana SET cultivo=?, variedad=?, fecha_siembra=?,
+                fecha_recoleccion_prevista=?, superficie_cultivada_ha=?, notas=?,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE parcela_id=? AND campana=?
+        ''', (data.get('cultivo'), data.get('variedad'), data.get('fecha_siembra'),
+              data.get('fecha_recoleccion_prevista'), data.get('superficie_cultivada_ha'),
+              data.get('notas'), data.get('parcela_id'), data.get('campana')))
+        new_id = None
+    conn.commit(); conn.close()
+    return jsonify({"status": "ok", "id": new_id}), 201
+
+
+@app.route('/api/cultivos-campana/<int:cid>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def manage_cultivo(cid):
+    conn = get_db()
+    if request.method == 'DELETE':
+        conn.execute("DELETE FROM cultivos_campana WHERE id=?", (cid,))
+        conn.commit(); conn.close()
+        return jsonify({"status": "ok"})
+    if request.method == 'GET':
+        row = one(conn, "SELECT * FROM cultivos_campana WHERE id=?", (cid,))
+        conn.close()
+        return jsonify(row or {})
+    data = request.json or {}
+    fields = ['cultivo','variedad','fecha_siembra','fecha_recoleccion_prevista','superficie_cultivada_ha','notas']
+    sets = ', '.join(f"{f}=?" for f in fields)
+    conn.execute(f"UPDATE cultivos_campana SET {sets} WHERE id=?",
+                 [data.get(f) for f in fields] + [cid])
+    conn.commit(); conn.close()
+    return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# TRATAMIENTOS
+# ─────────────────────────────────────────────
+@app.route('/api/tratamientos', methods=['GET', 'POST'])
+@login_required
+def manage_tratamientos():
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'GET':
+        rows = dicts(conn, "SELECT * FROM tratamientos WHERE user_id=? ORDER BY fecha_aplicacion DESC", (uid,))
+        conn.close()
+        return jsonify(rows)
+
+    data = request.json or {}
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO tratamientos (
+            user_id, parcela_id, parcela_etiqueta, fecha_aplicacion,
+            producto_comercial, num_registro_mapa, sustancia_activa,
+            plaga_objetivo, dosis_valor, dosis_unidad, volumen_caldo,
+            equipo_id, condiciones_meteo, plazo_seguridad_dias,
+            fecha_recoleccion_minima, eficacia, aplicador_id, notas, campana
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (
+        uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha_aplicacion'),
+        data.get('producto_comercial'), data.get('num_registro_mapa'), data.get('sustancia_activa'),
+        data.get('plaga_objetivo'), data.get('dosis_valor'), data.get('dosis_unidad', 'L/ha'),
+        data.get('volumen_caldo'), data.get('equipo_id'), data.get('condiciones_meteo'),
+        data.get('plazo_seguridad_dias'), data.get('fecha_recoleccion_minima'),
+        data.get('eficacia'), data.get('aplicador_id'), data.get('notas'),
+        data.get('campana', '2025/2026'),
+    ))
+    conn.commit(); new_id = c.lastrowid; conn.close()
+    return jsonify({"status": "ok", "id": new_id}), 201
+
+
+@app.route('/api/tratamientos/<int:tid>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def manage_tratamiento(tid):
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'DELETE':
+        conn.execute("DELETE FROM tratamientos WHERE id=? AND user_id=?", (tid, uid))
+        conn.commit(); conn.close(); return jsonify({"status": "ok"})
+    if request.method == 'GET':
+        row = one(conn, "SELECT * FROM tratamientos WHERE id=? AND user_id=?", (tid, uid))
+        conn.close(); return jsonify(row or {})
+    data = request.json or {}
+    fields = ['parcela_id','parcela_etiqueta','fecha_aplicacion','producto_comercial',
+              'num_registro_mapa','sustancia_activa','plaga_objetivo','dosis_valor','dosis_unidad',
+              'volumen_caldo','equipo_id','condiciones_meteo','plazo_seguridad_dias',
+              'fecha_recoleccion_minima','eficacia','aplicador_id','notas','campana']
+    sets = ', '.join(f"{f}=?" for f in fields)
+    conn.execute(f"UPDATE tratamientos SET {sets} WHERE id=? AND user_id=?",
+                 [data.get(f) for f in fields] + [tid, uid])
+    conn.commit(); conn.close(); return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# FERTILIZACIÓN
+# ─────────────────────────────────────────────
+@app.route('/api/fertilizacion', methods=['GET', 'POST'])
+@login_required
+def manage_fertilizacion():
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'GET':
+        rows = dicts(conn, "SELECT * FROM fertilizacion WHERE user_id=? ORDER BY fecha_aplicacion DESC", (uid,))
+        conn.close(); return jsonify(rows)
+
+    data = request.json or {}
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO fertilizacion (
+            user_id, parcela_id, parcela_etiqueta, fecha_aplicacion,
+            tipo_fertilizante, producto, riqueza_npk,
+            dosis_valor, dosis_unidad, metodo_aplicacion, notas, campana
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha_aplicacion'),
+          data.get('tipo_fertilizante'), data.get('producto'), data.get('riqueza_npk'),
+          data.get('dosis_valor'), data.get('dosis_unidad', 'kg/ha'),
+          data.get('metodo_aplicacion'), data.get('notas'), data.get('campana', '2025/2026')))
+    conn.commit(); new_id = c.lastrowid; conn.close()
+    return jsonify({"status": "ok", "id": new_id}), 201
+
+
+@app.route('/api/fertilizacion/<int:fid>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def manage_fertilizacion_one(fid):
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'DELETE':
+        conn.execute("DELETE FROM fertilizacion WHERE id=? AND user_id=?", (fid, uid))
+        conn.commit(); conn.close(); return jsonify({"status": "ok"})
+    if request.method == 'GET':
+        row = one(conn, "SELECT * FROM fertilizacion WHERE id=?", (fid,))
+        conn.close(); return jsonify(row or {})
+    data = request.json or {}
+    fields = ['parcela_id','parcela_etiqueta','fecha_aplicacion','tipo_fertilizante',
+              'producto','riqueza_npk','dosis_valor','dosis_unidad','metodo_aplicacion','notas','campana']
+    sets = ', '.join(f"{f}=?" for f in fields)
+    conn.execute(f"UPDATE fertilizacion SET {sets} WHERE id=? AND user_id=?",
+                 [data.get(f) for f in fields] + [fid, uid])
+    conn.commit(); conn.close(); return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# LABORES
+# ─────────────────────────────────────────────
+@app.route('/api/labores', methods=['GET', 'POST'])
+@login_required
+def manage_labores():
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'GET':
+        rows = dicts(conn, "SELECT * FROM labores WHERE user_id=? ORDER BY fecha DESC", (uid,))
+        conn.close(); return jsonify(rows)
+    data = request.json or {}
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO labores (user_id, parcela_id, parcela_etiqueta, fecha,
+            tipo_labor, descripcion, producto, maquinaria, horas_trabajadas, operario, notas, campana)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha'),
+          data.get('tipo_labor'), data.get('descripcion'), data.get('producto'), data.get('maquinaria'),
+          data.get('horas_trabajadas'), data.get('operario'), data.get('notas'),
+          data.get('campana', '2025/2026')))
+    conn.commit(); new_id = c.lastrowid; conn.close()
+    return jsonify({"status": "ok", "id": new_id}), 201
+
+
+@app.route('/api/labores/<int:lid>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def manage_labor(lid):
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'DELETE':
+        conn.execute("DELETE FROM labores WHERE id=? AND user_id=?", (lid, uid))
+        conn.commit(); conn.close(); return jsonify({"status": "ok"})
+    if request.method == 'GET':
+        row = one(conn, "SELECT * FROM labores WHERE id=?", (lid,))
+        conn.close(); return jsonify(row or {})
+    data = request.json or {}
+    fields = ['parcela_id','parcela_etiqueta','fecha','tipo_labor','descripcion',
+              'producto','maquinaria','horas_trabajadas','operario','notas','campana']
+    sets = ', '.join(f"{f}=?" for f in fields)
+    conn.execute(f"UPDATE labores SET {sets} WHERE id=? AND user_id=?",
+                 [data.get(f) for f in fields] + [lid, uid])
+    conn.commit(); conn.close(); return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# COSECHA
+# ─────────────────────────────────────────────
+@app.route('/api/cosecha', methods=['GET', 'POST'])
+@login_required
+def manage_cosecha():
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'GET':
+        rows = dicts(conn, "SELECT * FROM cosecha WHERE user_id=? ORDER BY fecha_inicio DESC", (uid,))
+        conn.close(); return jsonify(rows)
+    data = request.json or {}
+    prod = data.get('produccion_total_valor') or 0
+    sup  = data.get('superficie_cosechada_ha') or 0
+    rend = round(float(prod) / float(sup), 2) if sup and float(sup) > 0 else None
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO cosecha (user_id, parcela_id, parcela_etiqueta, fecha_inicio, fecha_fin,
+            cultivo, variedad, superficie_cosechada_ha, produccion_total_valor,
+            produccion_total_unidad, rendimiento_kg_ha, destino, comprador,
+            precio_unidad, notas, campana)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'),
+          data.get('fecha_inicio'), data.get('fecha_fin'), data.get('cultivo'),
+          data.get('variedad'), sup, prod, data.get('produccion_total_unidad', 'kg'),
+          rend, data.get('destino'), data.get('comprador'),
+          data.get('precio_unidad'), data.get('notas'), data.get('campana', '2025/2026')))
+    conn.commit(); new_id = c.lastrowid; conn.close()
+    return jsonify({"status": "ok", "id": new_id}), 201
+
+
+@app.route('/api/cosecha/<int:cid>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def manage_cosecha_one(cid):
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'DELETE':
+        conn.execute("DELETE FROM cosecha WHERE id=? AND user_id=?", (cid, uid))
+        conn.commit(); conn.close(); return jsonify({"status": "ok"})
+    if request.method == 'GET':
+        row = one(conn, "SELECT * FROM cosecha WHERE id=?", (cid,))
+        conn.close(); return jsonify(row or {})
+    data = request.json or {}
+    fields = ['parcela_id','parcela_etiqueta','fecha_inicio','fecha_fin','cultivo',
+              'variedad','superficie_cosechada_ha','produccion_total_valor','produccion_total_unidad',
+              'rendimiento_kg_ha','destino','comprador','precio_unidad','notas','campana']
+    sets = ', '.join(f"{f}=?" for f in fields)
+    conn.execute(f"UPDATE cosecha SET {sets} WHERE id=? AND user_id=?",
+                 [data.get(f) for f in fields] + [cid, uid])
+    conn.commit(); conn.close(); return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# EQUIPOS
+# ─────────────────────────────────────────────
+@app.route('/api/equipos', methods=['GET', 'POST'])
+@login_required
+def manage_equipos():
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'GET':
+        rows = dicts(conn, "SELECT * FROM equipos WHERE user_id=?", (uid,))
+        conn.close(); return jsonify(rows)
+    data = request.json or {}
+    c = conn.cursor()
+    c.execute('''INSERT INTO equipos (user_id, descripcion, tipo, marca, modelo, num_registro_roma, fecha_iteaf, notas)
+                 VALUES (?,?,?,?,?,?,?,?)''',
+              (uid, data.get('descripcion'), data.get('tipo'), data.get('marca'),
+               data.get('modelo'), data.get('num_registro_roma'), data.get('fecha_iteaf'), data.get('notas')))
+    conn.commit(); new_id = c.lastrowid; conn.close()
+    return jsonify({"status": "ok", "id": new_id}), 201
+
+
+@app.route('/api/equipos/<int:eid>', methods=['PUT', 'DELETE'])
+@login_required
+def manage_equipo(eid):
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'DELETE':
+        conn.execute("DELETE FROM equipos WHERE id=? AND user_id=?", (eid, uid))
+        conn.commit(); conn.close(); return jsonify({"status": "ok"})
+    data = request.json or {}
+    fields = ['descripcion','tipo','marca','modelo','num_registro_roma','fecha_iteaf','notas']
+    sets = ', '.join(f"{f}=?" for f in fields)
+    conn.execute(f"UPDATE equipos SET {sets} WHERE id=? AND user_id=?",
+                 [data.get(f) for f in fields] + [eid, uid])
+    conn.commit(); conn.close(); return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# APLICADORES
+# ─────────────────────────────────────────────
+@app.route('/api/aplicadores', methods=['GET', 'POST'])
+@login_required
+def manage_aplicadores():
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'GET':
+        rows = dicts(conn, "SELECT * FROM aplicadores WHERE user_id=? AND activo=1", (uid,))
+        conn.close(); return jsonify(rows)
+    data = request.json or {}
+    c = conn.cursor()
+    c.execute("INSERT INTO aplicadores (user_id, nombre, nif, num_ropo) VALUES (?,?,?,?)",
+              (uid, data.get('nombre'), data.get('nif'), data.get('num_ropo')))
+    conn.commit(); new_id = c.lastrowid; conn.close()
+    return jsonify({"status": "ok", "id": new_id}), 201
+
+
+@app.route('/api/aplicadores/<int:aid>', methods=['PUT', 'DELETE'])
+@login_required
+def manage_aplicador(aid):
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'DELETE':
+        conn.execute("UPDATE aplicadores SET activo=0 WHERE id=? AND user_id=?", (aid, uid))
+        conn.commit(); conn.close(); return jsonify({"status": "ok"})
+    data = request.json or {}
+    conn.execute("UPDATE aplicadores SET nombre=?, nif=?, num_ropo=? WHERE id=? AND user_id=?",
+                 (data.get('nombre'), data.get('nif'), data.get('num_ropo'), aid, uid))
+    conn.commit(); conn.close(); return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# SIGPAC PROXY
+# ─────────────────────────────────────────────
+SIGPAC_BASE = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/query"
+
+def _sigpac_get(url):
+    try:
+        r = req_lib.get(url, timeout=10)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+def _sigpac_list(url):
+    import re
+    data = _sigpac_get(url)
+    if not isinstance(data, dict) or 'features' not in data:
+        return data
+    out = []
+    for f in data.get('features', []):
+        p = (f or {}).get('properties') or {}
+        nombre = p.get('nombre') or ''
+        nombre = re.sub(r'\s*\(\d+\)\s*$', '', nombre).strip()
+        out.append({'codigo': p.get('codigo'), 'nombre': nombre})
+    out.sort(key=lambda x: (x['nombre'] or '').lower())
+    return out
+
+@app.route('/api/sigpac/provincias')
+@login_required
+def sigpac_provincias():
+    return jsonify(_sigpac_get(f"{SIGPAC_BASE}/provincias"))
+
+@app.route('/api/sigpac/municipios')
+@login_required
+def sigpac_municipios():
+    prov = request.args.get('provincia_cod', '13')
+    return jsonify(_sigpac_list(f"{SIGPAC_BASE}/municipios/{prov}"))
+
+@app.route('/api/sigpac/poligonos')
+@login_required
+def sigpac_poligonos():
+    prov = request.args.get('provincia_cod', '13')
+    mun  = request.args.get('municipio_cod', '131')
+    return jsonify(_sigpac_get(f"{SIGPAC_BASE}/poligonos/{prov}/{mun}"))
+
+@app.route('/api/sigpac/parcelas')
+@login_required
+def sigpac_parcelas():
+    prov = request.args.get('provincia_cod', '13')
+    mun  = request.args.get('municipio_cod', '131')
+    pol  = request.args.get('poligono', '1')
+    return jsonify(_sigpac_get(f"{SIGPAC_BASE}/parcelas/{prov}/{mun}/{pol}"))
+
+@app.route('/api/sigpac/recintos')
+@login_required
+def sigpac_recintos():
+    prov = request.args.get('provincia', '13')
+    mun  = request.args.get('municipio', '131')
+    pol  = request.args.get('poligono', '1')
+    par  = request.args.get('parcela', '1')
+    agr  = request.args.get('agregado', '0')
+    zona = request.args.get('zona', '0')
+    return jsonify(_sigpac_get(f"{SIGPAC_BASE}/recintos/{prov}/{mun}/{agr}/{zona}/{pol}/{par}"))
+
+
+# Mapa de código cultivo Catastro → uso SIGPAC
+_CATASTRO_A_SIGPAC = {
+    'O-': 'OV-OLIVAR',  'OL': 'OV-OLIVAR',
+    'VI': 'VI-VIÑEDO',  'V-': 'VI-VIÑEDO',
+    'TA': 'TA-TIERRA ARABLE', 'TH': 'TA-TIERRA ARABLE',
+    'CF': 'CF-CITRICOS', 'CI': 'CI-CITRICOS-INVER',
+    'CS': 'CS-CULTIVOS SIN ESPECIF',
+    'FF': 'FL-FRUTOS SECOS', 'FL': 'FL-FRUTOS SECOS',
+    'FY': 'FY-FRUTALES',
+    'PA': 'PA-PASTO', 'PR': 'PR-PASTO ARBUSTIVO', 'PS': 'PS-PASTIZAL',
+    'CA': 'CA-VIALES', 'IM': 'IM-IMPRODUCTIVO',
+    'ZU': 'ZU-ZONA URBANA', 'AG': 'AG-CORRIENTE AGUA',
+}
+
+def _catastro_a_uso_sigpac(ccc, dcc=''):
+    """Convierte código cultivo Catastro a uso SIGPAC."""
+    if ccc:
+        for k, v in _CATASTRO_A_SIGPAC.items():
+            if ccc.upper().startswith(k):
+                return v
+    # Fallback por descripción
+    dcc_n = (dcc or '').upper()
+    if 'OLIVO' in dcc_n: return 'OV-OLIVAR'
+    if 'VIÑA' in dcc_n or 'VID' in dcc_n: return 'VI-VIÑEDO'
+    if 'CEREAL' in dcc_n or 'TRIGO' in dcc_n or 'CEBADA' in dcc_n: return 'TA-TIERRA ARABLE'
+    if 'ALMENDRO' in dcc_n or 'FRUTO SECO' in dcc_n: return 'FL-FRUTOS SECOS'
+    if 'CITRICO' in dcc_n or 'NARANJO' in dcc_n: return 'CF-CITRICOS'
+    if 'PASTIZAL' in dcc_n or 'PASTO' in dcc_n: return 'PA-PASTO'
+    return ''
+
+@app.route('/api/sigpac/datos')
+@login_required
+def sigpac_datos():
+    """Obtiene superficie y uso SIGPAC combinando SIGPAC + Catastro."""
+    prov = request.args.get('provincia', '')
+    mun  = request.args.get('municipio', '')
+    pol  = request.args.get('poligono', '')
+    par  = request.args.get('parcela', '')
+
+    resultado = {'superficie_ha': '', 'uso_sigpac': '', 'referencia_cat': '', 'num_recintos': 0}
+
+    try:
+        # 1. SIGPAC intersection → superficie (dn_surface m²) + referencia_cat
+        INTER_BASE = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/intersection"
+        inter = _sigpac_get(
+            f"{INTER_BASE}/recinto/recinto/{prov},{mun},0,0,{pol},{par},1"
+        )
+        pi = inter.get('parcelaInfo') or {}
+        dn_surface = pi.get('dn_surface')
+        ref_cat = pi.get('referencia_cat', '')
+        if dn_surface:
+            resultado['superficie_ha'] = round(float(dn_surface) / 10000, 4)
+        resultado['referencia_cat'] = ref_cat
+
+        # Contar recintos
+        recintos_data = _sigpac_get(f"{SIGPAC_BASE}/recintos/{prov}/{mun}/0/0/{pol}/{par}")
+        resultado['num_recintos'] = len(recintos_data.get('features', []))
+
+        # 2. Catastro → cultivo/uso por RC
+        if ref_cat:
+            cat_r = req_lib.get(
+                'https://ovc.catastro.meh.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx/Consulta_DNPRC',
+                params={'Provincia': '', 'Municipio': '', 'RC': ref_cat},
+                timeout=8
+            )
+            import xml.etree.ElementTree as ET
+            ns = {'c': 'http://www.catastro.meh.es/'}
+            root = ET.fromstring(cat_r.text)
+            # Superficie de la subparcela principal
+            ssp = root.find('.//c:ssp', ns)
+            if ssp is not None and ssp.text:
+                resultado['superficie_ha'] = round(float(ssp.text) / 10000, 4)
+            # Cultivo/uso
+            ccc = root.find('.//c:ccc', ns)
+            dcc = root.find('.//c:dcc', ns)
+            ccc_v = ccc.text if ccc is not None else ''
+            dcc_v = dcc.text if dcc is not None else ''
+            resultado['uso_sigpac'] = _catastro_a_uso_sigpac(ccc_v, dcc_v)
+            resultado['cultivo_catastro'] = dcc_v
+
+    except Exception as e:
+        resultado['error'] = str(e)
+
+    return jsonify(resultado)
+
+
+# ─────────────────────────────────────────────
+# NLP SIMPLE — PARSING DE TEXTO LIBRE
+# ─────────────────────────────────────────────
+import unicodedata as _UD
+import re as _re
+
+def _norm(s):
+    """Minúsculas sin acentos para comparación robusta."""
+    return ''.join(
+        c for c in _UD.normalize('NFD', str(s).lower())
+        if _UD.category(c) != 'Mn'
+    )
+
+def extraer_parcela(texto, uid):
+    conn = get_db()
+    parcelas = dicts(conn, "SELECT id, nombre_finca FROM parcelas WHERE user_id=? AND activa=1", (uid,))
+    conn.close()
+    tnorm = _norm(texto)
+
+    # 1) Coincidencia exacta normalizada (sin acentos ni mayúsculas)
+    for p in parcelas:
+        if _norm(p['nombre_finca']) in tnorm:
+            return {'id': p['id'], 'nombre': p['nombre_finca']}
+
+    # 2) Coincidencia parcial: todas las palabras >3 letras del nombre están en el texto
+    for p in parcelas:
+        partes = [w for w in _re.split(r'[\s\-/]+', _norm(p['nombre_finca'])) if len(w) > 3]
+        if partes and all(parte in tnorm for parte in partes):
+            return {'id': p['id'], 'nombre': p['nombre_finca']}
+
+    return None
+
+def extraer_nombre_candidato(texto):
+    """Extrae el candidato a nombre de parcela entre el verbo y 'con'/fin."""
+    ARTICULOS   = {'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas'}
+    STOP_FIN    = {'hoy', 'ayer', 'esta', 'este', 'manana', 'por', 'he', 'con', 'sin', 'y'}
+    # Verbos agrícolas — stems con sufijos variados (participio, 1ª/3ª sing. pasado, presente)
+    VERBOS = (
+        r'trat\w{1,6}|abon\w{1,6}|reg\w{1,6}|pod\w{1,6}|cosech\w{1,6}|'
+        r'fumig\w{1,6}|sembr\w{1,6}|siembr\w{1,5}|labr\w{1,6}|vendimi\w{1,6}|'
+        r'recog\w{1,6}|arad\w{1,5}|cav\w{1,5}|desbroz\w{1,5}|pulver\w{1,5}|'
+        r'trilla\w{1,4}|recolect\w{1,5}|subsolad\w{1,4}|grad\w{1,5}|cultiv\w{1,5}'
+    )
+    # Patrón: verbo → [artículo] → NOMBRE → (con|,|.|fin|palabra_stop)
+    patron = (
+        r'(?:' + VERBOS + r')'
+        r'\s+(?:el\s+|la\s+|los\s+|las\s+)?'
+        r'([\w][\w\s]{1,33}?)'
+        r'(?=\s+con\s|\s*[,.]|\s+(?:hoy|ayer|esta|este|esta\s+ma|por|de\s+|$)|\s*$)'
+    )
+    m = _re.search(patron, texto, _re.IGNORECASE)
+    if m:
+        palabras = m.group(1).strip().split()
+        while palabras and _norm(palabras[-1]) in {_norm(s) for s in STOP_FIN}:
+            palabras.pop()
+        while palabras and palabras[0].lower() in ARTICULOS:
+            palabras.pop(0)
+        candidato = ' '.join(palabras)
+        if 2 < len(candidato) < 40:
+            return candidato.upper()
+    # Fallback: "en/finca/parcela/campo [el/la] NOMBRE"
+    m2 = _re.search(
+        r'(?:en|finca|parcela|campo)\s+(?:el\s+|la\s+)?([\w][\w\s]{1,30}?)'
+        r'(?=\s+con\s|\s*[,.]|\s*$)',
+        texto, _re.IGNORECASE
+    )
+    if m2:
+        palabras = m2.group(1).strip().split()
+        while palabras and palabras[0].lower() in ARTICULOS:
+            palabras.pop(0)
+        candidato = ' '.join(palabras)
+        if 2 < len(candidato) < 40:
+            return candidato.upper()
+    return None
+
+def extraer_accion(texto):
+    tnorm = _norm(texto)
+    acciones = {
+        'tratamiento': [
+            'tratado', 'tratamiento', 'tratamos', 'trate', 'pulverizado', 'pulverice',
+            'fumigado', 'fumigue', 'fumigaci', 'spray', 'insecticida', 'fungicida',
+            'herbicida', 'fitosanitario', 'plaguicida', 'mata', 'mato',
+        ],
+        'fertilizacion': [
+            'abonado', 'abone', 'abonamos', 'fertilizado', 'fertilice', 'abono',
+            'nutrientes', 'nitrogeno', 'fosforo', 'potasio', 'npk', 'urea',
+            'sulfato', 'superfosfato', 'estiercol', 'compost', 'purines',
+        ],
+        'riego': [
+            'regado', 'regue', 'rege', 'regamos', 'rego', 'riego', 'riegos',
+            'inundado', 'goteo', 'aspersion', 'pivote',
+        ],
+        'cosecha': [
+            'cosechado', 'cosechamos', 'coseche', 'cosecho', 'cosecha ',
+            'recolectado', 'recogie', 'vendimiado', 'vendimia',
+            'trillado', 'trilla', 'recogi',
+        ],
+        'labor': [
+            'labor', 'labrado', 'labre', 'laboreo',
+            'arado', 'are ', 'are,', 'cave', 'cavado',
+            'poda', 'pode', 'podamos',
+            'desyerbado', 'desherbado', 'desbroz',
+            'sembrado', 'siembre', 'siembra', 'sembre', 'sembré', 'he sembrado',
+            'he sembrado', 'sembramos', 'sembrar', 'siembro',
+            'fresado', 'subsolado', 'cultivado', 'he cultivado', 'cultivé', 'cultivamos',
+            'gradeo', 'pase de', 'pase ', 'limpie', 'limpieza',
+            'plantado', 'plante', 'planté', 'plantamos', 'plantación',
+        ],
+    }
+    for tipo, palabras in acciones.items():
+        for palabra in palabras:
+            if _norm(palabra) in tnorm:
+                return {'tipo': tipo, 'confianza': 0.9, 'palabra_clave': palabra}
+    return {'tipo': None, 'confianza': 0, 'palabra_clave': None}
+
+def extraer_producto(texto):
+    tnorm = _norm(texto)
+    # (palabra_clave_normalizada, nombre_display)
+    productos = [
+        # Semillas / cultivos
+        ('yero', 'Yeros'), ('yeros', 'Yeros'),
+        ('trigo', 'Trigo'), ('cebada', 'Cebada'), ('avena', 'Avena'),
+        ('centeno', 'Centeno'), ('triticale', 'Triticale'),
+        ('girasol', 'Girasol'), ('colza', 'Colza'), ('maiz', 'Maíz'),
+        ('soja', 'Soja'), ('guisante', 'Guisante'), ('garbanzo', 'Garbanzo'),
+        ('lenteja', 'Lenteja'), ('almorta', 'Almorta'), ('veza', 'Veza'),
+        ('alfalfa', 'Alfalfa'), ('remolacha', 'Remolacha'), ('patata', 'Patata'),
+        ('tomate', 'Tomate'), ('pimiento', 'Pimiento'), ('cebolla', 'Cebolla'),
+        ('ajo', 'Ajo'), ('olivo', 'Olivo'), ('vid', 'Vid'), ('viña', 'Vid'),
+        ('almendro', 'Almendro'), ('pistachero', 'Pistachero'),
+        # Fungicidas
+        ('cobre', 'Cobre'), ('azufre', 'Azufre'), ('mancozeb', 'Mancozeb'),
+        ('captan', 'Captán'), ('clorotalonil', 'Clorotalonil'), ('tebuconazol', 'Tebuconazol'),
+        ('iprodiona', 'Iprodiona'), ('metalaxil', 'Metalaxil'), ('fosetil', 'Fosetil-Al'),
+        ('ziram', 'Ziram'), ('metiram', 'Metiram'), ('oxicloruro', 'Oxicloruro de cobre'),
+        # Insecticidas
+        ('clorpirifos', 'Clorpirifos'), ('deltametrina', 'Deltametrina'),
+        ('lambda', 'Lambda-cihalotrin'), ('imidacloprid', 'Imidacloprid'),
+        ('spinosad', 'Spinosad'), ('abamectina', 'Abamectina'),
+        ('dimetoato', 'Dimetoato'), ('piretrinas', 'Piretrinas'),
+        # Herbicidas
+        ('glifosato', 'Glifosato'), ('diquat', 'Diquat'), ('terbutilazina', 'Terbutilazina'),
+        ('s-metolacloro', 'S-metolacloro'), ('pendimetalina', 'Pendimetalina'),
+        # Fertilizantes
+        ('urea', 'Urea'), ('npk', 'NPK'), ('nitrato amonico', 'Nitrato amónico'),
+        ('sulfato amonico', 'Sulfato amónico'), ('superfosfato', 'Superfosfato'),
+        ('cloruro potasico', 'Cloruro potásico'), ('estiercol', 'Estiércol'),
+        ('compost', 'Compost'), ('purines', 'Purines'),
+    ]
+    for clave, nombre in productos:
+        if _norm(clave) in tnorm:
+            return {'nombre': nombre, 'confianza': 0.85}
+    return {'nombre': None, 'confianza': 0}
+
+def extraer_dosis(texto):
+    patrones = [
+        (r'(\d+[.,]?\d*)\s*(cc|centilitro)', 'cc'),
+        (r'(\d+[.,]?\d*)\s*(l|litro|litros|ℓ)\b', 'L'),
+        (r'(\d+[.,]?\d*)\s*(kg|kilo|kilos)\b', 'kg'),
+        (r'(\d+[.,]?\d*)\s*(g|gramo|gramos)\b', 'g'),
+        (r'(\d+[.,]?\d*)\s*(t|tonelada|toneladas)\b', 't'),
+    ]
+    for patron, unidad in patrones:
+        m = _re.search(patron, texto, _re.IGNORECASE)
+        if m:
+            valor = float(m.group(1).replace(',', '.'))
+            return {'valor': valor, 'unidad': unidad, 'texto_original': m.group(0)}
+    return {'valor': None, 'unidad': None, 'texto_original': None}
+
+@app.route('/api/parse', methods=['POST'])
+@login_required
+def parse_texto_libre():
+    uid = get_uid()
+    data = request.json or {}
+    texto = (data.get('texto') or '').strip()
+
+    if not texto:
+        return jsonify({"status": "error", "message": "El texto no puede estar vacío"}), 400
+
+    parcela_data = extraer_parcela(texto, uid)
+    accion_data = extraer_accion(texto)
+    producto_data = extraer_producto(texto)
+    dosis_data = extraer_dosis(texto)
+    nombre_candidato = None if parcela_data else extraer_nombre_candidato(texto)
+
+    parcela_id = parcela_data['id'] if parcela_data else None
+    fecha_hoy = datetime.date.today().isoformat()
+
+    return jsonify({
+        "status": "success",
+        "texto_original": texto,
+        "parseo": {
+            "parcela": {
+                "id": parcela_id,
+                "nombre": parcela_data['nombre'] if parcela_data else None,
+                "nombre_candidato": nombre_candidato,
+                "es_nueva": not parcela_data and bool(nombre_candidato),
+                "requiere_seleccion": not parcela_data and not nombre_candidato,
+                "confianza": 1.0 if parcela_data else 0.0,
+            },
+            "accion": {"tipo": accion_data['tipo'], "palabra_clave": accion_data['palabra_clave'], "confianza": accion_data['confianza']},
+            "producto": {"nombre": producto_data['nombre'], "confianza": producto_data['confianza']},
+            "dosis": {"valor": dosis_data['valor'], "unidad": dosis_data['unidad']},
+            "fecha": fecha_hoy,
+        },
+        "requiere_confirmacion": not parcela_data and not nombre_candidato,
+    })
+
+@app.route('/api/parse/guardar', methods=['POST'])
+@login_required
+def parse_guardar():
+    uid = get_uid()
+    data = request.json or {}
+
+    accion        = data.get('accion')
+    palabra_clave = (data.get('palabra_clave') or '').strip()
+    parcela_id    = data.get('parcela_id')
+    parcela_nombre = (data.get('parcela_nombre') or '').strip()
+    producto     = (data.get('producto') or '').strip()
+    fecha        = data.get('fecha') or datetime.date.today().isoformat()
+    texto        = (data.get('texto_original') or '').strip()
+    campana      = data.get('campana') or '2025/2026'
+
+    conn = get_db()
+
+    # Auto-crear parcela si no existe
+    if not parcela_id and parcela_nombre:
+        c = conn.cursor()
+        c.execute("INSERT INTO parcelas (user_id, nombre_finca) VALUES (?, ?)", (uid, parcela_nombre))
+        parcela_id = c.lastrowid
+        conn.commit()
+
+    if not parcela_id:
+        conn.close()
+        return jsonify({"ok": False, "error": "No se pudo determinar la parcela. Indícala manualmente."}), 400
+
+    parcela = one(conn, "SELECT nombre_finca FROM parcelas WHERE id=? AND user_id=?", (parcela_id, uid))
+    etiqueta = (parcela or {}).get('nombre_finca', '')
+
+    nota = f"NLP: {texto}" if texto else ''
+
+    if accion == 'tratamiento':
+        conn.execute(
+            "INSERT INTO tratamientos (user_id, parcela_id, parcela_etiqueta, fecha_aplicacion, producto_comercial, notas, campana) VALUES (?,?,?,?,?,?,?)",
+            (uid, parcela_id, etiqueta, fecha, producto, nota, campana)
+        )
+    elif accion == 'fertilizacion':
+        conn.execute(
+            "INSERT INTO fertilizacion (user_id, parcela_id, parcela_etiqueta, fecha_aplicacion, producto, notas, campana) VALUES (?,?,?,?,?,?,?)",
+            (uid, parcela_id, etiqueta, fecha, producto, nota, campana)
+        )
+    else:
+        # palabra_clave viene del frontend; si no, re-extraer del texto
+        if not palabra_clave:
+            accion_det = extraer_accion(texto)
+            palabra_clave = accion_det.get('palabra_clave') or ''
+        # Normalizar al valor exacto del desplegable del formulario
+        _LABOR_MAP = {
+            'arado':'Arado','are':'Arado','arar':'Arado',
+            'poda':'Poda','pode':'Poda','podamos':'Poda',
+            'desherbado':'Desherbado','desyerbado':'Desherbado','desbroz':'Desherbado',
+            'siembra':'Siembra','sembrado':'Siembra','siembre':'Siembra','sembre':'Siembra',
+            'sembré':'Siembra','sembramos':'Siembra','sembrar':'Siembra','siembro':'Siembra',
+            'he sembrado':'Siembra','plantado':'Plantación','plante':'Plantación',
+            'planté':'Plantación','plantamos':'Plantación','plantación':'Plantación',
+            'cultivado':'Siembra','cultivé':'Siembra','cultivamos':'Siembra','he cultivado':'Siembra',
+            'fresado':'Fresado','fresa':'Fresado',
+            'subsolado':'Subsolado',
+            'gradeo':'Gradeo','pase':'Gradeo',
+            'limpieza':'Limpieza','limpie':'Limpieza',
+            'laboreo':'Laboreo del suelo','labrado':'Laboreo del suelo',
+            'labor':'Laboreo del suelo',
+            'cultivado':'Siembra','cultivé':'Siembra','cultivamos':'Siembra','he cultivado':'Siembra',
+            'sembré':'Siembra','sembramos':'Siembra','sembrar':'Siembra','siembro':'Siembra',
+            'he sembrado':'Siembra','plantado':'Plantación','plante':'Plantación',
+            'planté':'Plantación','plantamos':'Plantación','plantación':'Plantación',
+            'vendimia':'Vendimia','vendimiado':'Vendimia',
+            'escarda':'Escarda','cave':'Escarda','cavado':'Escarda',
+            'trilla':'Triturado de restos','trillado':'Triturado de restos',
+            'riego':'Riego','regado':'Riego',
+            'siega':'Otros','segado':'Otros',
+        }
+        tipo = _LABOR_MAP.get((palabra_clave or '').lower().strip()) or palabra_clave or accion or 'Otros'
+        # Si es siembra/plantación y se detectó cultivo, usarlo como descripción
+        if tipo in ('Siembra', 'Plantación') and producto:
+            descripcion_labor = f"{tipo} de {producto}"
+        else:
+            descripcion_labor = texto
+        conn.execute(
+            "INSERT INTO labores (user_id, parcela_id, parcela_etiqueta, fecha, tipo_labor, descripcion, producto, notas, campana) VALUES (?,?,?,?,?,?,?,?,?)",
+            (uid, parcela_id, etiqueta, fecha, tipo, descripcion_labor, producto or None, nota, campana)
+        )
+
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "parcela_id": parcela_id, "parcela_nombre": etiqueta or parcela_nombre})
+
+
+# ─────────────────────────────────────────────
+# IMPORT EXCEL
+# ─────────────────────────────────────────────
+def _importar_parcelas_wb(wb, uid):
+    """Importa parcelas desde un workbook openpyxl. Devuelve (n_importadas, n_errores, detalle_errores)."""
+    import unicodedata
+    def _norm(s):
+        return unicodedata.normalize('NFKD', str(s or '').lower().strip()).encode('ascii','ignore').decode()
+
+    # Buscar hoja de parcelas (acepta cualquier nombre que contenga "parcela")
+    ws = None
+    for name in wb.sheetnames:
+        if 'parcela' in _norm(name) or name == wb.sheetnames[0]:
+            ws = wb[name]; break
+    if not ws:
+        return 0, 0, []
+
+    # Leer cabeceras (fila 1) y mapear columnas por nombre
+    headers = [_norm(c) for c in next(ws.iter_rows(min_row=1, max_row=1, values_only=True))]
+    def _col(keywords):
+        for kw in keywords:
+            for i, h in enumerate(headers):
+                if kw in h: return i
+        return None
+
+    ci_nombre    = _col(['nombre','finca','parcela nom'])
+    ci_provincia = _col(['provincia','prov'])
+    ci_municipio = _col(['municipio','muni'])
+    ci_poligono  = _col(['poligon','polig'])
+    ci_parcela   = _col(['num parcela','parcela','numero','parcela num'])
+    ci_recinto   = _col(['recinto'])
+
+    faltan = [n for n, c in [('Nombre',ci_nombre),('Provincia',ci_provincia),('Municipio',ci_municipio),('Polígono',ci_poligono),('Parcela',ci_parcela)] if c is None]
+    if faltan:
+        return 0, 0, [f"Faltan columnas: {', '.join(faltan)}"]
+
+    # Cache de códigos provincia/municipio para no consultar SIGPAC en cada fila
+    conn = get_db()
+    cur = conn.cursor()
+    _cache_prov = {}; _cache_mun = {}
+
+    def _get_prov_cod(nombre_prov):
+        k = _norm(nombre_prov)
+        if k not in _cache_prov:
+            data = _sigpac_get(f"{SIGPAC_BASE}/provincias")
+            for f in data.get('features', []):
+                p = f.get('properties', {})
+                _cache_prov[_norm(p.get('nombre',''))] = str(p.get('codigo',''))
+        return _cache_prov.get(k, '')
+
+    def _get_mun_cod(prov_cod, nombre_mun):
+        k = f"{prov_cod}:{_norm(nombre_mun)}"
+        if k not in _cache_mun:
+            data = _sigpac_get(f"{SIGPAC_BASE}/municipios/{prov_cod}")
+            for f in data.get('features', []):
+                p = f.get('properties', {})
+                _cache_mun[f"{prov_cod}:{_norm(p.get('nombre',''))}"] = str(p.get('codigo',''))
+        return _cache_mun.get(k, '')
+
+    n_ok = 0; errores = []
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not any(row): continue
+        nombre    = str(row[ci_nombre]    or '').strip()
+        prov_nom  = str(row[ci_provincia] or '').strip()
+        mun_nom   = str(row[ci_municipio] or '').strip()
+        poligono  = str(row[ci_poligono]  or '').strip()
+        parcela   = str(row[ci_parcela]   or '').strip()
+        recinto   = str(row[ci_recinto]   or '').strip() if ci_recinto is not None else '1'
+
+        if not nombre or not poligono or not parcela or not prov_nom or not mun_nom:
+            errores.append(f"Fila incompleta: '{nombre or '?'}'")
+            continue
+
+        prov_cod = _get_prov_cod(prov_nom)
+        mun_cod  = _get_mun_cod(prov_cod, mun_nom) if prov_cod else ''
+
+        # Lookup SIGPAC para superficie y uso
+        sup_ha = None; uso_sigpac = ''
+        if prov_cod and mun_cod:
+            try:
+                sig = _sigpac_get(f"{SIGPAC_BASE}/recintos/{prov_cod}/{mun_cod}/0/0/{poligono}/{parcela}")
+                feats = sig.get('features', [])
+                if feats:
+                    props = feats[0].get('properties', {})
+                    dn = props.get('dn_surface')
+                    if dn: sup_ha = round(float(dn) / 10000, 4)
+                    uso_sigpac = props.get('uso_sigpac', '')
+            except Exception:
+                pass
+
+        cur.execute('''INSERT INTO parcelas
+            (user_id, nombre_finca, poligono, parcela_num, recinto,
+             provincia_cod, provincia_nombre, municipio_cod, municipio_nombre,
+             superficie_ha, uso_sigpac, activa)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,1)''',
+            (uid, nombre, poligono, parcela, recinto or '1',
+             prov_cod, prov_nom, mun_cod, mun_nom, sup_ha, uso_sigpac))
+        n_ok += 1
+
+    conn.commit(); conn.close()
+    return n_ok, len(errores), errores
+
+
+@app.route('/api/import/excel', methods=['POST'])
+@login_required
+def route_import_excel():
+    if 'file' not in request.files:
+        return jsonify({'ok': False, 'error': 'No se recibió ningún archivo'}), 400
+    f = request.files['file']
+    if not f.filename.endswith('.xlsx'):
+        return jsonify({'ok': False, 'error': 'El archivo debe ser .xlsx'}), 400
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(f, data_only=True)
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'openpyxl no instalado'}), 500
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'Error al leer el archivo: {e}'}), 400
+
+    uid = get_uid()
+    n_ok, n_err, errores = _importar_parcelas_wb(wb, uid)
+    msg = f"{n_ok} parcelas importadas"
+    if n_err: msg += f", {n_err} filas con error"
+    return jsonify({'ok': True, 'total': n_ok, 'resumen': msg, 'errores': errores})
+
+@app.route('/api/import/gsheet', methods=['POST'])
+@login_required
+def route_import_gsheet():
+    import re, urllib.request, io
+    data = request.get_json() or {}
+    url = (data.get('url') or '').strip()
+    if not url:
+        return jsonify({'ok': False, 'error': 'URL vacía'}), 400
+    m = re.search(r'/spreadsheets/d/([a-zA-Z0-9_-]+)', url)
+    if not m:
+        return jsonify({'ok': False, 'error': 'URL de Google Sheets no válida'}), 400
+    sheet_id = m.group(1)
+    export_url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx'
+    try:
+        req = urllib.request.Request(export_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            content = resp.read()
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'No se pudo descargar la hoja. ¿Está compartida públicamente? ({e})'}), 400
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(io.BytesIO(content), data_only=True)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'Error al leer el archivo: {e}'}), 400
+
+    uid = get_uid()
+    n_ok, n_err, errores = _importar_parcelas_wb(wb, uid)
+    msg = f"{n_ok} parcelas importadas"
+    if n_err: msg += f", {n_err} filas con error"
+    return jsonify({'ok': True, 'total': n_ok, 'resumen': msg, 'errores': errores})
+
+# ─────────────────────────────────────────────
+# EXPORT
+# ─────────────────────────────────────────────
+@app.route('/api/export/excel')
+@login_required
+def route_export_excel():
+    from exports import export_excel
+    uid = get_uid()
+    campana = request.args.get('campana', '2025/2026')
+    return export_excel(uid, campana)
+
+@app.route('/api/export/pdf')
+@login_required
+def route_export_pdf():
+    from export_pdf import export_pdf
+    uid = get_uid()
+    campana = request.args.get('campana', '2025/2026')
+    return export_pdf(uid, campana)
+
+@app.route('/api/backup/export')
+@login_required
+def backup_export():
+    db_path = os.path.join(os.path.dirname(__file__), 'cuaderno.db')
+    return send_file(db_path, as_attachment=True, download_name='cuaderno_backup.db')
+
+@app.route('/api/backup/import', methods=['POST'])
+@login_required
+@admin_required
+def backup_import():
+    if 'file' not in request.files:
+        return jsonify({"error": "Sin archivo"}), 400
+    f = request.files['file']
+    db_path = os.path.join(os.path.dirname(__file__), 'cuaderno.db')
+    f.save(db_path)
+    return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# BOOT
+# ─────────────────────────────────────────────
+if __name__ == '__main__':
+    init_db()
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV') != 'production'
+    app.run(host='0.0.0.0', port=port, debug=debug)
