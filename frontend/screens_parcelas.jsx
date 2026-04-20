@@ -1,0 +1,784 @@
+// ── Screen: Mis Parcelas — split panel + cascading SIGPAC ──
+
+// Lista oficial INE de las 52 provincias españolas. Hardcoded porque
+// es dato estable y el endpoint SIGPAC /provincias puede no estar accesible.
+const PROVINCIAS_ES = [
+    { cod: '15', nombre: 'A Coruña' },
+    { cod: '01', nombre: 'Álava' },
+    { cod: '02', nombre: 'Albacete' },
+    { cod: '03', nombre: 'Alicante' },
+    { cod: '04', nombre: 'Almería' },
+    { cod: '33', nombre: 'Asturias' },
+    { cod: '05', nombre: 'Ávila' },
+    { cod: '06', nombre: 'Badajoz' },
+    { cod: '08', nombre: 'Barcelona' },
+    { cod: '48', nombre: 'Bizkaia' },
+    { cod: '09', nombre: 'Burgos' },
+    { cod: '10', nombre: 'Cáceres' },
+    { cod: '11', nombre: 'Cádiz' },
+    { cod: '39', nombre: 'Cantabria' },
+    { cod: '12', nombre: 'Castellón' },
+    { cod: '51', nombre: 'Ceuta' },
+    { cod: '13', nombre: 'Ciudad Real' },
+    { cod: '14', nombre: 'Córdoba' },
+    { cod: '16', nombre: 'Cuenca' },
+    { cod: '20', nombre: 'Gipuzkoa' },
+    { cod: '17', nombre: 'Girona' },
+    { cod: '18', nombre: 'Granada' },
+    { cod: '19', nombre: 'Guadalajara' },
+    { cod: '21', nombre: 'Huelva' },
+    { cod: '22', nombre: 'Huesca' },
+    { cod: '07', nombre: 'Illes Balears' },
+    { cod: '23', nombre: 'Jaén' },
+    { cod: '26', nombre: 'La Rioja' },
+    { cod: '35', nombre: 'Las Palmas' },
+    { cod: '24', nombre: 'León' },
+    { cod: '25', nombre: 'Lleida' },
+    { cod: '27', nombre: 'Lugo' },
+    { cod: '28', nombre: 'Madrid' },
+    { cod: '29', nombre: 'Málaga' },
+    { cod: '52', nombre: 'Melilla' },
+    { cod: '30', nombre: 'Murcia' },
+    { cod: '31', nombre: 'Navarra' },
+    { cod: '32', nombre: 'Ourense' },
+    { cod: '34', nombre: 'Palencia' },
+    { cod: '36', nombre: 'Pontevedra' },
+    { cod: '37', nombre: 'Salamanca' },
+    { cod: '38', nombre: 'Santa Cruz de Tenerife' },
+    { cod: '40', nombre: 'Segovia' },
+    { cod: '41', nombre: 'Sevilla' },
+    { cod: '42', nombre: 'Soria' },
+    { cod: '43', nombre: 'Tarragona' },
+    { cod: '44', nombre: 'Teruel' },
+    { cod: '45', nombre: 'Toledo' },
+    { cod: '46', nombre: 'Valencia' },
+    { cod: '47', nombre: 'Valladolid' },
+    { cod: '49', nombre: 'Zamora' },
+    { cod: '50', nombre: 'Zaragoza' },
+];
+
+function ScreenParcelas({ campana, showToast }) {
+    const { useState, useEffect } = React;
+
+    const [parcelas, setParcelas]   = useState([]);
+    const [selected, setSelected]   = useState(null);
+    const [showForm, setShowForm]   = useState(false);
+    const [tab, setTab]             = useState('parcela'); // parcela | cultivos
+    const [loading, setLoading]     = useState(true);
+    const [cultivo, setCultivo]     = useState({});
+    const [savingCultivo, setSavingCultivo] = useState(false);
+
+    // Parcela form state
+    const EMPTY_FORM = {
+        nombre_finca:'', comunidad:'07-Castilla-La Mancha',
+        provincia_cod:'13', provincia_nombre:'Ciudad Real',
+        municipio_cod:'131', municipio_nombre:'Santa Cruz de Mudela',
+        poligono:'', parcela_num:'', recinto:'',
+        superficie_ha:'', uso_sigpac:'', sistema_explotacion:'Secano',
+        masa_agua_cercana:false, notas:'',
+    };
+    const [form, setForm]   = useState(EMPTY_FORM);
+    const [editId, setEditId] = useState(null);
+    const [saving, setSaving] = useState(false);
+
+    // SIGPAC search (edit form)
+    const [provincias, setProvincias]     = useState([]);
+    const [municipios, setMunicipios]     = useState([]);
+    const [poligonos, setPoligonos]       = useState([]);
+    const [parcelasSig, setParcelasSig]   = useState([]);
+    const [sigpacState, setSigpacState]   = useState('idle'); // idle|loading|ok|error
+
+    // SIGPAC wizard (from detail banner)
+    const [wiz, setWiz] = useState(null); // null | { step, prov_cod, prov_nombre, mun_cod, mun_nombre, pol, par }
+    const [wizMunicipios, setWizMunicipios] = useState([]);
+    const [wizSaving, setWizSaving] = useState(false);
+
+    const openWizard = () => setWiz({ step: 1, prov_cod:'', prov_nombre:'', mun_cod:'', mun_nombre:'', pol:'', par:'', superficie:'', uso:'' });
+    const closeWizard = () => { setWiz(null); setWizMunicipios([]); };
+
+    const wizSave = async () => {
+        setWizSaving(true);
+        try {
+            const body = {
+                nombre_finca: selected.nombre_finca,
+                provincia_cod: wiz.prov_cod, provincia_nombre: wiz.prov_nombre,
+                municipio_cod: wiz.mun_cod, municipio_nombre: wiz.mun_nombre,
+                poligono: wiz.pol, parcela_num: wiz.par, recinto: '',
+                superficie_ha: wiz.superficie || '', uso_sigpac: wiz.uso || '',
+                sistema_explotacion: selected.sistema_explotacion || 'Secano',
+                masa_agua_cercana: selected.masa_agua_cercana || false,
+                notas: selected.notas || '',
+            };
+            await fetch(`/api/parcelas/${selected.id}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body), credentials: 'include',
+            });
+            showToast('✅ Referencia SIGPAC guardada');
+            closeWizard();
+            fetchParcelas();
+            setSelected(p => ({ ...p, ...body }));
+        } catch { showToast('Error al guardar'); }
+        finally { setWizSaving(false); }
+    };
+
+    const wizNext = async () => {
+        if (wiz.step === 1) {
+            if (!wiz.prov_cod) { showToast('Selecciona una provincia'); return; }
+            const res = await fetch(`/api/sigpac/municipios?provincia_cod=${wiz.prov_cod}`, { credentials: 'include' });
+            const data = await res.json();
+            setWizMunicipios(Array.isArray(data?.data || data) ? (data?.data || data) : []);
+            setWiz(w => ({ ...w, step: 2, mun_cod:'', mun_nombre:'' }));
+        } else if (wiz.step === 2) {
+            if (!wiz.mun_cod) { showToast('Selecciona un municipio'); return; }
+            setWiz(w => ({ ...w, step: 3 }));
+        } else if (wiz.step === 3) {
+            if (!wiz.pol) { showToast('Introduce el número de polígono'); return; }
+            setWiz(w => ({ ...w, step: 4 }));
+        } else if (wiz.step === 4) {
+            if (!wiz.par) { showToast('Introduce el número de parcela'); return; }
+            // Consultar SIGPAC + Catastro para prellenar paso 5
+            setWizSaving(true);
+            try {
+                const res = await fetch(`/api/sigpac/datos?provincia=${wiz.prov_cod}&municipio=${wiz.mun_cod}&poligono=${wiz.pol}&parcela=${wiz.par}`, { credentials: 'include' });
+                const d = await res.json();
+                setWiz(w => ({
+                    ...w, step: 5,
+                    superficie: d.superficie_ha ? String(d.superficie_ha) : '',
+                    uso: d.uso_sigpac || '',
+                    cultivo_catastro: d.cultivo_catastro || '',
+                    ref_cat: d.referencia_cat || '',
+                    num_recintos: d.num_recintos || 0,
+                }));
+            } catch {
+                setWiz(w => ({ ...w, step: 5 }));
+            } finally { setWizSaving(false); }
+        } else if (wiz.step === 5) {
+            await wizSave();
+        }
+    };
+
+    const fetchParcelas = () => {
+        setLoading(true);
+        fetch('/api/parcelas', { credentials: 'include' }).then(r => r.json()).then(data => {
+            setParcelas(Array.isArray(data) ? data : []);
+            setLoading(false);
+        }).catch(() => setLoading(false));
+    };
+    useEffect(() => { fetchParcelas(); }, []);
+
+    // Load cultivo when parcel selected
+    useEffect(() => {
+        if (!selected) return;
+        fetch(`/api/cultivos-campana?parcela_id=${selected.id}&campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json()).then(data => {
+                const arr = Array.isArray(data) ? data : [];
+                setCultivo(arr[0] || { parcela_id: selected.id, campana });
+            });
+    }, [selected, campana]);
+
+    // SIGPAC: load provincias on form open
+    useEffect(() => {
+        if (!showForm) return;
+        fetch('/api/sigpac/provincias').then(r => r.json()).then(data => {
+            const arr = data?.data || data || [];
+            setProvincias(Array.isArray(arr) ? arr : []);
+        }).catch(() => {});
+    }, [showForm]);
+
+    const loadMunicipios = (prov_cod) => {
+        if (!prov_cod) return;
+        fetch(`/api/sigpac/municipios?provincia_cod=${prov_cod}`)
+            .then(r => r.json()).then(data => {
+                setMunicipios(Array.isArray(data?.data||data) ? (data?.data||data) : []);
+                setPoligonos([]); setParcelasSig([]);
+            }).catch(() => {});
+    };
+
+    const loadPoligonos = (prov_cod, mun_cod) => {
+        if (!prov_cod || !mun_cod) return;
+        fetch(`/api/sigpac/poligonos?provincia_cod=${prov_cod}&municipio_cod=${mun_cod}`)
+            .then(r => r.json()).then(data => {
+                setPoligonos(Array.isArray(data?.data||data) ? (data?.data||data) : []);
+                setParcelasSig([]);
+            }).catch(() => {});
+    };
+
+    const loadParcelasSigpac = (prov_cod, mun_cod, pol) => {
+        if (!pol) return;
+        fetch(`/api/sigpac/parcelas?provincia_cod=${prov_cod}&municipio_cod=${mun_cod}&poligono=${pol}`)
+            .then(r => r.json()).then(data => {
+                setParcelasSig(Array.isArray(data?.data||data) ? (data?.data||data) : []);
+            }).catch(() => {});
+    };
+
+    const buscarSigpac = async () => {
+        if (!form.poligono || !form.parcela_num) {
+            showToast('Introduce polígono y parcela para buscar');
+            return;
+        }
+        setSigpacState('loading');
+        try {
+            const res = await fetch(`/api/sigpac/recintos?provincia=${form.provincia_cod}&municipio=${form.municipio_cod}&poligono=${form.poligono}&parcela=${form.parcela_num}`);
+            const data = await res.json();
+            const recintos = data?.recintos || data?.data || data || [];
+            if (Array.isArray(recintos) && recintos.length > 0) {
+                const r = recintos.find(x => String(x.dn_oid||x.recinto||x.num_recinto) === String(form.recinto)) || recintos[0];
+                const sup = r.superficie ? (parseFloat(r.superficie)/10000).toFixed(4) : r.sup_gis || r.area || '';
+                const uso = r.uso_sigpac || r.coef_admis || '';
+                setForm(f => ({
+                    ...f,
+                    superficie_ha: sup || f.superficie_ha,
+                    uso_sigpac: uso || f.uso_sigpac,
+                }));
+                setSigpacState('ok');
+                showToast(`SIGPAC: ${recintos.length} recinto(s) encontrado(s)`);
+            } else {
+                setSigpacState('error');
+                showToast('Sin resultados SIGPAC para esa referencia');
+            }
+        } catch {
+            setSigpacState('error');
+            showToast('Error al conectar con SIGPAC');
+        }
+    };
+
+    const openNew = () => {
+        setForm(EMPTY_FORM); setEditId(null);
+        setShowForm(true); setSigpacState('idle');
+        setProvincias([]); setMunicipios([]); setPoligonos([]); setParcelasSig([]);
+    };
+    const openEdit = (p) => {
+        setForm({
+            nombre_finca: p.nombre_finca||'', comunidad: p.comunidad||'07-Castilla-La Mancha',
+            provincia_cod: p.provincia_cod||'13', provincia_nombre: p.provincia_nombre||'Ciudad Real',
+            municipio_cod: p.municipio_cod||'131', municipio_nombre: p.municipio_nombre||'Santa Cruz de Mudela',
+            poligono: p.poligono||'', parcela_num: p.parcela_num||'', recinto: p.recinto||'',
+            superficie_ha: p.superficie_ha||'', uso_sigpac: p.uso_sigpac||'',
+            sistema_explotacion: p.sistema_explotacion||'Secano',
+            masa_agua_cercana: !!p.masa_agua_cercana, notas: p.notas||'',
+        });
+        setEditId(p.id); setShowForm(true); setSigpacState('idle');
+    };
+
+    const saveParcela = async () => {
+        if (!form.nombre_finca.trim()) {
+            showToast('Escribe un nombre para la parcela');
+            return;
+        }
+        setSaving(true);
+        const method = editId ? 'PUT' : 'POST';
+        const url = editId ? `/api/parcelas/${editId}` : '/api/parcelas';
+        await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(form), credentials: 'include' });
+        showToast(editId ? 'Parcela actualizada' : 'Parcela añadida');
+        setSaving(false); setShowForm(false);
+        fetchParcelas();
+        if (!editId) setSelected(null);
+    };
+
+    const deleteParcela = async (p) => {
+        if (!confirm(`¿Eliminar "${p.nombre_finca}"? Los registros asociados se mantendrán.`)) return;
+        await fetch(`/api/parcelas/${p.id}`, { method: 'DELETE', credentials: 'include' });
+        showToast('Parcela eliminada');
+        setSelected(null);
+        fetchParcelas();
+    };
+
+    const saveCultivo = async () => {
+        setSavingCultivo(true);
+        await fetch('/api/cultivos-campana', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ ...cultivo, parcela_id: selected.id, campana }),
+            credentials: 'include',
+        });
+        showToast('Cultivo de campaña guardado');
+        setSavingCultivo(false);
+    };
+
+    // PAC eligibility label
+    const pacLabel = (uso) => {
+        if (!uso) return null;
+        const c = uso.split('-')[0].trim().toUpperCase();
+        const PAC = ['IV','TA','TH','OP','CF','CI','CS','CV','FF','FL','FS','FV','FY','OC','OF','OV','VF','VI','VO','PA','PR','PS'];
+        const ok = PAC.includes(c) && !uso.toUpperCase().includes('NO PAC');
+        return <span className={`chip ${ok ? 'chip-green' : 'chip-grey'}`}>{ok ? '✓ PAC' : '— No PAC'}</span>;
+    };
+
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
+    return (
+        <div style={{ height: 'calc(100vh - 60px)', display: 'flex', overflow: 'hidden' }}>
+            {/* ── LEFT: parcelas list ── */}
+            <div style={{
+                width: selected && !isMobile ? 320 : '100%',
+                minWidth: selected && !isMobile ? 320 : 0,
+                borderRight: selected && !isMobile ? '1px solid #e5e7eb' : 'none',
+                display: selected && isMobile ? 'none' : 'flex',
+                flexDirection: 'column', background: '#f8f9fb', overflow: 'hidden',
+            }}>
+                {/* Header */}
+                <div style={{ background:'linear-gradient(135deg,#15785A,#1D9E75)', padding:'52px 16px 16px' }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                        <div>
+                            <h1 style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.3rem', color:'#fff', margin:'0 0 2px' }}>
+                                Mis Parcelas
+                            </h1>
+                            <p style={{ color:'rgba(255,255,255,0.65)', fontSize:'0.78rem', margin:0 }}>
+                                {loading ? '…' : `${parcelas.length} parcela(s) visibles`}
+                            </p>
+                        </div>
+                        <button className="btn-primary" style={{ padding:'10px 14px', fontSize:'0.82rem' }} onClick={openNew}>
+                            + Nueva
+                        </button>
+                    </div>
+                </div>
+
+                {/* List */}
+                <div style={{ flex:1, overflowY:'auto' }}>
+                    {loading ? (
+                        <div style={{ textAlign:'center', color:'#9ca3af', padding:'48px 0' }}>Cargando parcelas…</div>
+                    ) : parcelas.length === 0 ? (
+                        <div style={{ textAlign:'center', padding:'48px 16px', color:'#9ca3af' }}>
+                            <div style={{ fontSize:40, marginBottom:8 }}>🗺️</div>
+                            <p style={{ fontFamily:'Manrope', fontWeight:700, color:'#374151', margin:'0 0 6px' }}>Sin parcelas</p>
+                            <p style={{ fontSize:'0.82rem' }}>Pulsa "+ Nueva" para añadir tu primera parcela</p>
+                        </div>
+                    ) : parcelas.map(p => (
+                        <div key={p.id} className="list-row"
+                            style={{ background: selected?.id===p.id ? '#fff7ed' : undefined, cursor:'pointer' }}
+                            onClick={() => { setSelected(p); setTab('parcela'); }}>
+                            <div className="accent-bar" style={{ background:'#1D9E75' }} />
+                            <div style={{ flex:1, minWidth:0 }}>
+                                <div style={{ fontWeight:700, fontSize:'0.9rem', color:'#111827' }}>{p.nombre_finca}</div>
+                                {p.poligono ? (
+                                    <div style={{ fontSize:'0.75rem', color:'#6b7280', marginTop:2 }}>
+                                        Pol <strong>{p.poligono}</strong> · Par <strong>{p.parcela_num}</strong>{p.recinto ? ` · Rec ${p.recinto}` : ''}
+                                    </div>
+                                ) : (
+                                    <div style={{ fontSize:'0.72rem', color:'#d97706', marginTop:2 }}>Sin datos SIGPAC</div>
+                                )}
+                                <div style={{ display:'flex', gap:6, marginTop:5, alignItems:'center', flexWrap:'wrap' }}>
+                                    {pacLabel(p.uso_sigpac)}
+                                    {p.superficie_ha ? <span className="chip chip-grey">{p.superficie_ha} ha</span> : null}
+                                </div>
+                            </div>
+                            <span style={{ color:'#d1d5db', fontSize:18 }}>›</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* ── RIGHT: detail / form ── */}
+            {selected && (
+                <div style={{ flex:1, overflowY:'auto', background:'#fff', display:'flex', flexDirection:'column' }}>
+                    {/* Detail header */}
+                    <div style={{ background:'linear-gradient(135deg,#15785A,#1D9E75)', padding:'20px 16px 0' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12 }}>
+                            <button className="back-btn" onClick={() => setSelected(null)} style={{ margin:0 }}>←</button>
+                            <div>
+                                <div style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', color:'#fff' }}>
+                                    {selected.nombre_finca}
+                                </div>
+                                <div style={{ fontSize:'0.75rem', color:'rgba(255,255,255,0.65)' }}>
+                                    {selected.municipio_nombre} · Pol {selected.poligono} / Par {selected.parcela_num}
+                                </div>
+                            </div>
+                            <div style={{ marginLeft:'auto', display:'flex', gap:8 }}>
+                                <button onClick={() => openEdit(selected)} style={{ background:'rgba(255,255,255,0.15)', border:'none', borderRadius:8, padding:'8px 12px', color:'#fff', cursor:'pointer', fontSize:'0.82rem', fontWeight:700 }}>✏️ Editar</button>
+                                <button onClick={() => deleteParcela(selected)} style={{ background:'rgba(239,68,68,0.25)', border:'none', borderRadius:8, padding:'8px 12px', color:'#fff', cursor:'pointer', fontSize:'0.82rem', fontWeight:700 }}>🗑</button>
+                            </div>
+                        </div>
+                        {/* Tabs */}
+                        <div style={{ display:'flex', gap:0, borderTop:'1px solid rgba(255,255,255,0.15)' }}>
+                            {[['parcela','📍 Parcela'],['cultivos','🌱 Cultivo campaña']].map(([id,label]) => (
+                                <button key={id} onClick={() => setTab(id)} style={{
+                                    background:'none', border:'none', borderBottom: tab===id ? '2px solid #fff' : '2px solid transparent',
+                                    padding:'12px 16px', cursor:'pointer', color: tab===id ? '#fff' : 'rgba(255,255,255,0.6)',
+                                    fontWeight: tab===id ? 700 : 500, fontSize:'0.85rem', fontFamily:'Work Sans',
+                                }}>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Tab content */}
+                    <div style={{ padding:'20px 16px', flex:1 }}>
+                        {tab === 'parcela' ? (
+                            <div>
+                                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
+                                    {[
+                                        ['Polígono', selected.poligono],
+                                        ['Parcela', selected.parcela_num],
+                                        ['Recinto', selected.recinto],
+                                        ['Superficie', `${selected.superficie_ha} ha`],
+                                        ['Uso SIGPAC', selected.uso_sigpac],
+                                        ['Sistema explot.', selected.sistema_explotacion],
+                                        ['Masa agua <50m', selected.masa_agua_cercana ? 'Sí ⚠️' : 'No'],
+                                        ['Municipio', selected.municipio_nombre],
+                                        ['Provincia', selected.provincia_nombre],
+                                    ].map(([k,v]) => (
+                                        <div key={k} style={{ background:'#f8f9fb', borderRadius:10, padding:'12px' }}>
+                                            <div style={{ fontSize:'0.65rem', fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:4 }}>{k}</div>
+                                            <div style={{ fontWeight:700, color:'#111827', fontSize:'0.9rem' }}>{v||'—'}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                                {!selected.poligono && (
+                                    <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'14px', marginBottom:12, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                                        <div>
+                                            <div style={{ fontWeight:700, fontSize:'0.85rem', color:'#92400e' }}>Sin referencia SIGPAC</div>
+                                            <div style={{ fontSize:'0.75rem', color:'#78350f', marginTop:2 }}>Necesaria para el PDF oficial</div>
+                                        </div>
+                                        <button onClick={openWizard} style={{ background:'#f59e0b', border:'none', borderRadius:8, padding:'8px 12px', color:'#fff', cursor:'pointer', fontWeight:700, fontSize:'0.78rem' }}>
+                                            Añadir
+                                        </button>
+                                    </div>
+                                )}
+                                {selected.notas && (
+                                    <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'12px', fontSize:'0.84rem', color:'#374151' }}>
+                                        📝 {selected.notas}
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div>
+                                <h2 className="section-title">Cultivo campaña {campana}</h2>
+                                <div className="responsive-grid cols-2" style={{ marginBottom:16 }}>
+                                    {[
+                                        ['cultivo','Cultivo','text','Olivar / Viñedo / Cereal…'],
+                                        ['variedad','Variedad','text','Picual, Tempranillo…'],
+                                        ['fecha_siembra','Fecha de siembra','date',''],
+                                        ['fecha_recoleccion_prevista','Fecha recol. prevista','date',''],
+                                        ['superficie_cultivada_ha','Superficie cultivada (ha)','number',''],
+                                    ].map(([k,l,t,ph]) => (
+                                        <div key={k}>
+                                            <label className="field-label">{l}</label>
+                                            <input type={t} className="input-field" placeholder={ph}
+                                                value={cultivo[k]||''}
+                                                onChange={e => setCultivo(c => ({...c,[k]:e.target.value}))} />
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ marginBottom:16 }}>
+                                    <label className="field-label">Notas</label>
+                                    <textarea className="input-field" rows={3} value={cultivo.notas||''} onChange={e => setCultivo(c => ({...c,notas:e.target.value}))} />
+                                </div>
+                                <button className="btn-primary" onClick={saveCultivo} disabled={savingCultivo}>
+                                    {savingCultivo ? 'Guardando…' : '💾 Guardar cultivo'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* ── Parcela Form Modal ── */}
+            {showForm && (
+                <div className="overlay" style={{ alignItems:'center', justifyContent:'center' }} onClick={() => setShowForm(false)}>
+                    <div style={{
+                        background:'#fff', borderRadius:20, maxWidth:640, width:'calc(100% - 24px)',
+                        maxHeight:'92vh', overflowY:'auto', animation:'scaleIn 0.2s ease',
+                    }} onClick={e => e.stopPropagation()}>
+                        {/* Form header */}
+                        <div style={{ background:'linear-gradient(135deg,#15785A,#1D9E75)', padding:'20px 20px 20px', borderRadius:'20px 20px 0 0' }}>
+                            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                                <h2 style={{ fontFamily:'Manrope', fontWeight:800, color:'#fff', fontSize:'1.15rem', margin:0 }}>
+                                    {editId ? '✏️ Editar parcela' : '➕ Nueva parcela'}
+                                </h2>
+                                <button onClick={() => setShowForm(false)} style={{ background:'rgba(255,255,255,0.15)', border:'none', borderRadius:'50%', width:36, height:36, color:'#fff', cursor:'pointer', fontSize:18 }}>✕</button>
+                            </div>
+                        </div>
+
+                        <div style={{ padding:'20px' }}>
+                            {/* Nombre finca */}
+                            <div style={{ marginBottom:14 }}>
+                                <label className="field-label">Nombre de la finca *</label>
+                                <input className="input-field" value={form.nombre_finca} onChange={e => setForm(f=>({...f,nombre_finca:e.target.value}))} placeholder="HAZA GRANDE, SIXTO…" />
+                            </div>
+
+                            {/* SIGPAC */}
+                            <div style={{ marginBottom:14 }}>
+                                <div style={{ background:'#f0fdf4', borderRadius:12, padding:'14px', border:'1px solid #d1fae5' }}>
+                                    <div style={{ fontFamily:'Manrope', fontWeight:700, fontSize:'0.85rem', color:'#065f46', marginBottom:12 }}>🗺 Datos SIGPAC</div>
+                                    <div className="responsive-grid cols-2" style={{ gap:10 }}>
+                                            {/* Provincia */}
+                                            <div>
+                                                <label className="field-label">Provincia</label>
+                                                <select className="input-field"
+                                                    value={form.provincia_cod}
+                                                    onChange={e => {
+                                                        const opt = PROVINCIAS_ES.find(p => p.cod === e.target.value);
+                                                        setForm(f=>({
+                                                            ...f,
+                                                            provincia_cod: e.target.value,
+                                                            provincia_nombre: opt?.nombre || '',
+                                                            municipio_cod: '',
+                                                            municipio_nombre: '',
+                                                        }));
+                                                        setMunicipios([]);
+                                                        setPoligonos([]);
+                                                        setParcelasSig([]);
+                                                        loadMunicipios(e.target.value);
+                                                    }}>
+                                                    <option value="">Seleccionar provincia…</option>
+                                                    {PROVINCIAS_ES.map(p => (
+                                                        <option key={p.cod} value={p.cod}>{p.nombre}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            {/* Municipio */}
+                                            <div>
+                                                <label className="field-label">Municipio</label>
+                                                <select className="input-field"
+                                                    value={form.municipio_cod}
+                                                    disabled={!form.provincia_cod || municipios.length === 0}
+                                                    onChange={e => {
+                                                        const opt = municipios.find(m => String(m.codigo) === e.target.value);
+                                                        const nombre = opt?.nombre ? opt.nombre.charAt(0) + opt.nombre.slice(1).toLowerCase() : '';
+                                                        setForm(f=>({...f, municipio_cod:e.target.value, municipio_nombre: nombre}));
+                                                        setPoligonos([]);
+                                                        setParcelasSig([]);
+                                                        loadPoligonos(form.provincia_cod, e.target.value);
+                                                    }}>
+                                                    <option value="">
+                                                        {!form.provincia_cod
+                                                            ? 'Elige provincia primero'
+                                                            : municipios.length === 0
+                                                                ? 'Cargando…'
+                                                                : 'Seleccionar municipio…'}
+                                                    </option>
+                                                    {municipios.map(m => {
+                                                        const pretty = m.nombre.charAt(0) + m.nombre.slice(1).toLowerCase();
+                                                        return <option key={m.codigo} value={m.codigo}>{pretty}</option>;
+                                                    })}
+                                                </select>
+                                            </div>
+                                            {/* Polígono */}
+                                            <div>
+                                                <label className="field-label">Polígono</label>
+                                                <input className="input-field" placeholder="25" value={form.poligono}
+                                                    onChange={e => {
+                                                        setForm(f=>({...f,poligono:e.target.value}));
+                                                        if (form.provincia_cod && form.municipio_cod) loadParcelasSigpac(form.provincia_cod, form.municipio_cod, e.target.value);
+                                                    }} />
+                                            </div>
+                                            {/* Parcela */}
+                                            <div>
+                                                <label className="field-label">Parcela</label>
+                                                <input className="input-field" placeholder="62" value={form.parcela_num}
+                                                    onChange={e => setForm(f=>({...f,parcela_num:e.target.value}))} />
+                                            </div>
+                                            {/* Recinto */}
+                                            <div>
+                                                <label className="field-label">Recinto</label>
+                                                <input className="input-field" placeholder="1" value={form.recinto}
+                                                    onChange={e => setForm(f=>({...f,recinto:e.target.value}))} />
+                                            </div>
+                                            {/* Buscar botón */}
+                                            <div style={{ display:'flex', alignItems:'flex-end' }}>
+                                                <button onClick={buscarSigpac} style={{
+                                                    background: sigpacState==='ok' ? '#1D9E75' : sigpacState==='error' ? '#dc2626' : '#1e3a5f',
+                                                    color:'#fff', border:'none', borderRadius:10, padding:'14px 16px',
+                                                    fontWeight:700, fontSize:'0.82rem', cursor:'pointer', width:'100%',
+                                                }}>
+                                                    {sigpacState==='loading' ? '⏳ Buscando…' : sigpacState==='ok' ? '✓ Datos SIGPAC' : sigpacState==='error' ? '✗ Sin datos' : '🔍 Buscar en SIGPAC'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                </div>
+                            </div>
+
+                            {/* Datos adicionales */}
+                            <div className="responsive-grid cols-2" style={{ marginBottom:14 }}>
+                                <div>
+                                    <label className="field-label">Superficie (ha)</label>
+                                    <input type="number" step="0.0001" className="input-field" value={form.superficie_ha}
+                                        onChange={e => setForm(f=>({...f,superficie_ha:e.target.value}))} placeholder="3.2541" />
+                                </div>
+                                <div>
+                                    <label className="field-label">Uso SIGPAC</label>
+                                    <input className="input-field" value={form.uso_sigpac}
+                                        onChange={e => setForm(f=>({...f,uso_sigpac:e.target.value}))} placeholder="OV-OLIVAR" />
+                                </div>
+                                <div>
+                                    <label className="field-label">Sistema de explotación</label>
+                                    <select className="input-field" value={form.sistema_explotacion} onChange={e => setForm(f=>({...f,sistema_explotacion:e.target.value}))}>
+                                        {['Invernadero','Mixto','Regadío','Secano'].map(s => <option key={s}>{s}</option>)}
+                                    </select>
+                                </div>
+                                <div style={{ display:'flex', alignItems:'center', gap:10, paddingTop:24 }}>
+                                    <input type="checkbox" id="agua_cb" checked={!!form.masa_agua_cercana}
+                                        onChange={e => setForm(f=>({...f,masa_agua_cercana:e.target.checked}))}
+                                        style={{ width:18, height:18 }} />
+                                    <label htmlFor="agua_cb" style={{ fontSize:'0.85rem', fontWeight:600, color:'#374151', cursor:'pointer' }}>
+                                        Masa de agua a menos de 50 m
+                                    </label>
+                                </div>
+                            </div>
+                            <div style={{ marginBottom:20 }}>
+                                <label className="field-label">Notas</label>
+                                <textarea className="input-field" rows={3} value={form.notas} onChange={e => setForm(f=>({...f,notas:e.target.value}))} placeholder="Observaciones opcionales…" />
+                            </div>
+
+                            <div style={{ display:'flex', gap:10 }}>
+                                <button className="btn-ghost" onClick={() => setShowForm(false)} style={{ flex:1 }}>Cancelar</button>
+                                <button className="btn-primary" onClick={saveParcela} disabled={saving} style={{ flex:2 }}>
+                                    {saving ? 'Guardando…' : (editId ? '💾 Actualizar' : '➕ Añadir parcela')}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── SIGPAC Wizard ── */}
+            {wiz && (
+                <div className="overlay" style={{ alignItems:'center', justifyContent:'center' }} onClick={closeWizard}>
+                    <div style={{
+                        background:'#fff', borderRadius:20, maxWidth:420, width:'calc(100% - 32px)',
+                        animation:'scaleIn 0.2s ease', overflow:'hidden',
+                    }} onClick={e => e.stopPropagation()}>
+                        {/* Header */}
+                        <div style={{ background:'linear-gradient(135deg,#15785A,#1D9E75)', padding:'20px' }}>
+                            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                                <div>
+                                    <div style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.05rem', color:'#fff' }}>
+                                        Referencia SIGPAC
+                                    </div>
+                                    <div style={{ fontSize:'0.75rem', color:'rgba(255,255,255,0.7)', marginTop:2 }}>
+                                        {selected?.nombre_finca}
+                                    </div>
+                                </div>
+                                <button onClick={closeWizard} style={{ background:'rgba(255,255,255,0.15)', border:'none', borderRadius:'50%', width:32, height:32, color:'#fff', cursor:'pointer', fontSize:16 }}>✕</button>
+                            </div>
+                            {/* Progress dots */}
+                            <div style={{ display:'flex', gap:6, marginTop:16 }}>
+                                {[1,2,3,4,5].map(s => (
+                                    <div key={s} style={{ flex:1, height:4, borderRadius:2, background: s <= wiz.step ? '#fff' : 'rgba(255,255,255,0.3)' }} />
+                                ))}
+                            </div>
+                            <div style={{ fontSize:'0.7rem', color:'rgba(255,255,255,0.6)', marginTop:6 }}>
+                                Paso {wiz.step} de 5
+                            </div>
+                        </div>
+
+                        <div style={{ padding:'24px 20px 20px' }}>
+                            {/* Step 1: Provincia */}
+                            {wiz.step === 1 && (
+                                <div>
+                                    <div style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', color:'#111827', marginBottom:6 }}>¿En qué provincia está?</div>
+                                    <p style={{ fontSize:'0.83rem', color:'#6b7280', marginBottom:16 }}>Selecciona la provincia donde se encuentra la parcela.</p>
+                                    <select className="input-field" value={wiz.prov_cod}
+                                        onChange={e => {
+                                            const opt = PROVINCIAS_ES.find(p => p.cod === e.target.value);
+                                            setWiz(w => ({ ...w, prov_cod: e.target.value, prov_nombre: opt?.nombre || '' }));
+                                        }}>
+                                        <option value="">Seleccionar provincia…</option>
+                                        {PROVINCIAS_ES.map(p => <option key={p.cod} value={p.cod}>{p.nombre}</option>)}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Step 2: Municipio */}
+                            {wiz.step === 2 && (
+                                <div>
+                                    <div style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', color:'#111827', marginBottom:6 }}>¿En qué municipio?</div>
+                                    <p style={{ fontSize:'0.83rem', color:'#6b7280', marginBottom:16 }}>Provincia: <strong>{wiz.prov_nombre}</strong></p>
+                                    <select className="input-field" value={wiz.mun_cod}
+                                        onChange={e => {
+                                            const opt = wizMunicipios.find(m => String(m.codigo) === e.target.value);
+                                            const nombre = opt?.nombre ? opt.nombre.charAt(0) + opt.nombre.slice(1).toLowerCase() : '';
+                                            setWiz(w => ({ ...w, mun_cod: e.target.value, mun_nombre: nombre }));
+                                        }}>
+                                        <option value="">{wizMunicipios.length === 0 ? 'Cargando…' : 'Seleccionar municipio…'}</option>
+                                        {wizMunicipios.map(m => {
+                                            const pretty = m.nombre.charAt(0) + m.nombre.slice(1).toLowerCase();
+                                            return <option key={m.codigo} value={m.codigo}>{pretty}</option>;
+                                        })}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Step 3: Polígono */}
+                            {wiz.step === 3 && (
+                                <div>
+                                    <div style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', color:'#111827', marginBottom:6 }}>Número de polígono</div>
+                                    <p style={{ fontSize:'0.83rem', color:'#6b7280', marginBottom:16 }}>
+                                        {wiz.mun_nombre}, {wiz.prov_nombre}<br/>
+                                        <span style={{ fontSize:'0.75rem' }}>Encuéntralo en tu recibo del IBI o en la web del SIGPAC.</span>
+                                    </p>
+                                    <input className="input-field" type="number" placeholder="Ej: 25"
+                                        value={wiz.pol} onChange={e => setWiz(w => ({ ...w, pol: e.target.value }))}
+                                        autoFocus style={{ fontSize:'1.4rem', fontWeight:700, textAlign:'center' }} />
+                                </div>
+                            )}
+
+                            {/* Step 4: Parcela */}
+                            {wiz.step === 4 && (
+                                <div>
+                                    <div style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', color:'#111827', marginBottom:6 }}>Número de parcela</div>
+                                    <p style={{ fontSize:'0.83rem', color:'#6b7280', marginBottom:16 }}>
+                                        Polígono <strong>{wiz.pol}</strong> · {wiz.mun_nombre}<br/>
+                                        <span style={{ fontSize:'0.75rem' }}>Número de parcela dentro del polígono.</span>
+                                    </p>
+                                    <input className="input-field" type="number" placeholder="Ej: 62"
+                                        value={wiz.par} onChange={e => setWiz(w => ({ ...w, par: e.target.value }))}
+                                        autoFocus style={{ fontSize:'1.4rem', fontWeight:700, textAlign:'center' }} />
+                                </div>
+                            )}
+
+                            {/* Step 5: Superficie y Uso */}
+                            {wiz.step === 5 && (
+                                <div>
+                                    <div style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', color:'#111827', marginBottom:6 }}>Confirma los datos</div>
+                                    <p style={{ fontSize:'0.83rem', color:'#6b7280', marginBottom:4 }}>
+                                        Pol. <strong>{wiz.pol}</strong> · Par. <strong>{wiz.par}</strong> · {wiz.mun_nombre}
+                                        {wiz.ref_cat && <span style={{ fontSize:'0.7rem', color:'#9ca3af' }}> · RC: {wiz.ref_cat}</span>}
+                                    </p>
+                                    {(wiz.superficie || wiz.uso) && (
+                                        <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:8, padding:'10px 12px', marginBottom:14, fontSize:'0.8rem', color:'#166534' }}>
+                                            ✓ Datos obtenidos automáticamente de SIGPAC y Catastro
+                                            {wiz.cultivo_catastro && <span> · {wiz.cultivo_catastro}</span>}
+                                        </div>
+                                    )}
+                                    <div style={{ marginBottom:12 }}>
+                                        <label className="field-label">Superficie (ha)</label>
+                                        <input className="input-field" type="number" step="0.0001" placeholder="Ej: 3.2541"
+                                            value={wiz.superficie} onChange={e => setWiz(w => ({ ...w, superficie: e.target.value }))}
+                                            autoFocus />
+                                    </div>
+                                    <div>
+                                        <label className="field-label">Uso SIGPAC</label>
+                                        <select className="input-field" value={wiz.uso} onChange={e => setWiz(w => ({ ...w, uso: e.target.value }))}>
+                                            <option value="">Seleccionar uso…</option>
+                                            {['OV-OLIVAR','VI-VIÑEDO','TA-TIERRA ARABLE','CF-CITRICOS','FL-FRUTOS SECOS','FY-FRUTALES','PA-PASTO','PR-PASTO ARBUSTIVO','PS-PASTIZAL','CA-VIALES','IM-IMPRODUCTIVO','AG-CORRIENTES AGUA','ZU-ZONA URBANA','ED-EDIFICACIONES','Otro'].map(u => <option key={u} value={u}>{u}</option>)}
+                                        </select>
+                                        {!wiz.uso && <div style={{ fontSize:'0.72rem', color:'#9ca3af', marginTop:4 }}>No detectado automáticamente. Puedes dejarlo en blanco.</div>}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Botones navegación */}
+                            <div style={{ display:'flex', gap:10, marginTop:24 }}>
+                                {wiz.step > 1 && (
+                                    <button className="btn-ghost" onClick={() => setWiz(w => ({ ...w, step: w.step - 1 }))} style={{ flex:1 }}>
+                                        ← Atrás
+                                    </button>
+                                )}
+                                {wiz.step === 5 && (
+                                    <button className="btn-ghost" onClick={wizSave} disabled={wizSaving} style={{ flex:1 }}>
+                                        Saltar
+                                    </button>
+                                )}
+                                <button className="btn-primary" onClick={wizNext} disabled={wizSaving}
+                                    style={{ flex:2 }}>
+                                    {wizSaving ? '⏳ Guardando…' : wiz.step === 5 ? '✅ Guardar' : 'Siguiente →'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

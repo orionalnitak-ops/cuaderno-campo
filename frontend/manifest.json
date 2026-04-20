@@ -1,0 +1,9 @@
+{
+    "name": "Cuaderno de Campo",
+    "short_name": "Cuaderno",
+    "description": "Cuaderno de Explotación Agrícola (RD 1311/2012)",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#f7faf8",
+    "theme_color": "#1D9E75"
+}
