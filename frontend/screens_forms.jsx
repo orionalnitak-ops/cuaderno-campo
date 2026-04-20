@@ -163,20 +163,20 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                     </FieldGroup>
                     <FieldGroup label="Dosis">
                         <div style={{ display: 'flex', gap: 8 }}>
-                            <input type="number" step="0.01" className="input-field" value={f.dosis_valor} onChange={e => set('dosis_valor', e.target.value)} placeholder="2.5" style={{ flex: 2 }} />
+                            <input type="text" inputMode="decimal" className="input-field" value={f.dosis_valor} onChange={e => set('dosis_valor', e.target.value)} placeholder="2.5" style={{ flex: 2 }} />
                             <select className="input-field" value={f.dosis_unidad} onChange={e => set('dosis_unidad', e.target.value)} style={{ flex: 1 }}>
                                 {['cc/ha', 'g/ha', 'kg/ha', 'L/100L', 'L/ha'].map(u => <option key={u}>{u}</option>)}
                             </select>
                         </div>
                     </FieldGroup>
                     <FieldGroup label="Volumen de caldo (L/ha)">
-                        <input type="number" step="1" className="input-field" value={f.volumen_caldo} onChange={e => set('volumen_caldo', e.target.value)} placeholder="300" />
+                        <input type="text" inputMode="numeric" className="input-field" value={f.volumen_caldo} onChange={e => set('volumen_caldo', e.target.value)} placeholder="300" />
                     </FieldGroup>
                     <FieldGroup label="Condiciones meteorológicas">
                         <input className="input-field" value={f.condiciones_meteo} onChange={e => set('condiciones_meteo', e.target.value)} placeholder="T 22°C · V <3 m/s · HR 45%" />
                     </FieldGroup>
                     <FieldGroup label="Plazo de seguridad (días)">
-                        <input type="number" min="0" className="input-field" value={f.plazo_seguridad_dias} onChange={e => set('plazo_seguridad_dias', e.target.value)} placeholder="15" />
+                        <input type="text" inputMode="numeric" className="input-field" value={f.plazo_seguridad_dias} onChange={e => set('plazo_seguridad_dias', e.target.value)} placeholder="15" />
                     </FieldGroup>
                     <FieldGroup label="Fecha mínima de cosecha">
                         <input type="date" className="input-field" value={f.fecha_recoleccion_minima} onChange={e => set('fecha_recoleccion_minima', e.target.value)} style={{ borderColor: plazoAlert ? '#ef4444' : undefined }} />
@@ -278,7 +278,7 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
                     </FieldGroup>
                     <FieldGroup label="Dosis">
                         <div style={{ display: 'flex', gap: 8 }}>
-                            <input type="number" step="0.01" className="input-field" value={f.dosis_valor} onChange={e => set('dosis_valor', e.target.value)} placeholder="200" style={{ flex: 2 }} />
+                            <input type="text" inputMode="decimal" className="input-field" value={f.dosis_valor} onChange={e => set('dosis_valor', e.target.value)} placeholder="200" style={{ flex: 2 }} />
                             <select className="input-field" value={f.dosis_unidad} onChange={e => set('dosis_unidad', e.target.value)} style={{ flex: 1 }}>
                                 {['kg/árbol', 'kg/ha', 'L/árbol', 'L/ha', 't/ha'].map(u => <option key={u}>{u}</option>)}
                             </select>
@@ -379,7 +379,7 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
                         <input className="input-field" value={f.maquinaria} onChange={e => set('maquinaria', e.target.value)} placeholder="Tractor, vibrador…" />
                     </FieldGroup>
                     <FieldGroup label="Horas trabajadas">
-                        <input type="number" step="0.5" min="0" className="input-field" value={f.horas_trabajadas} onChange={e => set('horas_trabajadas', e.target.value)} placeholder="4.5" />
+                        <input type="text" inputMode="decimal" className="input-field" value={f.horas_trabajadas} onChange={e => set('horas_trabajadas', e.target.value)} placeholder="4.5" />
                     </FieldGroup>
                     <FieldGroup label="Operario / Empresa">
                         <input className="input-field" value={f.operario} onChange={e => set('operario', e.target.value)} placeholder="Nombre o empresa" />
@@ -474,11 +474,11 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                         <input className="input-field" value={f.variedad} onChange={e => set('variedad', e.target.value)} placeholder="Picual, Tempranillo…" />
                     </FieldGroup>
                     <FieldGroup label="Superficie cosechada (ha)">
-                        <input type="number" step="0.001" className="input-field" value={f.superficie_cosechada_ha} onChange={e => set('superficie_cosechada_ha', e.target.value)} placeholder="3.25" />
+                        <input type="text" inputMode="decimal" className="input-field" value={f.superficie_cosechada_ha} onChange={e => set('superficie_cosechada_ha', e.target.value)} placeholder="3.25" />
                     </FieldGroup>
                     <FieldGroup label={`Producción total${rendimiento ? ` → ${rendimiento}` : ''}`}>
                         <div style={{ display: 'flex', gap: 8 }}>
-                            <input type="number" step="0.01" className="input-field" value={f.produccion_total_valor} onChange={e => set('produccion_total_valor', e.target.value)} placeholder="12500" style={{ flex: 2 }} />
+                            <input type="text" inputMode="decimal" className="input-field" value={f.produccion_total_valor} onChange={e => set('produccion_total_valor', e.target.value)} placeholder="12500" style={{ flex: 2 }} />
                             <select className="input-field" value={f.produccion_total_unidad} onChange={e => set('produccion_total_unidad', e.target.value)} style={{ flex: 1 }}>
                                 {['cajas', 'kg', 'L', 't', 'unidades'].map(u => <option key={u}>{u}</option>)}
                             </select>
@@ -501,7 +501,7 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                         <input className="input-field" value={f.comprador} onChange={e => set('comprador', e.target.value)} placeholder="Nombre de la cooperativa" />
                     </FieldGroup>
                     <FieldGroup label="Precio por unidad (€)">
-                        <input type="number" step="0.001" className="input-field" value={f.precio_unidad} onChange={e => set('precio_unidad', e.target.value)} placeholder="0.350 €/kg" />
+                        <input type="text" inputMode="decimal" className="input-field" value={f.precio_unidad} onChange={e => set('precio_unidad', e.target.value)} placeholder="0.350 €/kg" />
                     </FieldGroup>
                 </div>
                 <FieldGroup label="Notas">
