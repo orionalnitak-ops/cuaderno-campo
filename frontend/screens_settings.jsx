@@ -1,3 +1,13 @@
+// ── Shared field row — must live outside ScreenSettings to keep stable identity ──
+function FieldRow({ label, children }) {
+    return (
+        <div style={{ marginBottom: 16 }}>
+            <label className="field-label">{label}</label>
+            {children}
+        </div>
+    );
+}
+
 // ── Screen: Ajustes / Más ──
 function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout }) {
     const { useState, useEffect } = React;
@@ -69,13 +79,6 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout }
         { id: 'cuenta',      icon: '🔑', label: 'Mi cuenta' },
         { id: 'legal',       icon: '📄', label: 'Legal y privacidad' },
     ];
-
-    const FieldRow = ({ label, children }) => (
-        <div style={{ marginBottom: 16 }}>
-            <label className="field-label">{label}</label>
-            {children}
-        </div>
-    );
 
     const renderSection = () => {
         switch(section) {
