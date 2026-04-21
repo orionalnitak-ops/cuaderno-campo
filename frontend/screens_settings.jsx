@@ -1,23 +1,30 @@
-// ── Explotación section — standalone component so typing doesn't re-render ScreenSettings ──
+// ── Explotación section — uncontrolled inputs so Android IME never closes keyboard ──
 function ExplotacionSection({ showToast, onCampana }) {
-    const { useState, useEffect } = React;
-    const [form, setForm]   = useState({});
+    const { useState, useEffect, useRef } = React;
     const [saving, setSaving] = useState(false);
+    const formRef = useRef(null);
 
     useEffect(() => {
-        fetch('/api/explotacion').then(r => r.json()).then(d => setForm(d || {}));
+        fetch('/api/explotacion').then(r => r.json()).then(d => {
+            if (!formRef.current) return;
+            const fields = ['titular','nif','municipio','provincia','cp','telefono','email','campana_activa'];
+            fields.forEach(f => {
+                const el = formRef.current.querySelector(`[name="${f}"]`);
+                if (el) el.value = d[f] || '';
+            });
+        });
     }, []);
-
-    const set = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }));
 
     const save = async () => {
         setSaving(true);
+        const fd = new FormData(formRef.current);
+        const data = Object.fromEntries(fd.entries());
         await fetch('/api/explotacion', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(form),
+            body: JSON.stringify(data),
         });
-        if (form.campana_activa) onCampana(form.campana_activa);
+        if (data.campana_activa) onCampana(data.campana_activa);
         showToast('Datos guardados correctamente');
         setSaving(false);
     };
@@ -25,40 +32,42 @@ function ExplotacionSection({ showToast, onCampana }) {
     return (
         <div>
             <h2 className="section-title" style={{ marginBottom: 20 }}>Datos de la Explotación</h2>
-            <div className="responsive-grid cols-2">
-                <div style={{ marginBottom: 16 }}>
-                    <label className="field-label">Titular</label>
-                    <input className="input-field" value={form.titular||''} onChange={set('titular')} placeholder="Nombre completo" />
+            <form ref={formRef} onSubmit={e => e.preventDefault()}>
+                <div className="responsive-grid cols-2">
+                    <div style={{ marginBottom: 16 }}>
+                        <label className="field-label">Titular</label>
+                        <input name="titular" className="input-field" defaultValue="" placeholder="Nombre completo" />
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                        <label className="field-label">NIF / CIF</label>
+                        <input name="nif" className="input-field" defaultValue="" placeholder="12345678A" />
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                        <label className="field-label">Municipio</label>
+                        <input name="municipio" className="input-field" defaultValue="" placeholder="Santa Cruz de Mudela" />
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                        <label className="field-label">Provincia</label>
+                        <input name="provincia" className="input-field" defaultValue="" placeholder="Ciudad Real" />
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                        <label className="field-label">Código postal</label>
+                        <input name="cp" className="input-field" defaultValue="" placeholder="13730" />
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                        <label className="field-label">Teléfono</label>
+                        <input name="telefono" type="tel" className="input-field" defaultValue="" placeholder="600 000 000" />
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                        <label className="field-label">Email</label>
+                        <input name="email" type="email" className="input-field" defaultValue="" placeholder="titular@explotacion.es" />
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                        <label className="field-label">Campaña activa</label>
+                        <input name="campana_activa" className="input-field" defaultValue="" placeholder="2025/2026" />
+                    </div>
                 </div>
-                <div style={{ marginBottom: 16 }}>
-                    <label className="field-label">NIF / CIF</label>
-                    <input className="input-field" value={form.nif||''} onChange={set('nif')} placeholder="12345678A" />
-                </div>
-                <div style={{ marginBottom: 16 }}>
-                    <label className="field-label">Municipio</label>
-                    <input className="input-field" value={form.municipio||''} onChange={set('municipio')} placeholder="Santa Cruz de Mudela" />
-                </div>
-                <div style={{ marginBottom: 16 }}>
-                    <label className="field-label">Provincia</label>
-                    <input className="input-field" value={form.provincia||''} onChange={set('provincia')} placeholder="Ciudad Real" />
-                </div>
-                <div style={{ marginBottom: 16 }}>
-                    <label className="field-label">Código postal</label>
-                    <input className="input-field" value={form.cp||''} onChange={set('cp')} placeholder="13730" />
-                </div>
-                <div style={{ marginBottom: 16 }}>
-                    <label className="field-label">Teléfono</label>
-                    <input className="input-field" type="tel" value={form.telefono||''} onChange={set('telefono')} placeholder="600 000 000" />
-                </div>
-                <div style={{ marginBottom: 16 }}>
-                    <label className="field-label">Email</label>
-                    <input className="input-field" type="email" value={form.email||''} onChange={set('email')} placeholder="titular@explotacion.es" />
-                </div>
-                <div style={{ marginBottom: 16 }}>
-                    <label className="field-label">Campaña activa</label>
-                    <input className="input-field" value={form.campana_activa||''} onChange={set('campana_activa')} placeholder="2025/2026" />
-                </div>
-            </div>
+            </form>
             <button className="btn-primary" onClick={save} disabled={saving} style={{ marginTop: 8 }}>
                 {saving ? 'Guardando…' : '💾 Guardar datos'}
             </button>
