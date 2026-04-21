@@ -152,7 +152,7 @@ function App() {
 
     const renderScreen = () => {
         switch (screen) {
-            case 'inicio':    return <ScreenHome key={homeKey} campana={campana} onOpenForm={openForm} showToast={showMsg} />;
+            case 'inicio':    return <ScreenHome key={homeKey} campana={campana} onOpenForm={openForm} showToast={showMsg} onNavigate={navigate} />;
             case 'parcelas':  return <ScreenParcelas campana={campana} showToast={showMsg} />;
             case 'historial': return <ScreenHistorial campana={campana} onEdit={openForm} showToast={showMsg} />;
             case 'mas':       return <ScreenSettings  campana={campana} onCampana={setCampana} showToast={showMsg} currentUser={currentUser} onLogout={handleLogout} />;
