@@ -297,7 +297,7 @@ function App() {
                 </header>
 
                 {/* Screen content */}
-                <main id="main-content" style={{ flex: 1, overflowY: 'auto' }}>
+                <main id="main-content">
                     {renderScreen()}
                 </main>
             </div>
