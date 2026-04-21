@@ -1,14 +1,5 @@
-const CACHE_NAME = 'cuaderno-cache-v10';
+const CACHE_NAME = 'cuaderno-cache-v11';
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/app.jsx',
-  '/screens_auth.jsx',
-  '/screens_home.jsx',
-  '/screens_forms.jsx',
-  '/screens_history.jsx',
-  '/screens_settings.jsx',
-  '/screens_admin.jsx',
   '/manifest.json'
 ];
 
