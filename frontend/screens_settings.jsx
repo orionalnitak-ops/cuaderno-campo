@@ -1,76 +1,110 @@
-// ── Explotación section — uncontrolled inputs so Android IME never closes keyboard ──
-function ExplotacionSection({ showToast, onCampana }) {
-    const { useState, useEffect, useRef } = React;
+// ── Explotación modal (position:fixed → teclado Android funciona) ──
+function ExplotacionModal({ data, onSave, onClose }) {
+    const { useState } = React;
+    const [form, setForm] = useState(data || {});
     const [saving, setSaving] = useState(false);
-    const formRef = useRef(null);
-
-    useEffect(() => {
-        fetch('/api/explotacion').then(r => r.json()).then(d => {
-            if (!formRef.current) return;
-            const fields = ['titular','nif','municipio','provincia','cp','telefono','email','campana_activa'];
-            fields.forEach(f => {
-                const el = formRef.current.querySelector(`[name="${f}"]`);
-                if (el) el.value = d[f] || '';
-            });
-        });
-    }, []);
+    const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
     const save = async () => {
         setSaving(true);
-        const fd = new FormData(formRef.current);
-        const data = Object.fromEntries(fd.entries());
         await fetch('/api/explotacion', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data),
+            body: JSON.stringify(form),
         });
-        if (data.campana_activa) onCampana(data.campana_activa);
-        showToast('Datos guardados correctamente');
+        onSave(form);
         setSaving(false);
     };
 
     return (
-        <div>
-            <h2 className="section-title" style={{ marginBottom: 20 }}>Datos de la Explotación</h2>
-            <form ref={formRef} onSubmit={e => e.preventDefault()}>
-                <div className="responsive-grid cols-2">
-                    <div style={{ marginBottom: 16 }}>
-                        <label className="field-label">Titular</label>
-                        <input name="titular" className="input-field" defaultValue="" placeholder="Nombre completo" />
-                    </div>
-                    <div style={{ marginBottom: 16 }}>
-                        <label className="field-label">NIF / CIF</label>
-                        <input name="nif" className="input-field" defaultValue="" placeholder="12345678A" />
-                    </div>
-                    <div style={{ marginBottom: 16 }}>
-                        <label className="field-label">Municipio</label>
-                        <input name="municipio" className="input-field" defaultValue="" placeholder="Santa Cruz de Mudela" />
-                    </div>
-                    <div style={{ marginBottom: 16 }}>
-                        <label className="field-label">Provincia</label>
-                        <input name="provincia" className="input-field" defaultValue="" placeholder="Ciudad Real" />
-                    </div>
-                    <div style={{ marginBottom: 16 }}>
-                        <label className="field-label">Código postal</label>
-                        <input name="cp" className="input-field" defaultValue="" placeholder="13730" />
-                    </div>
-                    <div style={{ marginBottom: 16 }}>
-                        <label className="field-label">Teléfono</label>
-                        <input name="telefono" type="tel" className="input-field" defaultValue="" placeholder="600 000 000" />
-                    </div>
-                    <div style={{ marginBottom: 16 }}>
-                        <label className="field-label">Email</label>
-                        <input name="email" type="email" className="input-field" defaultValue="" placeholder="titular@explotacion.es" />
-                    </div>
-                    <div style={{ marginBottom: 16 }}>
-                        <label className="field-label">Campaña activa</label>
-                        <input name="campana_activa" className="input-field" defaultValue="" placeholder="2025/2026" />
-                    </div>
+        <div className="overlay" onClick={onClose}>
+            <div className="module-sheet" onClick={e => e.stopPropagation()} style={{ paddingBottom: 40 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
+                    <h3 style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', margin:0 }}>🏡 Datos de la Explotación</h3>
+                    <button onClick={onClose} style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#6b7280' }}>✕</button>
                 </div>
-            </form>
-            <button className="btn-primary" onClick={save} disabled={saving} style={{ marginTop: 8 }}>
-                {saving ? 'Guardando…' : '💾 Guardar datos'}
-            </button>
+                {[
+                    ['titular','Titular','text','Nombre completo'],
+                    ['nif','NIF / CIF','text','12345678A'],
+                    ['municipio','Municipio','text','Santa Cruz de Mudela'],
+                    ['provincia','Provincia','text','Ciudad Real'],
+                    ['cp','Código postal','text','13730'],
+                    ['telefono','Teléfono','tel','600 000 000'],
+                    ['email','Email','email','titular@explotacion.es'],
+                    ['campana_activa','Campaña activa','text','2025/2026'],
+                ].map(([k,l,t,ph]) => (
+                    <div key={k} style={{ marginBottom:14 }}>
+                        <label className="field-label">{l}</label>
+                        <input type={t} className="input-field" value={form[k]||''} onChange={set(k)} placeholder={ph} />
+                    </div>
+                ))}
+                <button className="btn-primary" style={{ width:'100%', marginTop:8 }} onClick={save} disabled={saving}>
+                    {saving ? 'Guardando…' : '💾 Guardar datos'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ── Explotación section — muestra resumen + botón editar (modal) ──
+function ExplotacionSection({ showToast, onCampana }) {
+    const { useState, useEffect } = React;
+    const [data, setData]     = useState(null);
+    const [showModal, setShowModal] = useState(false);
+
+    useEffect(() => {
+        fetch('/api/explotacion').then(r => r.json()).then(d => setData(d || {}));
+    }, []);
+
+    const handleSave = (form) => {
+        setData(form);
+        if (form.campana_activa) onCampana(form.campana_activa);
+        showToast('Datos guardados correctamente');
+        setShowModal(false);
+    };
+
+    const row = (label, value) => value ? (
+        <div style={{ display:'flex', gap:8, fontSize:'0.85rem', padding:'6px 0', borderBottom:'1px solid #f3f4f6' }}>
+            <span style={{ color:'#6b7280', minWidth:130 }}>{label}</span>
+            <span style={{ color:'#111827', fontWeight:600 }}>{value}</span>
+        </div>
+    ) : null;
+
+    return (
+        <div>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
+                <h2 className="section-title" style={{ margin:0 }}>Datos de la Explotación</h2>
+                <button className="btn-primary" style={{ padding:'10px 16px', fontSize:'0.85rem' }}
+                    onClick={() => setShowModal(true)}>
+                    ✏️ Editar
+                </button>
+            </div>
+            {data === null ? (
+                <p style={{ color:'#9ca3af' }}>Cargando…</p>
+            ) : (
+                <div className="card card-p">
+                    {row('Titular', data.titular)}
+                    {row('NIF / CIF', data.nif)}
+                    {row('Municipio', data.municipio)}
+                    {row('Provincia', data.provincia)}
+                    {row('Código postal', data.cp)}
+                    {row('Teléfono', data.telefono)}
+                    {row('Email', data.email)}
+                    {row('Campaña activa', data.campana_activa)}
+                    {!data.titular && (
+                        <p style={{ color:'#9ca3af', fontSize:'0.85rem', margin:0 }}>
+                            Pulsa "Editar" para rellenar los datos de tu explotación.
+                        </p>
+                    )}
+                </div>
+            )}
+            {showModal && data !== null && (
+                <ExplotacionModal
+                    data={data}
+                    onSave={handleSave}
+                    onClose={() => setShowModal(false)}
+                />
+            )}
         </div>
     );
 }
