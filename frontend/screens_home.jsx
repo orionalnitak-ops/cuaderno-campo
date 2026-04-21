@@ -7,7 +7,7 @@ function _wxDiaLabel(fechaStr) {
     return d.toLocaleDateString('es-ES', { weekday:'short', day:'numeric', month:'short' });
 }
 
-function ScreenHome({ campana, onOpenForm, showToast }) {
+function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     const { useState, useEffect, useCallback } = React;
 
     // ── Estado principal ──
@@ -591,10 +591,23 @@ function ScreenHome({ campana, onOpenForm, showToast }) {
                             </div>
                         </>
                     ) : (
-                        <div style={{ padding: '20px 0', opacity: 0.8, fontSize: '0.88rem' }}>
-                            {wxState === 'loading' ? '⏳ Cargando meteorología…'
-                            : wxState === 'idle'   ? '⏳ Iniciando…'
-                            : '⚠️ Sin datos — configura el municipio en tu explotación'}
+                        <div style={{ padding: '16px 0' }}>
+                            {wxState === 'loading' || wxState === 'idle' ? (
+                                <span style={{ opacity: 0.8, fontSize: '0.88rem' }}>⏳ Cargando meteorología…</span>
+                            ) : (
+                                <div>
+                                    <div style={{ fontSize: '0.88rem', opacity: 0.85, marginBottom: 10 }}>
+                                        📍 Configura tu municipio para ver el tiempo local
+                                    </div>
+                                    <button onClick={() => onNavigate && onNavigate('mas')} style={{
+                                        background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.3)',
+                                        borderRadius: 10, color: '#fff', padding: '8px 16px',
+                                        fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)',
+                                    }}>
+                                        ⚙️ Ir a Datos → Explotación
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
