@@ -352,9 +352,10 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     }
 
     // ════════════════════════════════════════════
-    // PANTALLA: "Rellénalo tú" → desde cero (módulos)
     // ════════════════════════════════════════════
-    if (modalOpcion === 'tu' && tuSubView === 'desde_cero') {
+    // PANTALLA: "Rellénalo tú" → módulos + Parcelas
+    // ════════════════════════════════════════════
+    if (modalOpcion === 'tu' && !tuSubView) {
         const MODULOS = [
             { icon: '🌿', label: 'Tratamiento fitosanitario', m: 'tratamiento' },
             { icon: '🌱', label: 'Abono / Fertilización',     m: 'fertilizacion' },
@@ -363,7 +364,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
         ];
         return (
             <div style={{ padding: '16px' }}>
-                <button onClick={() => setTuSubView(null)} style={S.backBtn}>← Volver</button>
+                <button onClick={volverHome} style={S.backBtn}>← Volver</button>
                 <h2 style={{ fontWeight: 800, fontSize: '1.4rem', margin: '0 0 16px' }}>¿Qué quieres registrar?</h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {MODULOS.map(q => (
@@ -373,15 +374,20 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                             <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{q.label}</div>
                         </button>
                     ))}
+                    <button onClick={() => setTuSubView('parcelas')}
+                        style={{ background: 'var(--surface-container-low)', borderRadius: 'var(--radius-lg)', border: '1.5px solid var(--outline-variant)', padding: '18px 16px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <div style={{ fontSize: 30 }}>🗺️</div>
+                        <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Parcelas</div>
+                    </button>
                 </div>
             </div>
         );
     }
 
     // ════════════════════════════════════════════
-    // PANTALLA: "Rellénalo tú" → 3 opciones
+    // PANTALLA: "Rellénalo tú" → Parcelas (importar / Excel / Sheets)
     // ════════════════════════════════════════════
-    if (modalOpcion === 'tu') {
+    if (modalOpcion === 'tu' && tuSubView === 'parcelas') {
         const handleImport = async (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -407,9 +413,9 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
 
         return (
             <div style={{ padding: '16px' }}>
-                <button onClick={volverHome} style={S.backBtn}>← Volver</button>
-                <h2 style={{ fontWeight: 800, fontSize: '1.5rem', margin: '0 0 6px' }}>Rellénalo tú</h2>
-                <p style={{ fontSize: '0.83rem', color: 'var(--on-surface-variant)', margin: '0 0 24px' }}>Elige cómo quieres introducir los datos.</p>
+                <button onClick={() => setTuSubView(null)} style={S.backBtn}>← Volver</button>
+                <h2 style={{ fontWeight: 800, fontSize: '1.5rem', margin: '0 0 6px' }}>Parcelas</h2>
+                <p style={{ fontSize: '0.83rem', color: 'var(--on-surface-variant)', margin: '0 0 24px' }}>Importa tus parcelas o introdúcelas manualmente.</p>
 
                 {/* ── Aviso formato importación ── */}
                 <div style={{ background: '#fefce8', border: '1.5px solid #fde68a', borderRadius: 'var(--radius-lg)', padding: '14px 16px', marginBottom: 16 }}>
@@ -446,15 +452,6 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <button onClick={() => setTuSubView('desde_cero')}
-                        style={{ ...S.opcionCard, background: 'linear-gradient(135deg, #1e3a5f, #1d4ed8)' }}>
-                        <div style={{ fontSize: 36 }}>✏️</div>
-                        <div>
-                            <div style={{ fontWeight: 700, fontSize: '1rem' }}>Empezar desde cero</div>
-                            <div style={{ fontSize: '0.78rem', marginTop: 3, opacity: 0.85 }}>Formularios simples por módulo</div>
-                        </div>
-                    </button>
-
                     <input ref={fileRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={handleImport} />
                     <button onClick={() => fileRef.current.click()} disabled={importando}
                         style={{ ...S.opcionCard, background: 'linear-gradient(135deg, #14532d, #16a34a)', opacity: importando ? 0.7 : 1 }}>
