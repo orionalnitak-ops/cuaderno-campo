@@ -6,7 +6,7 @@ const NAV_ITEMS = [
     { id: 'parcelas',  icon: '🗺️', label: 'Parcelas' },
     { id: '_fab',      icon: '✏️',  label: 'Anotar', fab: true },
     { id: 'historial', icon: '📋', label: 'Historial' },
-    { id: 'mas',       icon: '⚙️', label: 'Ajustes' },
+    { id: 'mas',       icon: '⚙️', label: 'Datos' },
 ];
 
 const MODULE_CARDS = [
@@ -166,7 +166,7 @@ function App() {
         { id: 'inicio',    icon: '🏡', label: 'Inicio' },
         { id: 'parcelas',  icon: '🗺️', label: 'Mis parcelas' },
         { id: 'historial', icon: '📋', label: 'Historial' },
-        { id: 'mas',       icon: '⚙️', label: 'Ajustes' },
+        { id: 'mas',       icon: '⚙️', label: 'Datos' },
         ...(isAdmin ? [{ id: 'admin', icon: '👥', label: 'Panel Admin' }] : []),
     ];
 
@@ -178,7 +178,7 @@ function App() {
         { id: 'historial', icon: '📋', label: 'Historial' },
         isAdmin
             ? { id: 'admin', icon: '👥', label: 'Admin' }
-            : { id: 'mas',   icon: '⚙️', label: 'Ajustes' },
+            : { id: 'mas',   icon: '⚙️', label: 'Datos' },
     ];
 
     return (
