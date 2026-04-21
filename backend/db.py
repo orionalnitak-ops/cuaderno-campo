@@ -1,7 +1,7 @@
 import sqlite3
 import os
 
-DATABASE_NAME = 'cuaderno.db'
+DATABASE_NAME = os.environ.get('DB_PATH', 'cuaderno.db')
 
 # Single-user mode — all data belongs to this user ID
 SINGLE_USER_ID = 2
