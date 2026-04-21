@@ -357,10 +357,11 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     // ════════════════════════════════════════════
     if (modalOpcion === 'tu' && !tuSubView) {
         const MODULOS = [
-            { icon: '🌿', label: 'Tratamiento fitosanitario', m: 'tratamiento' },
-            { icon: '🌱', label: 'Abono / Fertilización',     m: 'fertilizacion' },
-            { icon: '🚜', label: 'Labor agrícola',            m: 'labor' },
-            { icon: '📦', label: 'Cosecha',                   m: 'cosecha' },
+            { icon: '🗺️', label: 'Parcelas',                  m: 'parcelas' },
+            { icon: '🚜', label: 'Labor agrícola',             m: 'labor' },
+            { icon: '🌿', label: 'Tratamiento fitosanitario',  m: 'tratamiento' },
+            { icon: '🌱', label: 'Abono / Fertilización',      m: 'fertilizacion' },
+            { icon: '📦', label: 'Cosecha',                    m: 'cosecha' },
         ];
         return (
             <div style={{ padding: '16px' }}>
@@ -368,17 +369,13 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 <h2 style={{ fontWeight: 800, fontSize: '1.4rem', margin: '0 0 16px' }}>¿Qué quieres registrar?</h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {MODULOS.map(q => (
-                        <button key={q.m} onClick={() => onOpenForm(q.m)}
-                            style={{ background: 'var(--surface-container-low)', borderRadius: 'var(--radius-lg)', border: '1.5px solid var(--outline-variant)', padding: '18px 16px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 16 }}>
-                            <div style={{ fontSize: 30 }}>{q.icon}</div>
-                            <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{q.label}</div>
+                        <button key={q.m}
+                            onClick={() => q.m === 'parcelas' ? setTuSubView('parcelas') : onOpenForm(q.m)}
+                            style={{ background: 'var(--surface-container-low)', borderRadius: 'var(--radius-lg)', border: '1.5px solid var(--outline-variant)', padding: '20px 18px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 18 }}>
+                            <div style={{ fontSize: 34 }}>{q.icon}</div>
+                            <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{q.label}</div>
                         </button>
                     ))}
-                    <button onClick={() => setTuSubView('parcelas')}
-                        style={{ background: 'var(--surface-container-low)', borderRadius: 'var(--radius-lg)', border: '1.5px solid var(--outline-variant)', padding: '18px 16px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 16 }}>
-                        <div style={{ fontSize: 30 }}>🗺️</div>
-                        <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Parcelas</div>
-                    </button>
                 </div>
             </div>
         );
