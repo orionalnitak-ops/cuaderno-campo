@@ -101,6 +101,10 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
             const alertas = [];
             daily.forEach(d => {
                 const lbl = _wxDiaLabel(d.fecha);
+                // Tormentas (códigos WMO 95-99)
+                if (d.code === 99) alertas.push({ nivel: 'rojo',    icon: '🔴', texto: `⚡ Tormenta con granizo fuerte — ${lbl}` });
+                else if (d.code === 96) alertas.push({ nivel: 'naranja', icon: '🟠', texto: `⚡ Tormenta con granizo — ${lbl}` });
+                else if (d.code === 95) alertas.push({ nivel: 'amarillo',icon: '🟡', texto: `⚡ Tormenta eléctrica — ${lbl}` });
                 if (d.lluvia_mm >= 40) alertas.push({ nivel: 'rojo',    icon: '🔴', texto: `Lluvia intensa (${d.lluvia_mm}mm) — ${lbl}` });
                 else if (d.lluvia_mm >= 20) alertas.push({ nivel: 'naranja', icon: '🟠', texto: `Lluvia fuerte (${d.lluvia_mm}mm) — ${lbl}` });
                 else if (d.lluvia_mm >= 10) alertas.push({ nivel: 'amarillo',icon: '🟡', texto: `Lluvia moderada (${d.lluvia_mm}mm) — ${lbl}` });
@@ -114,11 +118,22 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 else if (d.tmin <= -4) alertas.push({ nivel: 'amarillo',icon: '🟡', texto: `Helada (${d.tmin}°C) — ${lbl}` });
             });
 
+            // Alertas oficiales AEMET (si hay API key configurada)
+            let aemetAlertas = [];
+            try {
+                const provincia = hit.admin2 || hit.admin1 || '';
+                if (provincia) {
+                    const aRes  = await fetch(`/api/aemet/alertas?provincia=${encodeURIComponent(provincia)}`);
+                    const aJson = await aRes.json();
+                    if (aJson.ok) aemetAlertas = aJson.alertas || [];
+                }
+            } catch {}
+
             setWeather({
                 temp: Math.round(c.temperature_2m), hum: Math.round(c.relative_humidity_2m),
                 wind: Math.round(c.wind_speed_10m), precip: c.precipitation ?? 0,
                 code: c.weather_code, municipio: hit.name,
-                daily, hourly, alertas,
+                daily, hourly, alertas: [...aemetAlertas, ...alertas],
             });
             setWxState('ok');
         } catch { setWxState('error'); }
@@ -539,30 +554,30 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 <div style={{ padding: '18px 20px 16px' }}>
                     {wxState === 'ok' && weather ? (
                         <>
-                            {/* Bloque único: icono+temp | stats+lluvia */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                                {/* Izquierda: icono + temperatura + descripción */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
-                                    <span style={{ fontSize: 48, lineHeight: 1 }}>{wx[0]}</span>
-                                    <div>
-                                        <div style={{ fontWeight: 900, fontSize: '2.6rem', lineHeight: 1 }}>{weather.temp}°C</div>
-                                        <div style={{ fontSize: '0.72rem', opacity: 0.8, marginTop: 2 }}>{wx[1]}</div>
-                                        <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-                                            <span style={{ fontSize: '0.7rem', opacity: 0.75 }}>💧{weather.hum}%</span>
-                                            <span style={{ fontSize: '0.7rem', opacity: 0.75 }}>💨{weather.wind}km/h</span>
-                                            <span style={{ fontSize: '0.7rem', opacity: 0.75 }}>🌡️{weather.daily?.[0]?.tmax ?? '—'}°/{weather.daily?.[0]?.tmin ?? '—'}°</span>
-                                        </div>
+                            {/* Temperatura + icono + stats */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ fontSize: 48, lineHeight: 1 }}>{wx[0]}</span>
+                                <div>
+                                    <div style={{ fontWeight: 900, fontSize: '2.6rem', lineHeight: 1 }}>{weather.temp}°C</div>
+                                    <div style={{ fontSize: '0.72rem', opacity: 0.8, marginTop: 2 }}>{wx[1]}</div>
+                                    <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                                        <span style={{ fontSize: '0.7rem', opacity: 0.75 }}>💧{weather.hum}%</span>
+                                        <span style={{ fontSize: '0.7rem', opacity: 0.75 }}>💨{weather.wind}km/h</span>
+                                        <span style={{ fontSize: '0.7rem', opacity: 0.75 }}>🌡️{weather.daily?.[0]?.tmax ?? '—'}°/{weather.daily?.[0]?.tmin ?? '—'}°</span>
                                     </div>
                                 </div>
-                                {/* Derecha: lluvia destacada */}
-                                <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: '10px 14px', flexShrink: 0 }}>
+                            </div>
+
+                            {/* Probabilidad de lluvia */}
+                            <div style={{ marginTop: 12, background: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 18 }}>
+                                <div>
                                     <div style={{ fontSize: '1.6rem', fontWeight: 900, lineHeight: 1, color: '#7dd3fc' }}>
                                         {weather.daily?.[0]?.prob_lluvia ?? 0}%
                                     </div>
                                     <div style={{ fontSize: '0.6rem', opacity: 0.8, marginTop: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>prob. lluvia</div>
-                                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#bae6fd', marginTop: 5 }}>
-                                        {(weather.daily?.[0]?.lluvia_mm ?? 0) > 0 ? `${weather.daily[0].lluvia_mm} L/m²` : '0 L/m²'}
-                                    </div>
+                                </div>
+                                <div style={{ fontSize: '1rem', fontWeight: 800, color: '#bae6fd' }}>
+                                    {(weather.daily?.[0]?.lluvia_mm ?? 0) > 0 ? `${weather.daily[0].lluvia_mm} L/m²` : '0 L/m²'}
                                 </div>
                             </div>
 
@@ -572,9 +587,12 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                                     {weather.alertas.map((a, i) => (
                                         <div key={i} style={{ background: 'rgba(0,0,0,0.35)', borderLeft: `4px solid ${a.nivel==='rojo'?'#f87171':a.nivel==='naranja'?'#fb923c':'#fbbf24'}`, borderRadius: '0 8px 8px 0', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
                                             <span style={{ fontSize: 16 }}>{a.icon}</span>
-                                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: a.nivel==='rojo'?'#fca5a5':a.nivel==='naranja'?'#fdba74':'#fde68a' }}>
+                                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: a.nivel==='rojo'?'#fca5a5':a.nivel==='naranja'?'#fdba74':'#fde68a', flex: 1 }}>
                                                 ⚠️ {a.texto}
                                             </span>
+                                            {a.fuente === 'AEMET' && (
+                                                <span style={{ fontSize: '0.6rem', fontWeight: 800, background: 'rgba(255,255,255,0.15)', borderRadius: 4, padding: '1px 5px', letterSpacing: '0.05em', opacity: 0.9 }}>AEMET</span>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
