@@ -551,41 +551,41 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
               <div style={{ maxWidth: 900, margin: '0 auto' }}>
 
                 {/* ── PARTE SUPERIOR: día actual + alertas ── */}
-                <div style={{ padding: '18px 20px 16px' }}>
+                <div style={{ padding: '10px 16px 10px' }}>
                     {wxState === 'ok' && weather ? (
                         <>
-                            {/* Temperatura + icono + stats */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <span style={{ fontSize: 48, lineHeight: 1 }}>{wx[0]}</span>
-                                <div>
-                                    <div style={{ fontWeight: 900, fontSize: '2.6rem', lineHeight: 1 }}>{weather.temp}°C</div>
-                                    <div style={{ fontSize: '0.72rem', opacity: 0.8, marginTop: 2 }}>{wx[1]}</div>
-                                    <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-                                        <span style={{ fontSize: '0.7rem', opacity: 0.75 }}>💧{weather.hum}%</span>
-                                        <span style={{ fontSize: '0.7rem', opacity: 0.75 }}>💨{weather.wind}km/h</span>
-                                        <span style={{ fontSize: '0.7rem', opacity: 0.75 }}>🌡️{weather.daily?.[0]?.tmax ?? '—'}°/{weather.daily?.[0]?.tmin ?? '—'}°</span>
+                            {/* Temperatura + cajón lluvia en la misma fila */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                                {/* Izquierda: icono + temp + stats */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                                    <span style={{ fontSize: 28, lineHeight: 1 }}>{wx[0]}</span>
+                                    <div>
+                                        <div style={{ fontWeight: 900, fontSize: '1.6rem', lineHeight: 1 }}>{weather.temp}°C</div>
+                                        <div style={{ fontSize: '0.63rem', opacity: 0.8, marginTop: 1 }}>{wx[1]}</div>
+                                        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                                            <span style={{ fontSize: '0.65rem', opacity: 0.75 }}>💧{weather.hum}%</span>
+                                            <span style={{ fontSize: '0.65rem', opacity: 0.75 }}>💨{weather.wind}km/h</span>
+                                            <span style={{ fontSize: '0.65rem', opacity: 0.75 }}>🌡️{weather.daily?.[0]?.tmax ?? '—'}°/{weather.daily?.[0]?.tmin ?? '—'}°</span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-
-                            {/* Probabilidad de lluvia */}
-                            <div style={{ marginTop: 12, background: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 18 }}>
-                                <div>
-                                    <div style={{ fontSize: '1.6rem', fontWeight: 900, lineHeight: 1, color: '#7dd3fc' }}>
+                                {/* Derecha: cajón prob. lluvia */}
+                                <div style={{ flexShrink: 0, background: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: '6px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                                    <div style={{ fontSize: '1.4rem', fontWeight: 900, lineHeight: 1, color: '#7dd3fc' }}>
                                         {weather.daily?.[0]?.prob_lluvia ?? 0}%
                                     </div>
-                                    <div style={{ fontSize: '0.6rem', opacity: 0.8, marginTop: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>prob. lluvia</div>
-                                </div>
-                                <div style={{ fontSize: '1rem', fontWeight: 800, color: '#bae6fd' }}>
-                                    {(weather.daily?.[0]?.lluvia_mm ?? 0) > 0 ? `${weather.daily[0].lluvia_mm} L/m²` : '0 L/m²'}
+                                    <div style={{ fontSize: '0.58rem', opacity: 0.75, textTransform: 'uppercase', letterSpacing: '0.04em' }}>prob. lluvia</div>
+                                    <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#bae6fd' }}>
+                                        {(weather.daily?.[0]?.lluvia_mm ?? 0) > 0 ? `${weather.daily[0].lluvia_mm} L/m²` : '0 L/m²'}
+                                    </div>
                                 </div>
                             </div>
 
                             {/* Alertas — dentro de la zona meteo */}
                             {weather.alertas?.length > 0 && (
-                                <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
                                     {weather.alertas.map((a, i) => (
-                                        <div key={i} style={{ background: 'rgba(0,0,0,0.35)', borderLeft: `4px solid ${a.nivel==='rojo'?'#f87171':a.nivel==='naranja'?'#fb923c':'#fbbf24'}`, borderRadius: '0 8px 8px 0', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <div key={i} style={{ background: 'rgba(0,0,0,0.35)', borderLeft: `4px solid ${a.nivel==='rojo'?'#f87171':a.nivel==='naranja'?'#fb923c':'#fbbf24'}`, borderRadius: '0 8px 8px 0', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
                                             <span style={{ fontSize: 16 }}>{a.icon}</span>
                                             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: a.nivel==='rojo'?'#fca5a5':a.nivel==='naranja'?'#fdba74':'#fde68a', flex: 1 }}>
                                                 ⚠️ {a.texto}
@@ -598,7 +598,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                                 </div>
                             )}
 
-                            <div style={{ marginTop: 10, fontSize: '0.65rem', fontWeight: 600, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                            <div style={{ marginTop: 6, fontSize: '0.62rem', fontWeight: 600, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                                 📍 {weather.municipio}
                             </div>
                         </>
@@ -628,11 +628,11 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 {wxState === 'ok' && weather?.daily?.length > 0 && (
                     <div style={{ background: 'rgba(0,0,0,0.25)', paddingBottom: 4 }}>
                         {/* Toggle días / horas */}
-                        <div style={{ display: 'flex', padding: '10px 16px 8px', gap: 8 }}>
+                        <div style={{ display: 'flex', padding: '6px 12px 6px', gap: 6 }}>
                             {[['dias','📅 Días'],['horas','🕐 Horas']].map(([v,lbl]) => (
                                 <button key={v} onClick={() => setWxView(v)} style={{
-                                    border: 'none', borderRadius: 20, padding: '6px 16px',
-                                    fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer',
+                                    border: 'none', borderRadius: 20, padding: '4px 12px',
+                                    fontWeight: 700, fontSize: '0.7rem', cursor: 'pointer',
                                     background: wxView === v ? '#fff' : 'rgba(255,255,255,0.15)',
                                     color: wxView === v ? '#1a4731' : 'rgba(255,255,255,0.85)',
                                     transition: 'background 0.2s',
@@ -646,17 +646,17 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                                 {weather.daily.map((d, i) => {
                                     const [ico] = wxIcon(d.code);
                                     return (
-                                        <div key={i} style={{ flexShrink: 0, background: 'rgba(255,255,255,0.1)', borderRadius: 14, padding: '10px 12px', textAlign: 'center', minWidth: 82 }}>
-                                            <div style={{ fontSize: '0.68rem', fontWeight: 700, marginBottom: 6, opacity: 0.9 }}>{_wxDiaLabel(d.fecha)}</div>
-                                            <div style={{ fontSize: 26, marginBottom: 6 }}>{ico}</div>
-                                            <div style={{ fontWeight: 900, fontSize: '1rem' }}>{d.tmax}°</div>
-                                            <div style={{ fontSize: '0.75rem', opacity: 0.7, marginBottom: 8 }}>{d.tmin}°</div>
-                                            <div style={{ borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: 7 }}>
-                                                <div style={{ fontSize: '1.05rem', fontWeight: 900, color: '#7dd3fc' }}>💧{d.prob_lluvia}%</div>
-                                                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#bae6fd', marginTop: 2 }}>
+                                        <div key={i} style={{ flexShrink: 0, background: 'rgba(255,255,255,0.1)', borderRadius: 10, padding: '7px 8px', textAlign: 'center', minWidth: 64 }}>
+                                            <div style={{ fontSize: '0.62rem', fontWeight: 700, marginBottom: 4, opacity: 0.9 }}>{_wxDiaLabel(d.fecha)}</div>
+                                            <div style={{ fontSize: 20, marginBottom: 4 }}>{ico}</div>
+                                            <div style={{ fontWeight: 900, fontSize: '0.85rem' }}>{d.tmax}°</div>
+                                            <div style={{ fontSize: '0.65rem', opacity: 0.7, marginBottom: 4 }}>{d.tmin}°</div>
+                                            <div style={{ borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: 5 }}>
+                                                <div style={{ fontSize: '0.9rem', fontWeight: 900, color: '#7dd3fc' }}>💧{d.prob_lluvia}%</div>
+                                                <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#bae6fd', marginTop: 1 }}>
                                                     {d.lluvia_mm > 0 ? `${d.lluvia_mm} L/m²` : '—'}
                                                 </div>
-                                                <div style={{ fontSize: '0.6rem', opacity: 0.65, marginTop: 3 }}>💨{d.viento}km/h</div>
+                                                <div style={{ fontSize: '0.58rem', opacity: 0.65, marginTop: 2 }}>💨{d.viento}km/h</div>
                                             </div>
                                         </div>
                                     );
@@ -672,11 +672,11 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                                     const hora = new Date(h.hora).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
                                     return (
                                         <div key={i} style={{ flexShrink: 0, background: 'rgba(255,255,255,0.1)', borderRadius: 14, padding: '10px 10px', textAlign: 'center', minWidth: 74 }}>
-                                            <div style={{ fontSize: '0.68rem', fontWeight: 700, marginBottom: 5, opacity: 0.9 }}>{hora}</div>
-                                            <div style={{ fontSize: 24, marginBottom: 5 }}>{ico}</div>
-                                            <div style={{ fontWeight: 900, fontSize: '0.95rem' }}>{h.temp}°</div>
-                                            <div style={{ borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: 6, marginTop: 6 }}>
-                                                <div style={{ fontSize: '1rem', fontWeight: 900, color: '#7dd3fc' }}>💧{h.prob_lluvia}%</div>
+                                            <div style={{ fontSize: '0.62rem', fontWeight: 700, marginBottom: 4, opacity: 0.9 }}>{hora}</div>
+                                            <div style={{ fontSize: 20, marginBottom: 4 }}>{ico}</div>
+                                            <div style={{ fontWeight: 900, fontSize: '0.85rem' }}>{h.temp}°</div>
+                                            <div style={{ borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: 4, marginTop: 4 }}>
+                                                <div style={{ fontSize: '0.9rem', fontWeight: 900, color: '#7dd3fc' }}>💧{h.prob_lluvia}%</div>
                                                 <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#bae6fd', marginTop: 2 }}>
                                                     {h.lluvia_mm > 0 ? `${h.lluvia_mm} L/m²` : '—'}
                                                 </div>
