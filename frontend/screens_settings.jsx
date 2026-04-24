@@ -57,6 +57,7 @@ function FieldZoomOverlay({ label, value, type, placeholder, onConfirm, onClose 
                         }}
                     />
                 </div>
+                {/* multiline no se usa en settings pero se deja por consistencia */}
                 <div style={{ padding: '0 20px 28px' }}>
                     <button className="btn-primary" onClick={confirm} style={{ width: '100%', fontSize: '1rem', padding: '16px', minHeight: 52 }}>
                         ✓ Listo

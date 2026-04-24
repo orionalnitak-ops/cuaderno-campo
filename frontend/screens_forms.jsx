@@ -1,3 +1,126 @@
+// ── Field Zoom Overlay — campo a pantalla grande para móvil ──
+function FieldZoomOverlay({ label, value, type, placeholder, multiline, onConfirm, onClose }) {
+    const [val, setVal] = React.useState(value || '');
+    const inputRef = React.useRef(null);
+
+    React.useEffect(() => {
+        setTimeout(() => { if (inputRef.current) inputRef.current.focus(); }, 80);
+    }, []);
+
+    const confirm = () => onConfirm(typeof val === 'string' ? val.trim() : val);
+
+    const inputStyle = {
+        width: '100%', boxSizing: 'border-box',
+        fontSize: '1.25rem', fontFamily: 'Manrope, Work Sans, sans-serif',
+        fontWeight: 600, padding: '16px 18px',
+        border: '2px solid #1D9E75', borderRadius: 14,
+        outline: 'none', background: '#f0fdf4', color: '#111827',
+    };
+
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 999,
+            background: 'rgba(0,0,0,0.65)',
+            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+        }} onClick={onClose}>
+            <div style={{
+                background: '#fff', borderRadius: '0 0 24px 24px',
+                width: '100%', maxWidth: 640,
+                boxShadow: '0 8px 40px rgba(0,0,0,0.35)',
+            }} onClick={e => e.stopPropagation()}>
+                <div style={{ background: 'linear-gradient(135deg, #1D9E75, #00694c)', padding: '24px 20px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                            <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+                                Editando
+                            </div>
+                            <h2 style={{ fontFamily: 'Manrope', fontWeight: 800, color: '#fff', fontSize: '1.3rem', margin: 0 }}>
+                                {label}
+                            </h2>
+                        </div>
+                        <button onClick={onClose} style={{
+                            background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
+                            width: 36, height: 36, color: '#fff', cursor: 'pointer', fontSize: 18,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>✕</button>
+                    </div>
+                </div>
+                <div style={{ padding: '28px 20px 16px' }}>
+                    {multiline ? (
+                        <textarea
+                            ref={inputRef}
+                            value={val}
+                            onChange={e => setVal(e.target.value)}
+                            placeholder={placeholder}
+                            rows={5}
+                            style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }}
+                        />
+                    ) : (
+                        <input
+                            ref={inputRef}
+                            type={type || 'text'}
+                            value={val}
+                            onChange={e => setVal(e.target.value)}
+                            placeholder={placeholder}
+                            onKeyDown={e => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') onClose(); }}
+                            style={inputStyle}
+                        />
+                    )}
+                </div>
+                <div style={{ padding: '0 20px 28px' }}>
+                    <button className="btn-primary" onClick={confirm} style={{ width: '100%', fontSize: '1rem', padding: '16px', minHeight: 52 }}>
+                        ✓ Listo
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ── ZoomInput — wrapper que abre FieldZoomOverlay al tocar ──
+function ZoomInput({ label, value, type, inputMode, placeholder, multiline, style, onConfirm }) {
+    const [open, setOpen] = React.useState(false);
+    const sharedStyle = { cursor: 'pointer', ...(style || {}) };
+
+    return (
+        <>
+            {multiline ? (
+                <textarea
+                    className="input-field"
+                    value={value || ''}
+                    readOnly
+                    placeholder={placeholder}
+                    rows={3}
+                    onClick={() => setOpen(true)}
+                    style={sharedStyle}
+                />
+            ) : (
+                <input
+                    type={type || 'text'}
+                    inputMode={inputMode}
+                    className="input-field"
+                    value={value || ''}
+                    readOnly
+                    placeholder={placeholder}
+                    onClick={() => setOpen(true)}
+                    style={sharedStyle}
+                />
+            )}
+            {open && (
+                <FieldZoomOverlay
+                    label={label}
+                    value={value || ''}
+                    type={type}
+                    placeholder={placeholder}
+                    multiline={multiline}
+                    onConfirm={val => { onConfirm(val); setOpen(false); }}
+                    onClose={() => setOpen(false)}
+                />
+            )}
+        </>
+    );
+}
+
 // ── Screen: Forms — 4 módulos con campos progresivos ──
 function ScreenForms({ modulo, record, campana, onClose }) {
     const { useState, useEffect } = React;
@@ -146,37 +269,45 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                     <input type="date" className="input-field" value={f.fecha_aplicacion} onChange={e => set('fecha_aplicacion', e.target.value)} />
                 </FieldGroup>
                 <FieldGroup label="Producto comercial *">
-                    <input className="input-field" value={f.producto_comercial} onChange={e => set('producto_comercial', e.target.value)} placeholder="Nombre del producto" />
+                    <ZoomInput label="Producto comercial" value={f.producto_comercial} placeholder="Nombre del producto"
+                        onConfirm={v => set('producto_comercial', v)} />
                 </FieldGroup>
             </div>
 
             <MasCampos>
                 <div className="responsive-grid cols-2">
                     <FieldGroup label="Plaga / Objetivo">
-                        <input className="input-field" value={f.plaga_objetivo} onChange={e => set('plaga_objetivo', e.target.value)} placeholder="Repilo, Antracnosis…" />
+                        <ZoomInput label="Plaga / Objetivo" value={f.plaga_objetivo} placeholder="Repilo, Antracnosis…"
+                            onConfirm={v => set('plaga_objetivo', v)} />
                     </FieldGroup>
                     <FieldGroup label="Sustancia activa">
-                        <input className="input-field" value={f.sustancia_activa} onChange={e => set('sustancia_activa', e.target.value)} placeholder="Cobre, Glifosato…" />
+                        <ZoomInput label="Sustancia activa" value={f.sustancia_activa} placeholder="Cobre, Glifosato…"
+                            onConfirm={v => set('sustancia_activa', v)} />
                     </FieldGroup>
                     <FieldGroup label="Nº Registro MAPA">
-                        <input className="input-field" value={f.num_registro_mapa} onChange={e => set('num_registro_mapa', e.target.value)} placeholder="ES-00000-0" />
+                        <ZoomInput label="Nº Registro MAPA" value={f.num_registro_mapa} placeholder="ES-00000-0"
+                            onConfirm={v => set('num_registro_mapa', v)} />
                     </FieldGroup>
                     <FieldGroup label="Dosis">
                         <div style={{ display: 'flex', gap: 8 }}>
-                            <input type="text" inputMode="decimal" className="input-field" value={f.dosis_valor} onChange={e => set('dosis_valor', e.target.value)} placeholder="2.5" style={{ flex: 2 }} />
+                            <ZoomInput label="Dosis" value={f.dosis_valor} placeholder="2.5" inputMode="decimal"
+                                style={{ flex: 2 }} onConfirm={v => set('dosis_valor', v)} />
                             <select className="input-field" value={f.dosis_unidad} onChange={e => set('dosis_unidad', e.target.value)} style={{ flex: 1 }}>
                                 {['cc/ha', 'g/ha', 'kg/ha', 'L/100L', 'L/ha'].map(u => <option key={u}>{u}</option>)}
                             </select>
                         </div>
                     </FieldGroup>
                     <FieldGroup label="Volumen de caldo (L/ha)">
-                        <input type="text" inputMode="numeric" className="input-field" value={f.volumen_caldo} onChange={e => set('volumen_caldo', e.target.value)} placeholder="300" />
+                        <ZoomInput label="Volumen de caldo (L/ha)" value={f.volumen_caldo} placeholder="300" inputMode="numeric"
+                            onConfirm={v => set('volumen_caldo', v)} />
                     </FieldGroup>
                     <FieldGroup label="Condiciones meteorológicas">
-                        <input className="input-field" value={f.condiciones_meteo} onChange={e => set('condiciones_meteo', e.target.value)} placeholder="T 22°C · V <3 m/s · HR 45%" />
+                        <ZoomInput label="Condiciones meteorológicas" value={f.condiciones_meteo} placeholder="T 22°C · V <3 m/s · HR 45%"
+                            onConfirm={v => set('condiciones_meteo', v)} />
                     </FieldGroup>
                     <FieldGroup label="Plazo de seguridad (días)">
-                        <input type="text" inputMode="numeric" className="input-field" value={f.plazo_seguridad_dias} onChange={e => set('plazo_seguridad_dias', e.target.value)} placeholder="15" />
+                        <ZoomInput label="Plazo de seguridad (días)" value={f.plazo_seguridad_dias} placeholder="15" inputMode="numeric"
+                            onConfirm={v => set('plazo_seguridad_dias', v)} />
                     </FieldGroup>
                     <FieldGroup label="Fecha mínima de cosecha">
                         <input type="date" className="input-field" value={f.fecha_recoleccion_minima} onChange={e => set('fecha_recoleccion_minima', e.target.value)} style={{ borderColor: plazoAlert ? '#ef4444' : undefined }} />
@@ -207,7 +338,8 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                     </div>
                 )}
                 <FieldGroup label="Notas">
-                    <textarea className="input-field" rows={3} value={f.notas} onChange={e => set('notas', e.target.value)} placeholder="Observaciones adicionales…" />
+                    <ZoomInput label="Notas" value={f.notas} placeholder="Observaciones adicionales…"
+                        multiline onConfirm={v => set('notas', v)} />
                 </FieldGroup>
             </MasCampos>
 
@@ -261,7 +393,8 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
                     <input type="date" className="input-field" value={f.fecha_aplicacion} onChange={e => set('fecha_aplicacion', e.target.value)} />
                 </FieldGroup>
                 <FieldGroup label="Producto / Abono">
-                    <input className="input-field" value={f.producto} onChange={e => set('producto', e.target.value)} placeholder="Urea, NPK, Estiércol…" />
+                    <ZoomInput label="Producto / Abono" value={f.producto} placeholder="Urea, NPK, Estiércol…"
+                        onConfirm={v => set('producto', v)} />
                 </FieldGroup>
             </div>
 
@@ -274,11 +407,13 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
                         </select>
                     </FieldGroup>
                     <FieldGroup label="Riqueza N-P-K">
-                        <input className="input-field" value={f.riqueza_npk} onChange={e => set('riqueza_npk', e.target.value)} placeholder="27-0-0 · 8-15-15…" />
+                        <ZoomInput label="Riqueza N-P-K" value={f.riqueza_npk} placeholder="27-0-0 · 8-15-15…"
+                            onConfirm={v => set('riqueza_npk', v)} />
                     </FieldGroup>
                     <FieldGroup label="Dosis">
                         <div style={{ display: 'flex', gap: 8 }}>
-                            <input type="text" inputMode="decimal" className="input-field" value={f.dosis_valor} onChange={e => set('dosis_valor', e.target.value)} placeholder="200" style={{ flex: 2 }} />
+                            <ZoomInput label="Dosis" value={f.dosis_valor} placeholder="200" inputMode="decimal"
+                                style={{ flex: 2 }} onConfirm={v => set('dosis_valor', v)} />
                             <select className="input-field" value={f.dosis_unidad} onChange={e => set('dosis_unidad', e.target.value)} style={{ flex: 1 }}>
                                 {['kg/árbol', 'kg/ha', 'L/árbol', 'L/ha', 't/ha'].map(u => <option key={u}>{u}</option>)}
                             </select>
@@ -292,7 +427,8 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
                     </FieldGroup>
                 </div>
                 <FieldGroup label="Notas">
-                    <textarea className="input-field" rows={3} value={f.notas} onChange={e => set('notas', e.target.value)} placeholder="Observaciones…" />
+                    <ZoomInput label="Notas" value={f.notas} placeholder="Observaciones…"
+                        multiline onConfirm={v => set('notas', v)} />
                 </FieldGroup>
             </MasCampos>
 
@@ -352,41 +488,38 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
                 <FieldGroup label="Tipo de labor">
                     <select className="input-field" value={f.tipo_labor} onChange={e => set('tipo_labor', e.target.value)}>
                         <option value="">Seleccionar…</option>
-                        {['Aclareo', 'Alzado', 'Arado', 'Desherbado', 'Escarda', 'Fresado', 'Gradeo', 'Laboreo del suelo', 'Limpieza', 'Plantación', 'Poda', 'Riego', 'Siembra', 'Subsolado', 'Triturado de restos', 'Vendimia', 'Otros'].map(t => <option key={t}>{t}</option>)}
+                        {_LABOR_TIPOS.map(t => <option key={t}>{t}</option>)}
                     </select>
                 </FieldGroup>
             </div>
             <FieldGroup label="Cultivo / Producto sembrado">
-                <datalist id="labor-productos">
-                    {['Trigo','Cebada','Avena','Centeno','Triticale','Maíz','Girasol','Colza',
-                      'Yeros','Veza','Guisante','Garbanzo','Lenteja','Almorta','Soja',
-                      'Alfalfa','Remolacha','Patata','Tomate','Pimiento','Cebolla','Ajo',
-                      'Olivo','Vid','Almendro','Pistachero','Otros'].map(p =>
-                        <option key={p} value={p} />
-                    )}
-                </datalist>
-                <input list="labor-productos" className="input-field" value={f.producto}
-                    onChange={e => set('producto', e.target.value)}
-                    placeholder="Ej: Trigo, Cebada, Yeros… (o escribe el tuyo)" />
+                <ZoomInput label="Cultivo / Producto sembrado" value={f.producto}
+                    placeholder="Ej: Trigo, Cebada, Yeros… (o escribe el tuyo)"
+                    onConfirm={v => set('producto', v)} />
             </FieldGroup>
 
             <MasCampos>
                 <div className="responsive-grid cols-2">
                     <FieldGroup label="Descripción">
-                        <input className="input-field" value={f.descripcion} onChange={e => set('descripcion', e.target.value)} placeholder="Detalle de la operación…" />
+                        <ZoomInput label="Descripción" value={f.descripcion} placeholder="Detalle de la operación…"
+                            onConfirm={v => set('descripcion', v)} />
                     </FieldGroup>
                     <FieldGroup label="Maquinaria">
-                        <input className="input-field" value={f.maquinaria} onChange={e => set('maquinaria', e.target.value)} placeholder="Tractor, vibrador…" />
+                        <ZoomInput label="Maquinaria" value={f.maquinaria} placeholder="Tractor, vibrador…"
+                            onConfirm={v => set('maquinaria', v)} />
                     </FieldGroup>
                     <FieldGroup label="Horas trabajadas">
-                        <input type="text" inputMode="decimal" className="input-field" value={f.horas_trabajadas} onChange={e => set('horas_trabajadas', e.target.value)} placeholder="4.5" />
+                        <ZoomInput label="Horas trabajadas" value={f.horas_trabajadas} placeholder="4.5" inputMode="decimal"
+                            onConfirm={v => set('horas_trabajadas', v)} />
                     </FieldGroup>
                     <FieldGroup label="Operario / Empresa">
-                        <input className="input-field" value={f.operario} onChange={e => set('operario', e.target.value)} placeholder="Nombre o empresa" />
+                        <ZoomInput label="Operario / Empresa" value={f.operario} placeholder="Nombre o empresa"
+                            onConfirm={v => set('operario', v)} />
                     </FieldGroup>
                 </div>
                 <FieldGroup label="Notas">
-                    <textarea className="input-field" rows={3} value={f.notas} onChange={e => set('notas', e.target.value)} placeholder="Observaciones…" />
+                    <ZoomInput label="Notas" value={f.notas} placeholder="Observaciones…"
+                        multiline onConfirm={v => set('notas', v)} />
                 </FieldGroup>
             </MasCampos>
 
@@ -461,7 +594,8 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                     <input type="date" className="input-field" value={f.fecha_inicio} onChange={e => set('fecha_inicio', e.target.value)} />
                 </FieldGroup>
                 <FieldGroup label="Cultivo">
-                    <input className="input-field" value={f.cultivo} onChange={e => set('cultivo', e.target.value)} placeholder="Olivar, Viñedo, Cereal…" />
+                    <ZoomInput label="Cultivo" value={f.cultivo} placeholder="Olivar, Viñedo, Cereal…"
+                        onConfirm={v => set('cultivo', v)} />
                 </FieldGroup>
             </div>
 
@@ -471,14 +605,17 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                         <input type="date" className="input-field" value={f.fecha_fin} onChange={e => set('fecha_fin', e.target.value)} />
                     </FieldGroup>
                     <FieldGroup label="Variedad">
-                        <input className="input-field" value={f.variedad} onChange={e => set('variedad', e.target.value)} placeholder="Picual, Tempranillo…" />
+                        <ZoomInput label="Variedad" value={f.variedad} placeholder="Picual, Tempranillo…"
+                            onConfirm={v => set('variedad', v)} />
                     </FieldGroup>
                     <FieldGroup label="Superficie cosechada (ha)">
-                        <input type="text" inputMode="decimal" className="input-field" value={f.superficie_cosechada_ha} onChange={e => set('superficie_cosechada_ha', e.target.value)} placeholder="3.25" />
+                        <ZoomInput label="Superficie cosechada (ha)" value={f.superficie_cosechada_ha} placeholder="3.25" inputMode="decimal"
+                            onConfirm={v => set('superficie_cosechada_ha', v)} />
                     </FieldGroup>
                     <FieldGroup label={`Producción total${rendimiento ? ` → ${rendimiento}` : ''}`}>
                         <div style={{ display: 'flex', gap: 8 }}>
-                            <input type="text" inputMode="decimal" className="input-field" value={f.produccion_total_valor} onChange={e => set('produccion_total_valor', e.target.value)} placeholder="12500" style={{ flex: 2 }} />
+                            <ZoomInput label="Producción total" value={f.produccion_total_valor} placeholder="12500" inputMode="decimal"
+                                style={{ flex: 2 }} onConfirm={v => set('produccion_total_valor', v)} />
                             <select className="input-field" value={f.produccion_total_unidad} onChange={e => set('produccion_total_unidad', e.target.value)} style={{ flex: 1 }}>
                                 {['cajas', 'kg', 'L', 't', 'unidades'].map(u => <option key={u}>{u}</option>)}
                             </select>
@@ -498,14 +635,17 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                         </select>
                     </FieldGroup>
                     <FieldGroup label="Comprador / Destinatario">
-                        <input className="input-field" value={f.comprador} onChange={e => set('comprador', e.target.value)} placeholder="Nombre de la cooperativa" />
+                        <ZoomInput label="Comprador / Destinatario" value={f.comprador} placeholder="Nombre de la cooperativa"
+                            onConfirm={v => set('comprador', v)} />
                     </FieldGroup>
                     <FieldGroup label="Precio por unidad (€)">
-                        <input type="text" inputMode="decimal" className="input-field" value={f.precio_unidad} onChange={e => set('precio_unidad', e.target.value)} placeholder="0.350 €/kg" />
+                        <ZoomInput label="Precio por unidad (€)" value={f.precio_unidad} placeholder="0.350 €/kg" inputMode="decimal"
+                            onConfirm={v => set('precio_unidad', v)} />
                     </FieldGroup>
                 </div>
                 <FieldGroup label="Notas">
-                    <textarea className="input-field" rows={3} value={f.notas} onChange={e => set('notas', e.target.value)} placeholder="Observaciones…" />
+                    <ZoomInput label="Notas" value={f.notas} placeholder="Observaciones…"
+                        multiline onConfirm={v => set('notas', v)} />
                 </FieldGroup>
             </MasCampos>
 
