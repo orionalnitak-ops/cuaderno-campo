@@ -55,10 +55,11 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
 
     // ── Meteorología (Open-Meteo) ──
     const loadWeather = useCallback(async (municipio) => {
-        if (!municipio) { setWxState('error'); return; }
+        const mun = (municipio || '').trim();
+        if (!mun) { setWxState('error'); return; }
         try {
             setWxState('loading');
-            const gRes  = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(municipio)}&country=ES&language=es&count=1`);
+            const gRes  = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(mun)}&country=ES&language=es&count=1`);
             const gJson = await gRes.json();
             const hit   = gJson?.results?.[0];
             if (!hit) { setWxState('error'); return; }
@@ -141,7 +142,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
 
     useEffect(() => {
         if (explot === null) return;           // aún cargando
-        if (!explot?.municipio) { setWxState('error'); return; }
+        if (!explot?.municipio?.trim()) { setWxState('error'); return; }
         loadWeather(explot.municipio);
         const id = setInterval(() => loadWeather(explot.municipio), 30 * 60 * 1000);
         return () => clearInterval(id);

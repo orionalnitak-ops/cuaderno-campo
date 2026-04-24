@@ -1,9 +1,78 @@
+// ── Field Zoom Overlay — campo individual a pantalla grande para móvil ──
+function FieldZoomOverlay({ label, value, type, placeholder, onConfirm, onClose }) {
+    const [val, setVal] = React.useState(value || '');
+    const inputRef = React.useRef(null);
+
+    React.useEffect(() => {
+        setTimeout(() => { if (inputRef.current) inputRef.current.focus(); }, 80);
+    }, []);
+
+    const confirm = () => onConfirm(val.trim());
+
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 999,
+            background: 'rgba(0,0,0,0.65)',
+            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+        }} onClick={onClose}>
+            <div style={{
+                background: '#fff', borderRadius: '0 0 24px 24px',
+                width: '100%', maxWidth: 640,
+                boxShadow: '0 8px 40px rgba(0,0,0,0.35)',
+            }} onClick={e => e.stopPropagation()}>
+                <div style={{
+                    background: 'linear-gradient(135deg, #1D9E75, #00694c)',
+                    padding: '24px 20px',
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                            <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+                                Editando
+                            </div>
+                            <h2 style={{ fontFamily: 'Manrope', fontWeight: 800, color: '#fff', fontSize: '1.4rem', margin: 0 }}>
+                                {label}
+                            </h2>
+                        </div>
+                        <button onClick={onClose} style={{
+                            background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
+                            width: 36, height: 36, color: '#fff', cursor: 'pointer', fontSize: 18,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>✕</button>
+                    </div>
+                </div>
+                <div style={{ padding: '28px 20px 16px' }}>
+                    <input
+                        ref={inputRef}
+                        type={type || 'text'}
+                        value={val}
+                        onChange={e => setVal(e.target.value)}
+                        placeholder={placeholder}
+                        onKeyDown={e => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') onClose(); }}
+                        style={{
+                            width: '100%', boxSizing: 'border-box',
+                            fontSize: '1.35rem', fontFamily: 'Manrope, Work Sans, sans-serif',
+                            fontWeight: 600, padding: '16px 18px',
+                            border: '2px solid #1D9E75', borderRadius: 14,
+                            outline: 'none', background: '#f0fdf4', color: '#111827',
+                        }}
+                    />
+                </div>
+                <div style={{ padding: '0 20px 28px' }}>
+                    <button className="btn-primary" onClick={confirm} style={{ width: '100%', fontSize: '1rem', padding: '16px', minHeight: 52 }}>
+                        ✓ Listo
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ── Explotación modal (position:fixed → teclado Android funciona) ──
 function ExplotacionModal({ data, onSave, onClose }) {
     const { useState } = React;
     const [form, setForm] = useState(data || {});
     const [saving, setSaving] = useState(false);
-    const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+    const [zoomField, setZoomField] = useState(null);
 
     const save = async () => {
         setSaving(true);
@@ -16,26 +85,31 @@ function ExplotacionModal({ data, onSave, onClose }) {
         setSaving(false);
     };
 
+    const FIELDS = [
+        ['titular','Titular','text','Nombre completo'],
+        ['nif','NIF / CIF','text','12345678A'],
+        ['municipio','Municipio','text','Santa Cruz de Mudela'],
+        ['provincia','Provincia','text','Ciudad Real'],
+        ['cp','Código postal','text','13730'],
+        ['telefono','Teléfono','tel','600 000 000'],
+        ['email','Email','email','titular@explotacion.es'],
+        ['campana_activa','Campaña activa','text','2025/2026'],
+    ];
+
     return (
+        <>
         <div className="overlay" onClick={onClose}>
             <div className="module-sheet" onClick={e => e.stopPropagation()} style={{ paddingBottom: 40 }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
                     <h3 style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', margin:0 }}>🏡 Datos de la Explotación</h3>
                     <button onClick={onClose} style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#6b7280' }}>✕</button>
                 </div>
-                {[
-                    ['titular','Titular','text','Nombre completo'],
-                    ['nif','NIF / CIF','text','12345678A'],
-                    ['municipio','Municipio','text','Santa Cruz de Mudela'],
-                    ['provincia','Provincia','text','Ciudad Real'],
-                    ['cp','Código postal','text','13730'],
-                    ['telefono','Teléfono','tel','600 000 000'],
-                    ['email','Email','email','titular@explotacion.es'],
-                    ['campana_activa','Campaña activa','text','2025/2026'],
-                ].map(([k,l,t,ph]) => (
+                {FIELDS.map(([k,l,t,ph]) => (
                     <div key={k} style={{ marginBottom:14 }}>
                         <label className="field-label">{l}</label>
-                        <input type={t} className="input-field" value={form[k]||''} onChange={set(k)} placeholder={ph} />
+                        <input type={t} className="input-field" value={form[k]||''} readOnly placeholder={ph}
+                            onClick={() => setZoomField({ key:k, label:l, type:t, placeholder:ph })}
+                            style={{ cursor:'pointer' }} />
                     </div>
                 ))}
                 <button className="btn-primary" style={{ width:'100%', marginTop:8 }} onClick={save} disabled={saving}>
@@ -43,6 +117,17 @@ function ExplotacionModal({ data, onSave, onClose }) {
                 </button>
             </div>
         </div>
+        {zoomField && (
+            <FieldZoomOverlay
+                label={zoomField.label}
+                value={form[zoomField.key] || ''}
+                type={zoomField.type}
+                placeholder={zoomField.placeholder}
+                onConfirm={val => { setForm(f => ({ ...f, [zoomField.key]: val })); setZoomField(null); }}
+                onClose={() => setZoomField(null)}
+            />
+        )}
+        </>
     );
 }
 
@@ -113,8 +198,17 @@ function ExplotacionSection({ showToast, onCampana }) {
 function EquipoModal({ equipo, onSave, onClose }) {
     const { useState } = React;
     const [form, setForm] = useState(equipo || {});
-    const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+    const [zoomField, setZoomField] = useState(null);
+    const EQ_FIELDS = [
+        ['descripcion','Descripción / nombre','text'],
+        ['tipo','Tipo','text'],
+        ['marca','Marca','text'],
+        ['modelo','Modelo','text'],
+        ['num_registro_roma','Nº Registro ROMA','text'],
+        ['fecha_iteaf','Fecha ITEAF','date'],
+    ];
     return (
+        <>
         <div className="overlay" onClick={onClose}>
             <div className="module-sheet" onClick={e => e.stopPropagation()} style={{ paddingBottom: 40 }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
@@ -123,10 +217,12 @@ function EquipoModal({ equipo, onSave, onClose }) {
                     </h3>
                     <button onClick={onClose} style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#6b7280' }}>✕</button>
                 </div>
-                {[['descripcion','Descripción / nombre','text'],['tipo','Tipo','text'],['marca','Marca','text'],['modelo','Modelo','text'],['num_registro_roma','Nº Registro ROMA','text'],['fecha_iteaf','Fecha ITEAF','date']].map(([k,l,t]) => (
+                {EQ_FIELDS.map(([k,l,t]) => (
                     <div key={k} style={{ marginBottom:14 }}>
                         <label className="field-label">{l}</label>
-                        <input type={t} className="input-field" value={form[k]||''} onChange={set(k)} />
+                        <input type={t} className="input-field" value={form[k]||''} readOnly
+                            onClick={() => setZoomField({ key:k, label:l, type:t, placeholder:'' })}
+                            style={{ cursor:'pointer' }} />
                     </div>
                 ))}
                 <button className="btn-primary" style={{ width:'100%', marginTop:8 }} onClick={() => onSave(form)}>
@@ -134,6 +230,17 @@ function EquipoModal({ equipo, onSave, onClose }) {
                 </button>
             </div>
         </div>
+        {zoomField && (
+            <FieldZoomOverlay
+                label={zoomField.label}
+                value={form[zoomField.key] || ''}
+                type={zoomField.type}
+                placeholder={zoomField.placeholder}
+                onConfirm={val => { setForm(f => ({ ...f, [zoomField.key]: val })); setZoomField(null); }}
+                onClose={() => setZoomField(null)}
+            />
+        )}
+        </>
     );
 }
 
@@ -141,8 +248,14 @@ function EquipoModal({ equipo, onSave, onClose }) {
 function AplicadorModal({ aplicador, onSave, onClose }) {
     const { useState } = React;
     const [form, setForm] = useState(aplicador || {});
-    const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+    const [zoomField, setZoomField] = useState(null);
+    const AP_FIELDS = [
+        ['nombre','Nombre completo','text'],
+        ['nif','NIF','text'],
+        ['num_ropo','Nº ROPO','text'],
+    ];
     return (
+        <>
         <div className="overlay" onClick={onClose}>
             <div className="module-sheet" onClick={e => e.stopPropagation()} style={{ paddingBottom: 40 }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
@@ -151,10 +264,12 @@ function AplicadorModal({ aplicador, onSave, onClose }) {
                     </h3>
                     <button onClick={onClose} style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#6b7280' }}>✕</button>
                 </div>
-                {[['nombre','Nombre completo'],['nif','NIF'],['num_ropo','Nº ROPO']].map(([k,l]) => (
+                {AP_FIELDS.map(([k,l,t]) => (
                     <div key={k} style={{ marginBottom:14 }}>
                         <label className="field-label">{l}</label>
-                        <input className="input-field" value={form[k]||''} onChange={set(k)} />
+                        <input type={t} className="input-field" value={form[k]||''} readOnly
+                            onClick={() => setZoomField({ key:k, label:l, type:t, placeholder:'' })}
+                            style={{ cursor:'pointer' }} />
                     </div>
                 ))}
                 <button className="btn-primary" style={{ width:'100%', marginTop:8 }} onClick={() => onSave(form)}>
@@ -162,6 +277,17 @@ function AplicadorModal({ aplicador, onSave, onClose }) {
                 </button>
             </div>
         </div>
+        {zoomField && (
+            <FieldZoomOverlay
+                label={zoomField.label}
+                value={form[zoomField.key] || ''}
+                type={zoomField.type}
+                placeholder={zoomField.placeholder}
+                onConfirm={val => { setForm(f => ({ ...f, [zoomField.key]: val })); setZoomField(null); }}
+                onClose={() => setZoomField(null)}
+            />
+        )}
+        </>
     );
 }
 
