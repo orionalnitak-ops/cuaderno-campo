@@ -5,15 +5,31 @@ import datetime
 from functools import wraps
 from flask import Flask, jsonify, request, send_file, session
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from flask_login import (LoginManager, UserMixin, login_user, logout_user,
                          login_required, current_user)
-from db import (get_db, init_db, is_pac_eligible)
+from db import (get_db, init_db, is_pac_eligible, dicts, one)
 init_db()  # ejecutar siempre al importar (gunicorn + flask run)
 
 frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend'))
 app = Flask(__name__, static_folder=frontend_dir, static_url_path='')
-app.secret_key = os.environ.get('SECRET_KEY', 'cuaderno_campo_2025_secret')
-CORS(app, supports_credentials=True)
+_secret_key = os.environ.get('SECRET_KEY')
+if not _secret_key:
+    if os.environ.get('FLASK_ENV') == 'production':
+        raise RuntimeError("SECRET_KEY no está configurada. Establece la variable de entorno SECRET_KEY en producción.")
+    import warnings
+    warnings.warn("SECRET_KEY no configurada — usando clave de desarrollo insegura. NO usar en producción.")
+    _secret_key = 'cuaderno_campo_DEV_ONLY_not_for_production'
+app.secret_key = _secret_key
+
+# CORS: en producción restringir a los orígenes del dominio real vía ALLOWED_ORIGINS
+_allowed_origins = os.environ.get('ALLOWED_ORIGINS', 'http://127.0.0.1:5000,http://localhost:5000').split(',')
+CORS(app, origins=_allowed_origins, supports_credentials=True)
+
+# Rate limiting: máx 10 intentos de login por IP por minuto
+limiter = Limiter(get_remote_address, app=app, default_limits=[],
+                  storage_uri="memory://")
 
 # ─────────────────────────────────────────────
 # FLASK-LOGIN SETUP
@@ -60,22 +76,8 @@ def get_uid():
 
 
 # ─────────────────────────────────────────────
-# DB HELPERS
+# DB HELPERS  (dicts / one imported from db.py)
 # ─────────────────────────────────────────────
-def dicts(conn, sql, params=()):
-    import sqlite3
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute(sql, params)
-    return [dict(r) for r in c.fetchall()]
-
-def one(conn, sql, params=()):
-    import sqlite3
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute(sql, params)
-    r = c.fetchone()
-    return dict(r) if r else None
 
 
 # ─────────────────────────────────────────────
@@ -99,6 +101,7 @@ def serve_static(path):
 # AUTH
 # ─────────────────────────────────────────────
 @app.route('/api/auth/login', methods=['POST'])
+@limiter.limit("10 per minute")
 def auth_login():
     data = request.json or {}
     email = (data.get('email') or '').strip().lower()
@@ -148,8 +151,8 @@ def auth_change_password():
     data = request.json or {}
     old_pw = (data.get('old_password') or '').encode('utf-8')
     new_pw = (data.get('new_password') or '').encode('utf-8')
-    if len(new_pw) < 6:
-        return jsonify({"error": "La nueva contraseña debe tener al menos 6 caracteres"}), 400
+    if len(new_pw) < 8:
+        return jsonify({"error": "La nueva contraseña debe tener al menos 8 caracteres"}), 400
     conn = get_db()
     u = one(conn, "SELECT * FROM users WHERE id=?", (current_user.id,))
     if not u or not bcrypt.checkpw(old_pw, u['password_hash'].encode('utf-8')):
@@ -208,7 +211,8 @@ def admin_users():
         conn.close()
         if 'UNIQUE' in str(e):
             return jsonify({"error": "Ya existe un usuario con ese email"}), 409
-        return jsonify({"error": str(e)}), 500
+        app.logger.error("Error creando usuario: %s", e)
+        return jsonify({"error": "Error interno al crear el usuario"}), 500
     conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
 
@@ -372,13 +376,13 @@ def historial():
         return result
 
     if modulo in ('todos', 'tratamientos'):
-        rows = dicts(conn, "SELECT * FROM tratamientos WHERE user_id=? ORDER BY fecha_aplicacion DESC", (uid,))
+        rows = dicts(conn, "SELECT * FROM tratamientos WHERE user_id=? AND deleted_at IS NULL ORDER BY fecha_aplicacion DESC", (uid,))
         for r in apply_filters(rows, 'fecha_aplicacion'):
             records.append({**r, '_modulo': 'tratamientos', '_fecha': r.get('fecha_aplicacion', ''),
                             '_resumen': f"{r.get('producto_comercial','')} — {r.get('plaga_objetivo','')}"})
 
     if modulo in ('todos', 'fertilizacion'):
-        rows = dicts(conn, "SELECT * FROM fertilizacion WHERE user_id=? ORDER BY fecha_aplicacion DESC", (uid,))
+        rows = dicts(conn, "SELECT * FROM fertilizacion WHERE user_id=? AND deleted_at IS NULL ORDER BY fecha_aplicacion DESC", (uid,))
         for r in apply_filters(rows, 'fecha_aplicacion'):
             records.append({**r, '_modulo': 'fertilizacion', '_fecha': r.get('fecha_aplicacion', ''),
                             '_resumen': f"{r.get('tipo_fertilizante','')} — {r.get('producto','')}"})
@@ -395,6 +399,12 @@ def historial():
         for r in apply_filters(rows, 'fecha_inicio'):
             records.append({**r, '_modulo': 'cosecha', '_fecha': r.get('fecha_inicio', ''),
                             '_resumen': f"{r.get('cultivo','')} — {r.get('produccion_total_valor','')} {r.get('produccion_total_unidad','')}"})
+
+    if modulo in ('todos', 'compras'):
+        rows = dicts(conn, "SELECT * FROM compras WHERE user_id=? AND deleted_at IS NULL ORDER BY fecha DESC", (uid,))
+        for r in apply_filters(rows, 'fecha'):
+            records.append({**r, '_modulo': 'compras', '_fecha': r.get('fecha', ''),
+                            '_resumen': f"{r.get('tipo_producto','')} — {r.get('producto','')} · {r.get('proveedor','')}"})
 
     records.sort(key=lambda x: x.get('_fecha', '') or '', reverse=True)
     conn.close()
@@ -473,42 +483,55 @@ def manage_parcela(pid):
 @app.route('/api/cultivos-campana', methods=['GET', 'POST'])
 @login_required
 def manage_cultivos():
+    uid = get_uid()
     conn = get_db()
     if request.method == 'GET':
         parcela_id = request.args.get('parcela_id')
         campana = request.args.get('campana')
-        sql = "SELECT * FROM cultivos_campana WHERE 1=1"
-        params = []
+        # Filtrar siempre por user_id a través de la parcela propietaria
+        sql = """SELECT cc.* FROM cultivos_campana cc
+                 JOIN parcelas p ON cc.parcela_id = p.id
+                 WHERE p.user_id=?"""
+        params = [uid]
         if parcela_id:
-            sql += " AND parcela_id=?"; params.append(parcela_id)
+            sql += " AND cc.parcela_id=?"; params.append(parcela_id)
         if campana:
-            sql += " AND campana=?"; params.append(campana)
+            sql += " AND cc.campana=?"; params.append(campana)
         rows = dicts(conn, sql, params)
         conn.close()
         return jsonify(rows)
 
     data = request.json or {}
+    # Verificar que la parcela pertenece al usuario
+    parcela_id = data.get('parcela_id')
+    if parcela_id:
+        owner = one(conn, "SELECT id FROM parcelas WHERE id=? AND user_id=?", (parcela_id, uid))
+        if not owner:
+            conn.close()
+            return jsonify({"error": "Parcela no encontrada"}), 404
     c = conn.cursor()
     try:
         c.execute('''
             INSERT INTO cultivos_campana
-                (parcela_id, campana, cultivo, variedad, fecha_siembra,
+                (parcela_id, campana, cultivo, cultivo_iacs_cod, variedad, fecha_siembra,
                  fecha_recoleccion_prevista, superficie_cultivada_ha, notas)
-            VALUES (?,?,?,?,?,?,?,?)
-        ''', (data.get('parcela_id'), data.get('campana'), data.get('cultivo'),
+            VALUES (?,?,?,?,?,?,?,?,?)
+        ''', (parcela_id, data.get('campana'), data.get('cultivo'),
+              data.get('cultivo_iacs_cod'),
               data.get('variedad'), data.get('fecha_siembra'),
               data.get('fecha_recoleccion_prevista'), data.get('superficie_cultivada_ha'),
               data.get('notas')))
         new_id = c.lastrowid
     except Exception:
         c.execute('''
-            UPDATE cultivos_campana SET cultivo=?, variedad=?, fecha_siembra=?,
-                fecha_recoleccion_prevista=?, superficie_cultivada_ha=?, notas=?,
-                updated_at=CURRENT_TIMESTAMP
+            UPDATE cultivos_campana SET cultivo=?, cultivo_iacs_cod=?, variedad=?,
+                fecha_siembra=?, fecha_recoleccion_prevista=?,
+                superficie_cultivada_ha=?, notas=?, updated_at=CURRENT_TIMESTAMP
             WHERE parcela_id=? AND campana=?
-        ''', (data.get('cultivo'), data.get('variedad'), data.get('fecha_siembra'),
+        ''', (data.get('cultivo'), data.get('cultivo_iacs_cod'),
+              data.get('variedad'), data.get('fecha_siembra'),
               data.get('fecha_recoleccion_prevista'), data.get('superficie_cultivada_ha'),
-              data.get('notas'), data.get('parcela_id'), data.get('campana')))
+              data.get('notas'), parcela_id, data.get('campana')))
         new_id = None
     conn.commit(); conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
@@ -517,7 +540,15 @@ def manage_cultivos():
 @app.route('/api/cultivos-campana/<int:cid>', methods=['GET', 'PUT', 'DELETE'])
 @login_required
 def manage_cultivo(cid):
+    uid = get_uid()
     conn = get_db()
+    # Verificar propiedad a través de la parcela (cultivos_campana no tiene user_id propio)
+    owner = one(conn, """SELECT cc.id FROM cultivos_campana cc
+                         JOIN parcelas p ON cc.parcela_id = p.id
+                         WHERE cc.id=? AND p.user_id=?""", (cid, uid))
+    if not owner:
+        conn.close()
+        return jsonify({"error": "No encontrado"}), 404
     if request.method == 'DELETE':
         conn.execute("DELETE FROM cultivos_campana WHERE id=?", (cid,))
         conn.commit(); conn.close()
@@ -527,7 +558,7 @@ def manage_cultivo(cid):
         conn.close()
         return jsonify(row or {})
     data = request.json or {}
-    fields = ['cultivo','variedad','fecha_siembra','fecha_recoleccion_prevista','superficie_cultivada_ha','notas']
+    fields = ['cultivo','cultivo_iacs_cod','variedad','fecha_siembra','fecha_recoleccion_prevista','superficie_cultivada_ha','notas']
     sets = ', '.join(f"{f}=?" for f in fields)
     conn.execute(f"UPDATE cultivos_campana SET {sets} WHERE id=?",
                  [data.get(f) for f in fields] + [cid])
@@ -538,17 +569,93 @@ def manage_cultivo(cid):
 # ─────────────────────────────────────────────
 # TRATAMIENTOS
 # ─────────────────────────────────────────────
+# VALIDADORES RD 1311/2012
+# ─────────────────────────────────────────────
+def _validate_tratamiento(data):
+    """Devuelve mensaje de error si faltan campos obligatorios (Anexo III S3)."""
+    required = {
+        'fecha_aplicacion':    'Fecha de aplicación',
+        'producto_comercial':  'Producto comercial',
+        'num_registro_mapa':   'Nº Registro MAPA',
+        'sustancia_activa':    'Sustancia activa',
+        'plaga_objetivo':      'Plaga / enfermedad objetivo',
+        'dosis_valor':         'Dosis',
+        'aplicador_id':        'Aplicador (obligatorio por ROPO)',
+        'plazo_seguridad_dias':'Plazo de seguridad (días)',
+    }
+    missing = [label for field, label in required.items() if not data.get(field) and data.get(field) != 0]
+    if missing:
+        return f"Campos obligatorios según RD 1311/2012: {', '.join(missing)}"
+    try:
+        fecha = datetime.date.fromisoformat(str(data['fecha_aplicacion']))
+        if fecha > datetime.date.today():
+            return "La fecha de aplicación no puede ser futura"
+    except (ValueError, TypeError):
+        return "Fecha de aplicación con formato inválido (use YYYY-MM-DD)"
+    try:
+        if int(data['plazo_seguridad_dias']) < 0:
+            return "El plazo de seguridad no puede ser negativo"
+    except (ValueError, TypeError):
+        return "El plazo de seguridad debe ser un número entero"
+    return None
+
+
+def _validate_compra(data):
+    """Valida campos obligatorios de compras (Anexo III S5 — trazabilidad)."""
+    required = {
+        'fecha':         'Fecha de compra',
+        'tipo_producto': 'Tipo de producto',
+        'producto':      'Nombre del producto',
+    }
+    missing = [label for field, label in required.items() if not data.get(field)]
+    if missing:
+        return f"Campos obligatorios: {', '.join(missing)}"
+    try:
+        fecha = datetime.date.fromisoformat(str(data['fecha']))
+        if fecha > datetime.date.today():
+            return "La fecha de compra no puede ser futura"
+    except (ValueError, TypeError):
+        return "Fecha con formato inválido (use YYYY-MM-DD)"
+    return None
+
+
+def _validate_fertilizacion(data):
+    """Devuelve mensaje de error si faltan campos obligatorios (Anexo III S4)."""
+    required = {
+        'fecha_aplicacion': 'Fecha de aplicación',
+        'tipo_fertilizante': 'Tipo de fertilizante',
+        'producto':          'Nombre del producto',
+        'dosis_valor':       'Dosis (cantidad)',
+    }
+    missing = [label for field, label in required.items() if not data.get(field) and data.get(field) != 0]
+    if missing:
+        return f"Campos obligatorios según RD 1311/2012: {', '.join(missing)}"
+    try:
+        fecha = datetime.date.fromisoformat(str(data['fecha_aplicacion']))
+        if fecha > datetime.date.today():
+            return "La fecha de aplicación no puede ser futura"
+    except (ValueError, TypeError):
+        return "Fecha de aplicación con formato inválido (use YYYY-MM-DD)"
+    return None
+
+
+# ─────────────────────────────────────────────
 @app.route('/api/tratamientos', methods=['GET', 'POST'])
 @login_required
 def manage_tratamientos():
     uid = get_uid()
     conn = get_db()
     if request.method == 'GET':
-        rows = dicts(conn, "SELECT * FROM tratamientos WHERE user_id=? ORDER BY fecha_aplicacion DESC", (uid,))
+        rows = dicts(conn, "SELECT * FROM tratamientos WHERE user_id=? AND deleted_at IS NULL ORDER BY fecha_aplicacion DESC", (uid,))
         conn.close()
         return jsonify(rows)
 
     data = request.json or {}
+    err = _validate_tratamiento(data)
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
+
     c = conn.cursor()
     c.execute('''
         INSERT INTO tratamientos (
@@ -577,18 +684,24 @@ def manage_tratamiento(tid):
     uid = get_uid()
     conn = get_db()
     if request.method == 'DELETE':
-        conn.execute("DELETE FROM tratamientos WHERE id=? AND user_id=?", (tid, uid))
+        conn.execute(
+            "UPDATE tratamientos SET deleted_at=datetime('now') WHERE id=? AND user_id=?",
+            (tid, uid))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
-        row = one(conn, "SELECT * FROM tratamientos WHERE id=? AND user_id=?", (tid, uid))
+        row = one(conn, "SELECT * FROM tratamientos WHERE id=? AND user_id=? AND deleted_at IS NULL", (tid, uid))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
+    err = _validate_tratamiento(data)
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
     fields = ['parcela_id','parcela_etiqueta','fecha_aplicacion','producto_comercial',
               'num_registro_mapa','sustancia_activa','plaga_objetivo','dosis_valor','dosis_unidad',
               'volumen_caldo','equipo_id','condiciones_meteo','plazo_seguridad_dias',
               'fecha_recoleccion_minima','eficacia','aplicador_id','notas','campana']
     sets = ', '.join(f"{f}=?" for f in fields)
-    conn.execute(f"UPDATE tratamientos SET {sets} WHERE id=? AND user_id=?",
+    conn.execute(f"UPDATE tratamientos SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
                  [data.get(f) for f in fields] + [tid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
@@ -602,10 +715,15 @@ def manage_fertilizacion():
     uid = get_uid()
     conn = get_db()
     if request.method == 'GET':
-        rows = dicts(conn, "SELECT * FROM fertilizacion WHERE user_id=? ORDER BY fecha_aplicacion DESC", (uid,))
+        rows = dicts(conn, "SELECT * FROM fertilizacion WHERE user_id=? AND deleted_at IS NULL ORDER BY fecha_aplicacion DESC", (uid,))
         conn.close(); return jsonify(rows)
 
     data = request.json or {}
+    err = _validate_fertilizacion(data)
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
+
     c = conn.cursor()
     c.execute('''
         INSERT INTO fertilizacion (
@@ -627,16 +745,22 @@ def manage_fertilizacion_one(fid):
     uid = get_uid()
     conn = get_db()
     if request.method == 'DELETE':
-        conn.execute("DELETE FROM fertilizacion WHERE id=? AND user_id=?", (fid, uid))
+        conn.execute(
+            "UPDATE fertilizacion SET deleted_at=datetime('now') WHERE id=? AND user_id=?",
+            (fid, uid))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
-        row = one(conn, "SELECT * FROM fertilizacion WHERE id=?", (fid,))
+        row = one(conn, "SELECT * FROM fertilizacion WHERE id=? AND user_id=? AND deleted_at IS NULL", (fid, uid))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
+    err = _validate_fertilizacion(data)
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
     fields = ['parcela_id','parcela_etiqueta','fecha_aplicacion','tipo_fertilizante',
               'producto','riqueza_npk','dosis_valor','dosis_unidad','metodo_aplicacion','notas','campana']
     sets = ', '.join(f"{f}=?" for f in fields)
-    conn.execute(f"UPDATE fertilizacion SET {sets} WHERE id=? AND user_id=?",
+    conn.execute(f"UPDATE fertilizacion SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
                  [data.get(f) for f in fields] + [fid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
@@ -675,7 +799,7 @@ def manage_labor(lid):
         conn.execute("DELETE FROM labores WHERE id=? AND user_id=?", (lid, uid))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
-        row = one(conn, "SELECT * FROM labores WHERE id=?", (lid,))
+        row = one(conn, "SELECT * FROM labores WHERE id=? AND user_id=?", (lid, uid))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
     fields = ['parcela_id','parcela_etiqueta','fecha','tipo_labor','descripcion',
@@ -726,7 +850,7 @@ def manage_cosecha_one(cid):
         conn.execute("DELETE FROM cosecha WHERE id=? AND user_id=?", (cid, uid))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
-        row = one(conn, "SELECT * FROM cosecha WHERE id=?", (cid,))
+        row = one(conn, "SELECT * FROM cosecha WHERE id=? AND user_id=?", (cid, uid))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
     fields = ['parcela_id','parcela_etiqueta','fecha_inicio','fecha_fin','cultivo',
@@ -805,6 +929,71 @@ def manage_aplicador(aid):
     data = request.json or {}
     conn.execute("UPDATE aplicadores SET nombre=?, nif=?, num_ropo=? WHERE id=? AND user_id=?",
                  (data.get('nombre'), data.get('nif'), data.get('num_ropo'), aid, uid))
+    conn.commit(); conn.close(); return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# COMPRAS (Trazabilidad — Anexo III S5)
+# ─────────────────────────────────────────────
+@app.route('/api/compras', methods=['GET', 'POST'])
+@login_required
+def manage_compras():
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'GET':
+        campana = request.args.get('campana', '')
+        sql = "SELECT * FROM compras WHERE user_id=? AND deleted_at IS NULL"
+        params = [uid]
+        if campana:
+            sql += " AND campana=?"
+            params.append(campana)
+        sql += " ORDER BY fecha DESC"
+        rows = dicts(conn, sql, params)
+        conn.close(); return jsonify(rows)
+
+    data = request.json or {}
+    err = _validate_compra(data)
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
+
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO compras (user_id, fecha, tipo_producto, producto, proveedor,
+            cantidad_valor, cantidad_unidad, num_lote, num_factura, precio_total, campana, notas)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, data.get('fecha'), data.get('tipo_producto'), data.get('producto'),
+          data.get('proveedor'), data.get('cantidad_valor'),
+          data.get('cantidad_unidad', 'kg'), data.get('num_lote'),
+          data.get('num_factura'), data.get('precio_total'),
+          data.get('campana', '2025/2026'), data.get('notas')))
+    conn.commit(); new_id = c.lastrowid; conn.close()
+    return jsonify({"status": "ok", "id": new_id}), 201
+
+
+@app.route('/api/compras/<int:cid>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def manage_compra(cid):
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'DELETE':
+        conn.execute(
+            "UPDATE compras SET deleted_at=datetime('now') WHERE id=? AND user_id=?",
+            (cid, uid))
+        conn.commit(); conn.close(); return jsonify({"status": "ok"})
+    if request.method == 'GET':
+        row = one(conn, "SELECT * FROM compras WHERE id=? AND user_id=? AND deleted_at IS NULL", (cid, uid))
+        conn.close(); return jsonify(row or {})
+    data = request.json or {}
+    err = _validate_compra(data)
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
+    fields = ['fecha','tipo_producto','producto','proveedor','cantidad_valor',
+              'cantidad_unidad','num_lote','num_factura','precio_total','campana','notas']
+    sets = ', '.join(f"{f}=?" for f in fields)
+    conn.execute(f"UPDATE compras SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
+                 [data.get(f) for f in fields] + [cid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
@@ -992,46 +1181,56 @@ def extraer_parcela(texto, uid):
     return None
 
 def extraer_nombre_candidato(texto):
-    """Extrae el candidato a nombre de parcela entre el verbo y 'con'/fin."""
-    ARTICULOS   = {'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas'}
-    STOP_FIN    = {'hoy', 'ayer', 'esta', 'este', 'manana', 'por', 'he', 'con', 'sin', 'y'}
-    # Verbos agrícolas — stems con sufijos variados (participio, 1ª/3ª sing. pasado, presente)
+    """Extrae el candidato a nombre de parcela.
+    Prioridad 1: locativo explícito 'en/finca/parcela/campo [el/la] NOMBRE'
+    Prioridad 2: patrón verbo → NOMBRE (sin 'en' intermedio)
+    """
+    STOP_FIN = {'hoy', 'ayer', 'esta', 'este', 'manana', 'por', 'he', 'con', 'sin', 'y'}
+    # Palabras función que se eliminan al inicio SOLO si están en minúscula.
+    # Mayúscula inicial = parte del nombre propio (ej: "Las Mesas", "El Llano").
+    SKIP_LOW = {'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas',
+                'parcela', 'finca', 'campo', 'terreno'}
+
+    def _limpiar(palabras):
+        while palabras and _norm(palabras[-1]) in {_norm(s) for s in STOP_FIN}:
+            palabras.pop()
+        while palabras and palabras[0].lower() in SKIP_LOW and not palabras[0][0].isupper():
+            palabras.pop(0)
+        return ' '.join(palabras)
+
+    # ── Prioridad 1: locativo explícito ──
+    # No consume el artículo en el regex; _limpiar decide si eliminarlo o no
+    # según mayúscula/minúscula. Así "las Mesas"→"MESAS" y "Las Mesas"→"LAS MESAS".
+    m1 = _re.search(
+        r'(?:en|finca|parcela|campo)\s+([\w][\w\s]{1,30}?)'
+        r'(?=\s+con\s|\s*[,.]|\s*$)',
+        texto, _re.IGNORECASE
+    )
+    if m1:
+        candidato = _limpiar(m1.group(1).strip().split())
+        if 2 < len(candidato) < 40:
+            return candidato.upper()
+
+    # ── Prioridad 2: verbo → [artículo] → NOMBRE (sin preposición en medio) ──
+    # Solo captura hasta 'en' para evitar arrastrar el producto.
     VERBOS = (
         r'trat\w{1,6}|abon\w{1,6}|reg\w{1,6}|pod\w{1,6}|cosech\w{1,6}|'
         r'fumig\w{1,6}|sembr\w{1,6}|siembr\w{1,5}|labr\w{1,6}|vendimi\w{1,6}|'
         r'recog\w{1,6}|arad\w{1,5}|cav\w{1,5}|desbroz\w{1,5}|pulver\w{1,5}|'
         r'trilla\w{1,4}|recolect\w{1,5}|subsolad\w{1,4}|grad\w{1,5}|cultiv\w{1,5}'
     )
-    # Patrón: verbo → [artículo] → NOMBRE → (con|,|.|fin|palabra_stop)
-    patron = (
+    m2 = _re.search(
         r'(?:' + VERBOS + r')'
         r'\s+(?:el\s+|la\s+|los\s+|las\s+)?'
         r'([\w][\w\s]{1,33}?)'
-        r'(?=\s+con\s|\s*[,.]|\s+(?:hoy|ayer|esta|este|esta\s+ma|por|de\s+|$)|\s*$)'
-    )
-    m = _re.search(patron, texto, _re.IGNORECASE)
-    if m:
-        palabras = m.group(1).strip().split()
-        while palabras and _norm(palabras[-1]) in {_norm(s) for s in STOP_FIN}:
-            palabras.pop()
-        while palabras and palabras[0].lower() in ARTICULOS:
-            palabras.pop(0)
-        candidato = ' '.join(palabras)
-        if 2 < len(candidato) < 40:
-            return candidato.upper()
-    # Fallback: "en/finca/parcela/campo [el/la] NOMBRE"
-    m2 = _re.search(
-        r'(?:en|finca|parcela|campo)\s+(?:el\s+|la\s+)?([\w][\w\s]{1,30}?)'
-        r'(?=\s+con\s|\s*[,.]|\s*$)',
+        r'(?=\s+en\s|\s+con\s|\s*[,.]|\s+(?:hoy|ayer|esta|este|por|de\s+|$)|\s*$)',
         texto, _re.IGNORECASE
     )
     if m2:
-        palabras = m2.group(1).strip().split()
-        while palabras and palabras[0].lower() in ARTICULOS:
-            palabras.pop(0)
-        candidato = ' '.join(palabras)
+        candidato = _limpiar(m2.group(1).strip().split())
         if 2 < len(candidato) < 40:
             return candidato.upper()
+
     return None
 
 def extraer_accion(texto):
@@ -1434,6 +1633,7 @@ def route_export_pdf():
 
 @app.route('/api/backup/export')
 @login_required
+@admin_required
 def backup_export():
     db_path = os.path.join(os.path.dirname(__file__), 'cuaderno.db')
     return send_file(db_path, as_attachment=True, download_name='cuaderno_backup.db')
@@ -1454,6 +1654,7 @@ def backup_import():
 # METEOROLOGÍA — PROXY ALERTAS AEMET
 # ─────────────────────────────────────────────
 @app.route('/api/aemet/alertas')
+@login_required
 def aemet_alertas():
     import xml.etree.ElementTree as ET
     provincia = (request.args.get('provincia') or '').strip().lower()
