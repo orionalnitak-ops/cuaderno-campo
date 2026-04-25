@@ -1,23 +1,32 @@
-import sqlite3
 import os
 
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
 DATABASE_NAME = os.environ.get('DB_PATH', 'cuaderno.db')
 
-# Single-user mode — all data belongs to this user ID
+# Render exposes postgres://, psycopg2 requires postgresql://
+if DATABASE_URL.startswith('postgres://'):
+    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+
+USE_PG = bool(DATABASE_URL)
+
+# Primary key syntax differs between engines
+_PK = "SERIAL PRIMARY KEY" if USE_PG else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
 SINGLE_USER_ID = 2
 
-# PAC-eligible SIGPAC usage codes (visible in UI)
 PAC_USES = frozenset([
     'IV', 'TA', 'TH', 'OP', 'CF', 'CI', 'CS', 'CV',
     'FF', 'FL', 'FS', 'FV', 'FY', 'OC', 'OF', 'OV',
     'VF', 'VI', 'VO', 'PA', 'PR', 'PS'
 ])
 
+
 def extract_uso_code(uso_sigpac_str):
     """Extract 2-letter code from 'OV-OLIVAR' → 'OV'"""
     if not uso_sigpac_str:
         return ''
     return uso_sigpac_str.split('-')[0].strip().upper()
+
 
 def is_pac_eligible(uso_sigpac_str):
     """Return True if parcel uso_sigpac is PAC-eligible and visible in UI."""
@@ -26,34 +35,135 @@ def is_pac_eligible(uso_sigpac_str):
         return False
     return extract_uso_code(uso_sigpac_str) in PAC_USES
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PostgreSQL compatibility wrappers
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _PgCursor:
+    """Wraps psycopg2 DictCursor to match sqlite3.Cursor API used in this project.
+
+    Translates ? placeholders → %s, and captures RETURNING id for lastrowid.
+    """
+
+    def __init__(self, raw):
+        self._c = raw
+        self._lastrowid = None
+
+    def execute(self, sql, params=None):
+        sql = sql.replace('?', '%s')
+        is_insert = (
+            sql.strip().upper().startswith('INSERT')
+            and 'RETURNING' not in sql.upper()
+        )
+        if is_insert:
+            sql = sql.rstrip('; \n\t') + ' RETURNING id'
+        if params:
+            self._c.execute(sql, params)
+        else:
+            self._c.execute(sql)
+        if is_insert:
+            row = self._c.fetchone()
+            self._lastrowid = row[0] if row else None
+
+    def executemany(self, sql, params_list):
+        sql = sql.replace('?', '%s')
+        self._c.executemany(sql, params_list)
+
+    def fetchone(self):
+        return self._c.fetchone()
+
+    def fetchall(self):
+        return self._c.fetchall()
+
+    @property
+    def lastrowid(self):
+        return self._lastrowid
+
+    @property
+    def rowcount(self):
+        return self._c.rowcount
+
+
+class _PgConn:
+    """Wraps psycopg2 connection to match sqlite3.Connection API used in this project."""
+
+    def __init__(self, raw):
+        self._conn = raw
+        self.row_factory = None  # no-op; kept so app.py can set it without error
+
+    def cursor(self):
+        import psycopg2.extras
+        return _PgCursor(self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor))
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+    def rollback(self):
+        self._conn.rollback()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public interface
+# ─────────────────────────────────────────────────────────────────────────────
+
 def get_db():
+    if USE_PG:
+        import psycopg2
+        conn = psycopg2.connect(DATABASE_URL)
+        return _PgConn(conn)
+    import sqlite3
     conn = sqlite3.connect(DATABASE_NAME)
     conn.row_factory = sqlite3.Row
     return conn
 
-def row_to_dict(row):
-    return dict(row) if row else None
 
-def rows_to_list(rows):
-    return [dict(r) for r in rows] if rows else []
+def dicts(conn, sql, params=()):
+    """Execute sql and return list of dicts. Works for both SQLite and PostgreSQL."""
+    if not USE_PG:
+        import sqlite3
+        conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute(sql, params)
+    return [dict(r) for r in c.fetchall()]
 
-# ─────────────────────────────────────────────
+
+def one(conn, sql, params=()):
+    """Execute sql and return one dict, or None. Works for both SQLite and PostgreSQL."""
+    if not USE_PG:
+        import sqlite3
+        conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute(sql, params)
+    r = c.fetchone()
+    return dict(r) if r else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Safe column migration helper
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+
 def _add_col(cursor, table, col, col_type):
-    try:
-        cursor.execute(f'ALTER TABLE {table} ADD COLUMN {col} {col_type}')
-    except sqlite3.OperationalError:
-        pass  # Column already exists
+    if USE_PG:
+        cursor.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}')
+    else:
+        try:
+            cursor.execute(f'ALTER TABLE {table} ADD COLUMN {col} {col_type}')
+        except Exception:
+            pass  # column already exists
+
 
 def init_db():
     conn = get_db()
     c = conn.cursor()
 
     # ── EXPLOTACION ──
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS explotacion (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {_PK},
             user_id INTEGER DEFAULT 2,
             titular TEXT,
             nif TEXT,
@@ -67,13 +177,13 @@ def init_db():
             lopd_accepted INTEGER DEFAULT 0
         )
     ''')
-    for col, typ in [('fecha_apertura','TEXT'), ('lopd_accepted','INTEGER DEFAULT 0')]:
+    for col, typ in [('fecha_apertura', 'TEXT'), ('lopd_accepted', 'INTEGER DEFAULT 0')]:
         _add_col(c, 'explotacion', col, typ)
 
     # ── PARCELAS ──
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS parcelas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {_PK},
             user_id INTEGER DEFAULT 2,
             comunidad TEXT DEFAULT '07-Castilla-La Mancha',
             provincia_cod TEXT,
@@ -95,23 +205,24 @@ def init_db():
         )
     ''')
     for col, typ in [
-        ('comunidad','TEXT'), ('provincia_cod','TEXT'), ('provincia_nombre','TEXT'),
-        ('municipio_cod','TEXT'), ('municipio_nombre','TEXT'), ('nombre_finca','TEXT'),
-        ('poligono','TEXT'), ('parcela_num','TEXT'), ('recinto','TEXT'),
-        ('sistema_explotacion','TEXT'), ('masa_agua_cercana','INTEGER DEFAULT 0'),
-        ('notas','TEXT'), ('activa','INTEGER DEFAULT 1'),
-        ('created_at','TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
-        ('updated_at','TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ('comunidad', 'TEXT'), ('provincia_cod', 'TEXT'), ('provincia_nombre', 'TEXT'),
+        ('municipio_cod', 'TEXT'), ('municipio_nombre', 'TEXT'), ('nombre_finca', 'TEXT'),
+        ('poligono', 'TEXT'), ('parcela_num', 'TEXT'), ('recinto', 'TEXT'),
+        ('sistema_explotacion', 'TEXT'), ('masa_agua_cercana', 'INTEGER DEFAULT 0'),
+        ('notas', 'TEXT'), ('activa', 'INTEGER DEFAULT 1'),
+        ('created_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ('updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
     ]:
         _add_col(c, 'parcelas', col, typ)
 
     # ── CULTIVOS CAMPAÑA ──
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS cultivos_campana (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {_PK},
             parcela_id INTEGER NOT NULL,
             campana TEXT NOT NULL,
             cultivo TEXT,
+            cultivo_iacs_cod TEXT,
             variedad TEXT,
             fecha_siembra TEXT,
             fecha_recoleccion_prevista TEXT,
@@ -123,11 +234,40 @@ def init_db():
             UNIQUE(parcela_id, campana)
         )
     ''')
+    _add_col(c, 'cultivos_campana', 'cultivo_iacs_cod', 'TEXT')
+
+    # ── COMPRAS (Trazabilidad — Anexo III S5) ──
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS compras (
+            id {_PK},
+            user_id INTEGER DEFAULT 2,
+            fecha TEXT,
+            tipo_producto TEXT,
+            producto TEXT,
+            proveedor TEXT,
+            cantidad_valor REAL,
+            cantidad_unidad TEXT DEFAULT 'kg',
+            num_lote TEXT,
+            num_factura TEXT,
+            precio_total REAL,
+            campana TEXT DEFAULT '2025/2026',
+            notas TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TEXT
+        )
+    ''')
+    for col, typ in [
+        ('fecha', 'TEXT'), ('tipo_producto', 'TEXT'), ('producto', 'TEXT'),
+        ('proveedor', 'TEXT'), ('cantidad_valor', 'REAL'), ('cantidad_unidad', 'TEXT'),
+        ('num_lote', 'TEXT'), ('num_factura', 'TEXT'), ('precio_total', 'REAL'),
+        ('campana', 'TEXT'), ('notas', 'TEXT'), ('deleted_at', 'TEXT'),
+    ]:
+        _add_col(c, 'compras', col, typ)
 
     # ── EQUIPOS ──
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS equipos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {_PK},
             user_id INTEGER DEFAULT 2,
             descripcion TEXT,
             tipo TEXT,
@@ -138,13 +278,16 @@ def init_db():
             notas TEXT
         )
     ''')
-    for col, typ in [('marca','TEXT'),('modelo','TEXT'),('num_registro_roma','TEXT'),('fecha_iteaf','TEXT')]:
+    for col, typ in [
+        ('marca', 'TEXT'), ('modelo', 'TEXT'),
+        ('num_registro_roma', 'TEXT'), ('fecha_iteaf', 'TEXT'),
+    ]:
         _add_col(c, 'equipos', col, typ)
 
     # ── APLICADORES ──
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS aplicadores (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {_PK},
             user_id INTEGER DEFAULT 2,
             nombre TEXT NOT NULL,
             nif TEXT,
@@ -154,9 +297,9 @@ def init_db():
     ''')
 
     # ── TRATAMIENTOS ──
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS tratamientos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {_PK},
             user_id INTEGER DEFAULT 2,
             parcela_id INTEGER,
             parcela_etiqueta TEXT,
@@ -181,21 +324,22 @@ def init_db():
         )
     ''')
     for col, typ in [
-        ('parcela_id','INTEGER'), ('parcela_etiqueta','TEXT'),
-        ('fecha_aplicacion','TEXT'), ('producto_comercial','TEXT'),
-        ('num_registro_mapa','TEXT'), ('sustancia_activa','TEXT'),
-        ('plaga_objetivo','TEXT'), ('dosis_valor','REAL'), ('dosis_unidad','TEXT'),
-        ('volumen_caldo','REAL'), ('equipo_id','INTEGER'), ('condiciones_meteo','TEXT'),
-        ('plazo_seguridad_dias','INTEGER'), ('fecha_recoleccion_minima','TEXT'),
-        ('eficacia','TEXT'), ('aplicador_id','INTEGER'), ('campana','TEXT'),
-        ('updated_at','TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ('parcela_id', 'INTEGER'), ('parcela_etiqueta', 'TEXT'),
+        ('fecha_aplicacion', 'TEXT'), ('producto_comercial', 'TEXT'),
+        ('num_registro_mapa', 'TEXT'), ('sustancia_activa', 'TEXT'),
+        ('plaga_objetivo', 'TEXT'), ('dosis_valor', 'REAL'), ('dosis_unidad', 'TEXT'),
+        ('volumen_caldo', 'REAL'), ('equipo_id', 'INTEGER'), ('condiciones_meteo', 'TEXT'),
+        ('plazo_seguridad_dias', 'INTEGER'), ('fecha_recoleccion_minima', 'TEXT'),
+        ('eficacia', 'TEXT'), ('aplicador_id', 'INTEGER'), ('campana', 'TEXT'),
+        ('updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ('deleted_at', 'TEXT'),
     ]:
         _add_col(c, 'tratamientos', col, typ)
 
     # ── FERTILIZACION ──
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS fertilizacion (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {_PK},
             user_id INTEGER DEFAULT 2,
             parcela_id INTEGER,
             parcela_etiqueta TEXT,
@@ -213,17 +357,18 @@ def init_db():
         )
     ''')
     for col, typ in [
-        ('parcela_id','INTEGER'), ('parcela_etiqueta','TEXT'),
-        ('fecha_aplicacion','TEXT'), ('producto','TEXT'), ('riqueza_npk','TEXT'),
-        ('dosis_valor','REAL'), ('dosis_unidad','TEXT'), ('metodo_aplicacion','TEXT'),
-        ('campana','TEXT'), ('updated_at','TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ('parcela_id', 'INTEGER'), ('parcela_etiqueta', 'TEXT'),
+        ('fecha_aplicacion', 'TEXT'), ('producto', 'TEXT'), ('riqueza_npk', 'TEXT'),
+        ('dosis_valor', 'REAL'), ('dosis_unidad', 'TEXT'), ('metodo_aplicacion', 'TEXT'),
+        ('campana', 'TEXT'), ('updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ('deleted_at', 'TEXT'),
     ]:
         _add_col(c, 'fertilizacion', col, typ)
 
     # ── LABORES ──
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS labores (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {_PK},
             user_id INTEGER DEFAULT 2,
             parcela_id INTEGER,
             parcela_etiqueta TEXT,
@@ -239,13 +384,12 @@ def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-
     _add_col(c, 'labores', 'producto', 'TEXT')
 
     # ── COSECHA ──
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS cosecha (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {_PK},
             user_id INTEGER DEFAULT 2,
             parcela_id INTEGER,
             parcela_etiqueta TEXT,
@@ -268,9 +412,9 @@ def init_db():
     ''')
 
     # ── USERS ──
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {_PK},
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             nombre TEXT,
@@ -291,7 +435,13 @@ def _seed_admin(conn):
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM users WHERE role='admin'")
     if c.fetchone()[0] == 0:
-        pw = bcrypt.hashpw(b'admin1234', bcrypt.gensalt()).decode('utf-8')
+        admin_pw = os.environ.get('ADMIN_PASSWORD')
+        if not admin_pw:
+            import secrets, string
+            admin_pw = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
+            print(f"\n*** ADMIN CREADO — contraseña inicial: {admin_pw} ***")
+            print("*** Cámbiala inmediatamente en Ajustes > Mi Cuenta ***\n")
+        pw = bcrypt.hashpw(admin_pw.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         c.execute("INSERT INTO users (email, password_hash, nombre, role) VALUES (?,?,?,?)",
                   ('admin@cuaderno.es', pw, 'Administrador', 'admin'))
         conn.commit()
@@ -328,7 +478,6 @@ def _seed_if_needed(conn):
 
 
 def _seed_parcelas(c):
-    # (nombre_finca, poligono, parcela_num, recinto, uso_sigpac, superficie_ha)
     raw = [
         ("HAZA GRANDE",        25,  1,  1, "OV-OLIVAR",      5.1015),
         ("HAZA GRANDE",        25,  1,  2, "OV-OLIVAR",      2.1308),
@@ -368,7 +517,7 @@ def _seed_parcelas(c):
         ("CHARCÓN",            50, 58,  1, "OV-OLIVAR",      1.4878),
         ("CHARCÓN",            50, 58,  2, "CA-VIALES",      0.0047),
         ("CHARCÓN",            50, 59,  1, "TA-NO PAC",      0.8993),
-        ("CHARCÓN",            50, 59,  2, "PR-PASTO ARBUST",0.2048),
+        ("CHARCÓN",            50, 59,  2, "PR-PASTO ARBUST", 0.2048),
         ("CHARCÓN",            50, 59,  3, "FY-FRUTALES",    0.5473),
         ("CHARCÓN",            50, 59,  4, "TA-NO PAC",      0.9148),
         ("MINAS-N.MOTOR",      49, 22,  2, "OV-OLIVAR",      2.7707),
