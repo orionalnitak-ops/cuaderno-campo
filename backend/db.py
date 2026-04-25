@@ -102,6 +102,11 @@ class _PgConn:
     def close(self):
         self._conn.close()
 
+    def execute(self, sql, params=None):
+        c = self.cursor()
+        c.execute(sql, params)
+        return c
+
     def rollback(self):
         self._conn.rollback()
 

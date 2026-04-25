@@ -1327,6 +1327,55 @@ def extraer_dosis(texto):
             return {'valor': valor, 'unidad': unidad, 'texto_original': m.group(0)}
     return {'valor': None, 'unidad': None, 'texto_original': None}
 
+def extraer_fecha(texto):
+    """Extrae fecha del texto en lenguaje natural. Devuelve ISO string o hoy."""
+    import datetime
+    texto_l = texto.lower()
+    hoy = datetime.date.today()
+
+    if 'anteayer' in texto_l:
+        return (hoy - datetime.timedelta(days=2)).isoformat()
+    if 'ayer' in texto_l:
+        return (hoy - datetime.timedelta(days=1)).isoformat()
+
+    MESES = {
+        'enero':1,'febrero':2,'marzo':3,'abril':4,'mayo':5,'junio':6,
+        'julio':7,'agosto':8,'septiembre':9,'octubre':10,'noviembre':11,'diciembre':12
+    }
+    m = _re.search(r'\b(\d{1,2})\s+de\s+(' + '|'.join(MESES.keys()) + r')\b', texto_l)
+    if m:
+        dia, mes = int(m.group(1)), MESES[m.group(2)]
+        for yr in (hoy.year, hoy.year - 1):
+            try:
+                fecha = datetime.date(yr, mes, dia)
+                if fecha <= hoy + datetime.timedelta(days=1):
+                    return fecha.isoformat()
+            except ValueError:
+                pass
+
+    m = _re.search(r'\b(\d{1,2})[/-](\d{1,2})\b', texto_l)
+    if m:
+        dia, mes = int(m.group(1)), int(m.group(2))
+        for yr in (hoy.year, hoy.year - 1):
+            try:
+                fecha = datetime.date(yr, mes, dia)
+                if fecha <= hoy + datetime.timedelta(days=1):
+                    return fecha.isoformat()
+            except ValueError:
+                pass
+
+    DIAS = {
+        'lunes':0,'martes':1,'miércoles':2,'miercoles':2,
+        'jueves':3,'viernes':4,'sábado':5,'sabado':5,'domingo':6
+    }
+    for nombre, num in DIAS.items():
+        if nombre in texto_l:
+            atras = (hoy.weekday() - num) % 7 or 7
+            return (hoy - datetime.timedelta(days=atras)).isoformat()
+
+    return hoy.isoformat()
+
+
 @app.route('/api/parse', methods=['POST'])
 @login_required
 def parse_texto_libre():
@@ -1344,7 +1393,7 @@ def parse_texto_libre():
     nombre_candidato = None if parcela_data else extraer_nombre_candidato(texto)
 
     parcela_id = parcela_data['id'] if parcela_data else None
-    fecha_hoy = datetime.date.today().isoformat()
+    fecha = extraer_fecha(texto)
 
     return jsonify({
         "status": "success",
@@ -1361,7 +1410,7 @@ def parse_texto_libre():
             "accion": {"tipo": accion_data['tipo'], "palabra_clave": accion_data['palabra_clave'], "confianza": accion_data['confianza']},
             "producto": {"nombre": producto_data['nombre'], "confianza": producto_data['confianza']},
             "dosis": {"valor": dosis_data['valor'], "unidad": dosis_data['unidad']},
-            "fecha": fecha_hoy,
+            "fecha": fecha,
         },
         "requiere_confirmacion": not parcela_data and not nombre_candidato,
     })
