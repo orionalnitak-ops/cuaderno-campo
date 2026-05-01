@@ -332,7 +332,11 @@ function ScreenParcelas({ campana, showToast }) {
         showToast(editId ? 'Parcela actualizada' : 'Parcela añadida');
         setSaving(false); setShowForm(false);
         fetchParcelas();
-        if (!editId) setSelected(null);
+        if (editId) {
+            setSelected(prev => prev ? { ...prev, ...form, id: prev.id } : prev);
+        } else {
+            setSelected(null);
+        }
     };
 
     const deleteParcela = async (p) => {
