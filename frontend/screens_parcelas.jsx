@@ -287,10 +287,10 @@ function ScreenParcelas({ campana, showToast }) {
                 setSigpacState('ok');
                 showToast(`✅ SIGPAC: ${partes.join(' · ')}`);
             } else if (d.num_recintos > 0) {
-                // Hay recintos pero no pudimos extraer los campos — mostrar claves disponibles
-                const claves = Object.keys(d._props || {}).join(', ');
+                // Hay recintos pero no pudimos extraer superficie/uso — mostrar claves del detalle
+                const claves = Object.keys(d._detail || {}).slice(0, 8).join(', ');
                 setSigpacState('error');
-                showToast(`SIGPAC encontró ${d.num_recintos} recinto(s) pero sin datos útiles. Campos: ${claves}`);
+                showToast(`SIGPAC: ${d.num_recintos} recinto(s). Detalle: ${claves || 'sin respuesta'}`);
             } else {
                 setSigpacState('error');
                 showToast('Sin resultados SIGPAC para esa referencia. Comprueba polígono y parcela.');

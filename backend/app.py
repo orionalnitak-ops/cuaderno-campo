@@ -1092,10 +1092,19 @@ def _catastro_a_uso_sigpac(ccc, dcc=''):
     if 'PASTIZAL' in dcc_n or 'PASTO' in dcc_n: return 'PA-PASTO'
     return ''
 
+_USO_LABELS = {
+    'OV':'OV-OLIVAR','VI':'VI-VIÑEDO','TA':'TA-TIERRA ARABLE',
+    'TH':'TH-HUERTA','CF':'CF-CITRICOS','FL':'FL-FRUTOS SECOS',
+    'FY':'FY-FRUTALES','PA':'PA-PASTO','PR':'PR-PASTO ARBUSTIVO',
+    'PS':'PS-PASTIZAL','CA':'CA-VIALES','IM':'IM-IMPRODUCTIVO',
+    'AG':'AG-CORRIENTES AGUA','ZU':'ZU-ZONA URBANA','ED':'ED-EDIFICACIONES',
+    'IV':'IV-INVERNADERO',
+}
+
 @app.route('/api/sigpac/datos')
 @login_required
 def sigpac_datos():
-    """Obtiene superficie y uso SIGPAC desde el endpoint de recintos (GeoJSON)."""
+    """Obtiene superficie y uso SIGPAC via endpoint de intersección."""
     prov = request.args.get('provincia', '')
     mun  = request.args.get('municipio', '')
     pol  = request.args.get('poligono', '')
@@ -1105,44 +1114,38 @@ def sigpac_datos():
     resultado = {'superficie_ha': '', 'uso_sigpac': '', 'referencia_cat': '', 'num_recintos': 0}
 
     try:
-        # Fuente principal: /recintos devuelve GeoJSON con dn_surface y uso_sigpac
+        # Paso 1: lista de recintos → contar y obtener dn_pk del recinto pedido
         recintos_data = _sigpac_get(f"{SIGPAC_BASE}/recintos/{prov}/{mun}/0/0/{pol}/{par}")
-
-        # Si SIGPAC devuelve error, propagarlo
         if 'error' in recintos_data and 'features' not in recintos_data:
             resultado['error'] = recintos_data['error']
             return jsonify(resultado)
 
         features = recintos_data.get('features', [])
         resultado['num_recintos'] = len(features)
-        # Exponer todas las keys del primer feature para depuración
-        resultado['_props'] = features[0].get('properties', {}) if features else {}
 
-        # Buscar el recinto concreto; si no existe, usar el primero
-        props = None
+        # dn_pk del recinto seleccionado (o el primero si no coincide el código)
+        dn_pk = None
         for feat in features:
             p = feat.get('properties', {})
-            if str(p.get('recinto', '')) == str(rec):
-                props = p
+            if str(p.get('codigo', '')) == str(rec):
+                dn_pk = p.get('dn_pk')
                 break
-        if props is None and features:
-            props = features[0].get('properties', {})
+        if dn_pk is None and features:
+            dn_pk = features[0].get('properties', {}).get('dn_pk')
 
-        if props:
-            # dn_surface está en m² — probar nombres alternativos por si cambia la API
-            dn = props.get('dn_surface') or props.get('sup_gis') or props.get('superficie')
+        # Paso 2: detalle del recinto por dn_pk → superficie y uso_sigpac
+        if dn_pk:
+            INTER_BASE = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/intersection"
+            detail = _sigpac_get(f"{INTER_BASE}/recinto/geometria/{dn_pk}")
+            resultado['_detail'] = detail  # para depuración
+
+            # La respuesta puede ser directa o anidada en parcelaInfo
+            info = detail.get('parcelaInfo') or detail or {}
+            dn = info.get('dn_surface') or info.get('sup_gis') or info.get('superficie')
             if dn:
                 resultado['superficie_ha'] = round(float(dn) / 10000, 4)
-            uso_raw = props.get('uso_sigpac') or props.get('uso') or ''
+            uso_raw = info.get('uso_sigpac') or info.get('uso') or ''
             if uso_raw:
-                _USO_LABELS = {
-                    'OV':'OV-OLIVAR','VI':'VI-VIÑEDO','TA':'TA-TIERRA ARABLE',
-                    'TH':'TH-HUERTA','CF':'CF-CITRICOS','FL':'FL-FRUTOS SECOS',
-                    'FY':'FY-FRUTALES','PA':'PA-PASTO','PR':'PR-PASTO ARBUSTIVO',
-                    'PS':'PS-PASTIZAL','CA':'CA-VIALES','IM':'IM-IMPRODUCTIVO',
-                    'AG':'AG-CORRIENTES AGUA','ZU':'ZU-ZONA URBANA','ED':'ED-EDIFICACIONES',
-                    'IV':'IV-INVERNADERO',
-                }
                 resultado['uso_sigpac'] = _USO_LABELS.get(str(uso_raw).upper(), uso_raw)
 
     except Exception as e:
