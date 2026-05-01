@@ -268,6 +268,11 @@ function ScreenParcelas({ campana, showToast }) {
                 { credentials: 'include' }
             );
             const d = await res.json();
+            if (d.error) {
+                setSigpacState('error');
+                showToast(`Error SIGPAC: ${d.error}`);
+                return;
+            }
             const sup = d.superficie_ha ? String(d.superficie_ha) : '';
             const uso = d.uso_sigpac || '';
             if (sup || uso) {
@@ -281,9 +286,14 @@ function ScreenParcelas({ campana, showToast }) {
                 if (uso) partes.push(uso);
                 setSigpacState('ok');
                 showToast(`✅ SIGPAC: ${partes.join(' · ')}`);
+            } else if (d.num_recintos > 0) {
+                // Hay recintos pero no pudimos extraer los campos — mostrar claves disponibles
+                const claves = Object.keys(d._props || {}).join(', ');
+                setSigpacState('error');
+                showToast(`SIGPAC encontró ${d.num_recintos} recinto(s) pero sin datos útiles. Campos: ${claves}`);
             } else {
                 setSigpacState('error');
-                showToast('Sin datos SIGPAC para esa referencia');
+                showToast('Sin resultados SIGPAC para esa referencia. Comprueba polígono y parcela.');
             }
         } catch {
             setSigpacState('error');
