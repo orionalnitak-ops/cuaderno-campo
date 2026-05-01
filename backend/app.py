@@ -1134,20 +1134,35 @@ def sigpac_datos():
             dn_pk = features[0].get('properties', {}).get('dn_pk')
         resultado['dn_pk'] = dn_pk
 
-        # Paso 2: detalle del recinto por dn_pk → superficie y uso_sigpac
+        # Paso 2: probar varios endpoints hasta obtener superficie/uso
+        INTER = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/intersection"
+        candidatos = []
         if dn_pk:
-            INTER_BASE = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/intersection"
-            detail = _sigpac_get(f"{INTER_BASE}/recinto/geometria/{dn_pk}")
-            resultado['_detail'] = detail  # para depuración
+            candidatos += [
+                f"{SIGPAC_BASE}/recinto/{dn_pk}",
+                f"{INTER}/recinto/{dn_pk}",
+                f"{INTER}/recinto/geometria/{dn_pk}",
+            ]
+        # Intersection por referencia completa (prov,mun,agr,zona,pol,par,rec)
+        candidatos.append(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},{rec}")
 
-            # La respuesta puede ser directa o anidada en parcelaInfo
-            info = detail.get('parcelaInfo') or detail or {}
+        for url in candidatos:
+            resp = _sigpac_get(url)
+            if 'error' in resp and len(resp) == 1:
+                continue  # este endpoint falló, probar el siguiente
+            resultado['_detail'] = resp
+            info = resp.get('parcelaInfo') or resp or {}
+            # Si es GeoJSON, extraer del primer feature
+            if 'features' in resp and resp['features']:
+                info = resp['features'][0].get('properties', {})
             dn = info.get('dn_surface') or info.get('sup_gis') or info.get('superficie')
-            if dn:
-                resultado['superficie_ha'] = round(float(dn) / 10000, 4)
             uso_raw = info.get('uso_sigpac') or info.get('uso') or ''
-            if uso_raw:
-                resultado['uso_sigpac'] = _USO_LABELS.get(str(uso_raw).upper(), uso_raw)
+            if dn or uso_raw:
+                if dn:
+                    resultado['superficie_ha'] = round(float(dn) / 10000, 4)
+                if uso_raw:
+                    resultado['uso_sigpac'] = _USO_LABELS.get(str(uso_raw).upper(), uso_raw)
+                break  # encontrado, salir
 
     except Exception as e:
         resultado['error'] = str(e)
@@ -1170,14 +1185,16 @@ def sigpac_debug():
     features = recintos_raw.get('features', [])
     dn_pk = features[0].get('properties', {}).get('dn_pk') if features else None
 
+    dk = str(dn_pk) if dn_pk else None
     return jsonify({
         'params': {'prov': prov, 'mun': mun, 'pol': pol, 'par': par, 'rec': rec},
         'recintos_features_count': len(features),
         'recintos_first_props': features[0].get('properties', {}) if features else {},
-        'dn_pk': dn_pk,
-        'inter_by_ref': _sigpac_get(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},{rec}"),
-        'inter_by_dnpk': _sigpac_get(f"{INTER}/recinto/geometria/{dn_pk}") if dn_pk else 'no dn_pk',
-        'inter_by_dnpk2': _sigpac_get(f"{INTER}/recinto/{dn_pk}") if dn_pk else 'no dn_pk',
+        'dn_pk': dk,
+        'query_recinto_dnpk':    _sigpac_get(f"{SIGPAC_BASE}/recinto/{dk}") if dk else 'no dn_pk',
+        'inter_recinto_dnpk':    _sigpac_get(f"{INTER}/recinto/{dk}") if dk else 'no dn_pk',
+        'inter_geometria_dnpk':  _sigpac_get(f"{INTER}/recinto/geometria/{dk}") if dk else 'no dn_pk',
+        'inter_by_ref':          _sigpac_get(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},{rec}"),
     })
 
 
