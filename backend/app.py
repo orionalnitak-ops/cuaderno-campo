@@ -1095,7 +1095,7 @@ def _catastro_a_uso_sigpac(ccc, dcc=''):
 @app.route('/api/sigpac/datos')
 @login_required
 def sigpac_datos():
-    """Obtiene superficie y uso SIGPAC combinando SIGPAC + Catastro."""
+    """Obtiene superficie y uso SIGPAC desde el endpoint de recintos (GeoJSON)."""
     prov = request.args.get('provincia', '')
     mun  = request.args.get('municipio', '')
     pol  = request.args.get('poligono', '')
@@ -1105,43 +1105,37 @@ def sigpac_datos():
     resultado = {'superficie_ha': '', 'uso_sigpac': '', 'referencia_cat': '', 'num_recintos': 0}
 
     try:
-        # 1. SIGPAC intersection → superficie (dn_surface m²) + referencia_cat
-        INTER_BASE = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/intersection"
-        inter = _sigpac_get(
-            f"{INTER_BASE}/recinto/recinto/{prov},{mun},0,0,{pol},{par},{rec}"
-        )
-        pi = inter.get('parcelaInfo') or {}
-        dn_surface = pi.get('dn_surface')
-        ref_cat = pi.get('referencia_cat', '')
-        if dn_surface:
-            resultado['superficie_ha'] = round(float(dn_surface) / 10000, 4)
-        resultado['referencia_cat'] = ref_cat
-
-        # Contar recintos
+        # Fuente principal: /recintos devuelve GeoJSON con dn_surface y uso_sigpac
         recintos_data = _sigpac_get(f"{SIGPAC_BASE}/recintos/{prov}/{mun}/0/0/{pol}/{par}")
-        resultado['num_recintos'] = len(recintos_data.get('features', []))
+        features = recintos_data.get('features', [])
+        resultado['num_recintos'] = len(features)
 
-        # 2. Catastro → cultivo/uso por RC
-        if ref_cat:
-            cat_r = req_lib.get(
-                'https://ovc.catastro.meh.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx/Consulta_DNPRC',
-                params={'Provincia': '', 'Municipio': '', 'RC': ref_cat},
-                timeout=8
-            )
-            import xml.etree.ElementTree as ET
-            ns = {'c': 'http://www.catastro.meh.es/'}
-            root = ET.fromstring(cat_r.text)
-            # Superficie de la subparcela principal
-            ssp = root.find('.//c:ssp', ns)
-            if ssp is not None and ssp.text:
-                resultado['superficie_ha'] = round(float(ssp.text) / 10000, 4)
-            # Cultivo/uso
-            ccc = root.find('.//c:ccc', ns)
-            dcc = root.find('.//c:dcc', ns)
-            ccc_v = ccc.text if ccc is not None else ''
-            dcc_v = dcc.text if dcc is not None else ''
-            resultado['uso_sigpac'] = _catastro_a_uso_sigpac(ccc_v, dcc_v)
-            resultado['cultivo_catastro'] = dcc_v
+        # Buscar el recinto concreto; si no existe, usar el primero
+        props = None
+        for feat in features:
+            p = feat.get('properties', {})
+            if str(p.get('recinto', '')) == str(rec):
+                props = p
+                break
+        if props is None and features:
+            props = features[0].get('properties', {})
+
+        if props:
+            dn = props.get('dn_surface')
+            if dn:
+                resultado['superficie_ha'] = round(float(dn) / 10000, 4)
+            uso_raw = props.get('uso_sigpac', '')
+            if uso_raw:
+                # Ampliar código corto a etiqueta larga si existe
+                _USO_LABELS = {
+                    'OV':'OV-OLIVAR','VI':'VI-VIÑEDO','TA':'TA-TIERRA ARABLE',
+                    'TH':'TH-HUERTA','CF':'CF-CITRICOS','FL':'FL-FRUTOS SECOS',
+                    'FY':'FY-FRUTALES','PA':'PA-PASTO','PR':'PR-PASTO ARBUSTIVO',
+                    'PS':'PS-PASTIZAL','CA':'CA-VIALES','IM':'IM-IMPRODUCTIVO',
+                    'AG':'AG-CORRIENTES AGUA','ZU':'ZU-ZONA URBANA','ED':'ED-EDIFICACIONES',
+                    'IV':'IV-INVERNADERO',
+                }
+                resultado['uso_sigpac'] = _USO_LABELS.get(uso_raw.upper(), uso_raw)
 
     except Exception as e:
         resultado['error'] = str(e)

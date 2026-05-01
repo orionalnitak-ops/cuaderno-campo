@@ -575,7 +575,7 @@ function ScreenParcelas({ campana, showToast }) {
                             {/* Nombre finca */}
                             <div style={{ marginBottom:14 }}>
                                 <label className="field-label">Nombre de la finca *</label>
-                                <input className="input-field" value={form.nombre_finca} onChange={e => setForm(f=>({...f,nombre_finca:e.target.value}))} placeholder="HAZA GRANDE, SIXTO…" />
+                                <input className="input-field" value={form.nombre_finca} onChange={e => setForm(f=>({...f,nombre_finca:e.target.value}))} />
                             </div>
 
                             {/* SIGPAC */}
@@ -640,7 +640,7 @@ function ScreenParcelas({ campana, showToast }) {
                                                 <label className="field-label">Polígono</label>
                                                 <ZoomInput
                                                     label="Polígono" type="number" inputMode="numeric"
-                                                    placeholder="25" value={form.poligono}
+                                                    placeholder="" value={form.poligono}
                                                     onConfirm={val => {
                                                         setForm(f=>({...f,poligono:val}));
                                                         if (form.provincia_cod && form.municipio_cod) loadParcelasSigpac(form.provincia_cod, form.municipio_cod, val);
@@ -651,7 +651,7 @@ function ScreenParcelas({ campana, showToast }) {
                                                 <label className="field-label">Parcela</label>
                                                 <ZoomInput
                                                     label="Parcela" type="number" inputMode="numeric"
-                                                    placeholder="62" value={form.parcela_num}
+                                                    placeholder="" value={form.parcela_num}
                                                     onConfirm={val => setForm(f=>({...f,parcela_num:val}))} />
                                             </div>
                                             {/* Recinto */}
@@ -659,7 +659,7 @@ function ScreenParcelas({ campana, showToast }) {
                                                 <label className="field-label">Recinto</label>
                                                 <ZoomInput
                                                     label="Recinto" type="number" inputMode="numeric"
-                                                    placeholder="1" value={form.recinto}
+                                                    placeholder="" value={form.recinto}
                                                     onConfirm={val => setForm(f=>({...f,recinto:val}))} />
                                             </div>
                                             {/* Buscar botón */}
@@ -681,12 +681,12 @@ function ScreenParcelas({ campana, showToast }) {
                                 <div>
                                     <label className="field-label">Superficie (ha)</label>
                                     <input type="number" step="0.0001" className="input-field" value={form.superficie_ha}
-                                        onChange={e => setForm(f=>({...f,superficie_ha:e.target.value}))} placeholder="3.2541" />
+                                        onChange={e => setForm(f=>({...f,superficie_ha:e.target.value}))} />
                                 </div>
                                 <div>
                                     <label className="field-label">Uso SIGPAC</label>
                                     <input className="input-field" value={form.uso_sigpac}
-                                        onChange={e => setForm(f=>({...f,uso_sigpac:e.target.value}))} placeholder="OV-OLIVAR" />
+                                        onChange={e => setForm(f=>({...f,uso_sigpac:e.target.value}))} />
                                 </div>
                                 <div>
                                     <label className="field-label">Sistema de explotación</label>
