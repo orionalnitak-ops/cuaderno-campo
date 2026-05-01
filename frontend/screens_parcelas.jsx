@@ -287,13 +287,12 @@ function ScreenParcelas({ campana, showToast }) {
                 setSigpacState('ok');
                 showToast(`✅ SIGPAC: ${partes.join(' · ')}`);
             } else if (d.num_recintos > 0) {
-                // Hay recintos pero no pudimos extraer superficie/uso — mostrar claves del detalle
-                const claves = Object.keys(d._detail || {}).slice(0, 8).join(', ');
+                const detClaves = Object.keys(d._detail || {}).slice(0, 6).join(', ');
                 setSigpacState('error');
-                showToast(`SIGPAC: ${d.num_recintos} recinto(s). Detalle: ${claves || 'sin respuesta'}`);
+                showToast(`SIGPAC: ${d.num_recintos} rec. dn_pk=${d._detail?.dn_pk ?? d.dn_pk ?? '?'} det=[${detClaves || 'vacío'}]`);
             } else {
                 setSigpacState('error');
-                showToast('Sin resultados SIGPAC para esa referencia. Comprueba polígono y parcela.');
+                showToast(`Sin datos SIGPAC. prov=${form.provincia_cod} mun=${form.municipio_cod} pol=${form.poligono} par=${form.parcela_num}`);
             }
         } catch {
             setSigpacState('error');
