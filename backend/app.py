@@ -1100,6 +1100,7 @@ def sigpac_datos():
     mun  = request.args.get('municipio', '')
     pol  = request.args.get('poligono', '')
     par  = request.args.get('parcela', '')
+    rec  = request.args.get('recinto', '1') or '1'
 
     resultado = {'superficie_ha': '', 'uso_sigpac': '', 'referencia_cat': '', 'num_recintos': 0}
 
@@ -1107,7 +1108,7 @@ def sigpac_datos():
         # 1. SIGPAC intersection → superficie (dn_surface m²) + referencia_cat
         INTER_BASE = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/intersection"
         inter = _sigpac_get(
-            f"{INTER_BASE}/recinto/recinto/{prov},{mun},0,0,{pol},{par},1"
+            f"{INTER_BASE}/recinto/recinto/{prov},{mun},0,0,{pol},{par},{rec}"
         )
         pi = inter.get('parcelaInfo') or {}
         dn_surface = pi.get('dn_surface')
