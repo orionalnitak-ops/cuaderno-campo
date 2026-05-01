@@ -1132,6 +1132,7 @@ def sigpac_datos():
                 break
         if dn_pk is None and features:
             dn_pk = features[0].get('properties', {}).get('dn_pk')
+        resultado['dn_pk'] = dn_pk
 
         # Paso 2: detalle del recinto por dn_pk → superficie y uso_sigpac
         if dn_pk:
