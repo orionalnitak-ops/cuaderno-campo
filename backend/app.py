@@ -1154,6 +1154,32 @@ def sigpac_datos():
     return jsonify(resultado)
 
 
+@app.route('/api/sigpac/debug')
+@login_required
+def sigpac_debug():
+    """Prueba todas las variantes de la API SIGPAC y devuelve respuestas crudas."""
+    prov = request.args.get('provincia', '13')
+    mun  = request.args.get('municipio', '')
+    pol  = request.args.get('poligono', '')
+    par  = request.args.get('parcela', '')
+    rec  = request.args.get('recinto', '1')
+    INTER = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/intersection"
+
+    recintos_raw = _sigpac_get(f"{SIGPAC_BASE}/recintos/{prov}/{mun}/0/0/{pol}/{par}")
+    features = recintos_raw.get('features', [])
+    dn_pk = features[0].get('properties', {}).get('dn_pk') if features else None
+
+    return jsonify({
+        'params': {'prov': prov, 'mun': mun, 'pol': pol, 'par': par, 'rec': rec},
+        'recintos_features_count': len(features),
+        'recintos_first_props': features[0].get('properties', {}) if features else {},
+        'dn_pk': dn_pk,
+        'inter_by_ref': _sigpac_get(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},{rec}"),
+        'inter_by_dnpk': _sigpac_get(f"{INTER}/recinto/geometria/{dn_pk}") if dn_pk else 'no dn_pk',
+        'inter_by_dnpk2': _sigpac_get(f"{INTER}/recinto/{dn_pk}") if dn_pk else 'no dn_pk',
+    })
+
+
 # ─────────────────────────────────────────────
 # NLP SIMPLE — PARSING DE TEXTO LIBRE
 # ─────────────────────────────────────────────
