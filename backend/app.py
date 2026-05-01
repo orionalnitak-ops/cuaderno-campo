@@ -1107,8 +1107,16 @@ def sigpac_datos():
     try:
         # Fuente principal: /recintos devuelve GeoJSON con dn_surface y uso_sigpac
         recintos_data = _sigpac_get(f"{SIGPAC_BASE}/recintos/{prov}/{mun}/0/0/{pol}/{par}")
+
+        # Si SIGPAC devuelve error, propagarlo
+        if 'error' in recintos_data and 'features' not in recintos_data:
+            resultado['error'] = recintos_data['error']
+            return jsonify(resultado)
+
         features = recintos_data.get('features', [])
         resultado['num_recintos'] = len(features)
+        # Exponer todas las keys del primer feature para depuración
+        resultado['_props'] = features[0].get('properties', {}) if features else {}
 
         # Buscar el recinto concreto; si no existe, usar el primero
         props = None
@@ -1121,12 +1129,12 @@ def sigpac_datos():
             props = features[0].get('properties', {})
 
         if props:
-            dn = props.get('dn_surface')
+            # dn_surface está en m² — probar nombres alternativos por si cambia la API
+            dn = props.get('dn_surface') or props.get('sup_gis') or props.get('superficie')
             if dn:
                 resultado['superficie_ha'] = round(float(dn) / 10000, 4)
-            uso_raw = props.get('uso_sigpac', '')
+            uso_raw = props.get('uso_sigpac') or props.get('uso') or ''
             if uso_raw:
-                # Ampliar código corto a etiqueta larga si existe
                 _USO_LABELS = {
                     'OV':'OV-OLIVAR','VI':'VI-VIÑEDO','TA':'TA-TIERRA ARABLE',
                     'TH':'TH-HUERTA','CF':'CF-CITRICOS','FL':'FL-FRUTOS SECOS',
@@ -1135,7 +1143,7 @@ def sigpac_datos():
                     'AG':'AG-CORRIENTES AGUA','ZU':'ZU-ZONA URBANA','ED':'ED-EDIFICACIONES',
                     'IV':'IV-INVERNADERO',
                 }
-                resultado['uso_sigpac'] = _USO_LABELS.get(uso_raw.upper(), uso_raw)
+                resultado['uso_sigpac'] = _USO_LABELS.get(str(uso_raw).upper(), uso_raw)
 
     except Exception as e:
         resultado['error'] = str(e)
