@@ -632,23 +632,29 @@ function ScreenParcelas({ campana, showToast }) {
                                             {/* Polígono */}
                                             <div>
                                                 <label className="field-label">Polígono</label>
-                                                <input className="input-field" placeholder="25" value={form.poligono}
-                                                    onChange={e => {
-                                                        setForm(f=>({...f,poligono:e.target.value}));
-                                                        if (form.provincia_cod && form.municipio_cod) loadParcelasSigpac(form.provincia_cod, form.municipio_cod, e.target.value);
+                                                <ZoomInput
+                                                    label="Polígono" type="number" inputMode="numeric"
+                                                    placeholder="25" value={form.poligono}
+                                                    onConfirm={val => {
+                                                        setForm(f=>({...f,poligono:val}));
+                                                        if (form.provincia_cod && form.municipio_cod) loadParcelasSigpac(form.provincia_cod, form.municipio_cod, val);
                                                     }} />
                                             </div>
                                             {/* Parcela */}
                                             <div>
                                                 <label className="field-label">Parcela</label>
-                                                <input className="input-field" placeholder="62" value={form.parcela_num}
-                                                    onChange={e => setForm(f=>({...f,parcela_num:e.target.value}))} />
+                                                <ZoomInput
+                                                    label="Parcela" type="number" inputMode="numeric"
+                                                    placeholder="62" value={form.parcela_num}
+                                                    onConfirm={val => setForm(f=>({...f,parcela_num:val}))} />
                                             </div>
                                             {/* Recinto */}
                                             <div>
                                                 <label className="field-label">Recinto</label>
-                                                <input className="input-field" placeholder="1" value={form.recinto}
-                                                    onChange={e => setForm(f=>({...f,recinto:e.target.value}))} />
+                                                <ZoomInput
+                                                    label="Recinto" type="number" inputMode="numeric"
+                                                    placeholder="1" value={form.recinto}
+                                                    onConfirm={val => setForm(f=>({...f,recinto:val}))} />
                                             </div>
                                             {/* Buscar botón */}
                                             <div style={{ display:'flex', alignItems:'flex-end' }}>
