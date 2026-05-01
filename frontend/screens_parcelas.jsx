@@ -256,28 +256,34 @@ function ScreenParcelas({ campana, showToast }) {
             showToast('Introduce polígono y parcela para buscar');
             return;
         }
+        if (!form.provincia_cod || !form.municipio_cod) {
+            showToast('Selecciona provincia y municipio primero');
+            return;
+        }
         setSigpacState('loading');
         try {
-            const res = await fetch(`/api/sigpac/recintos?provincia=${form.provincia_cod}&municipio=${form.municipio_cod}&poligono=${form.poligono}&parcela=${form.parcela_num}`);
-            const data = await res.json();
-            // SIGPAC devuelve GeoJSON: { features: [{ properties: {...} }] }
-            const features = data?.features || [];
-            const recintos = features.map(f => f.properties || f);
-            if (recintos.length > 0) {
-                const r = recintos.find(x => String(x.dn_oid||x.num_recinto||x.recinto) === String(form.recinto)) || recintos[0];
-                const supM2 = r.dn_surface || r.superficie;
-                const sup = supM2 ? (parseFloat(supM2)/10000).toFixed(4) : '';
-                const uso = r.uso_sigpac || '';
+            const rec = form.recinto || '1';
+            const res = await fetch(
+                `/api/sigpac/datos?provincia=${form.provincia_cod}&municipio=${form.municipio_cod}&poligono=${form.poligono}&parcela=${form.parcela_num}&recinto=${rec}`,
+                { credentials: 'include' }
+            );
+            const d = await res.json();
+            const sup = d.superficie_ha ? String(d.superficie_ha) : '';
+            const uso = d.uso_sigpac || '';
+            if (sup || uso) {
                 setForm(f => ({
                     ...f,
                     superficie_ha: sup || f.superficie_ha,
                     uso_sigpac: uso || f.uso_sigpac,
                 }));
+                const partes = [];
+                if (sup) partes.push(`${sup} ha`);
+                if (uso) partes.push(uso);
                 setSigpacState('ok');
-                showToast(`SIGPAC: ${recintos.length} recinto(s) encontrado(s)`);
+                showToast(`✅ SIGPAC: ${partes.join(' · ')}`);
             } else {
                 setSigpacState('error');
-                showToast('Sin resultados SIGPAC para esa referencia');
+                showToast('Sin datos SIGPAC para esa referencia');
             }
         } catch {
             setSigpacState('error');
