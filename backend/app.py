@@ -1114,55 +1114,45 @@ def sigpac_datos():
     resultado = {'superficie_ha': '', 'uso_sigpac': '', 'referencia_cat': '', 'num_recintos': 0}
 
     try:
-        # Paso 1: lista de recintos → contar y obtener dn_pk del recinto pedido
+        # Paso 1: contar recintos
         recintos_data = _sigpac_get(f"{SIGPAC_BASE}/recintos/{prov}/{mun}/0/0/{pol}/{par}")
-        if 'error' in recintos_data and 'features' not in recintos_data:
-            resultado['error'] = recintos_data['error']
-            return jsonify(resultado)
+        resultado['num_recintos'] = len(recintos_data.get('features', []))
 
-        features = recintos_data.get('features', [])
-        resultado['num_recintos'] = len(features)
-
-        # dn_pk del recinto seleccionado (o el primero si no coincide el código)
-        dn_pk = None
-        for feat in features:
-            p = feat.get('properties', {})
-            if str(p.get('codigo', '')) == str(rec):
-                dn_pk = p.get('dn_pk')
-                break
-        if dn_pk is None and features:
-            dn_pk = features[0].get('properties', {}).get('dn_pk')
-        resultado['dn_pk'] = dn_pk
-
-        # Paso 2: probar varios endpoints hasta obtener superficie/uso
+        # Paso 2: detalle del recinto por referencia completa
+        # Este es el único endpoint que funciona y devuelve parcelaInfo
         INTER = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/intersection"
-        candidatos = []
-        if dn_pk:
-            candidatos += [
-                f"{SIGPAC_BASE}/recinto/{dn_pk}",
-                f"{INTER}/recinto/{dn_pk}",
-                f"{INTER}/recinto/geometria/{dn_pk}",
-            ]
-        # Intersection por referencia completa (prov,mun,agr,zona,pol,par,rec)
-        candidatos.append(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},{rec}")
+        inter = _sigpac_get(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},{rec}")
+        pi = inter.get('parcelaInfo') or {}
 
-        for url in candidatos:
-            resp = _sigpac_get(url)
-            if 'error' in resp and len(resp) == 1:
-                continue  # este endpoint falló, probar el siguiente
-            resultado['_detail'] = resp
-            info = resp.get('parcelaInfo') or resp or {}
-            # Si es GeoJSON, extraer del primer feature
-            if 'features' in resp and resp['features']:
-                info = resp['features'][0].get('properties', {})
-            dn = info.get('dn_surface') or info.get('sup_gis') or info.get('superficie')
-            uso_raw = info.get('uso_sigpac') or info.get('uso') or ''
-            if dn or uso_raw:
-                if dn:
-                    resultado['superficie_ha'] = round(float(dn) / 10000, 4)
-                if uso_raw:
-                    resultado['uso_sigpac'] = _USO_LABELS.get(str(uso_raw).upper(), uso_raw)
-                break  # encontrado, salir
+        dn = pi.get('dn_surface')
+        if dn:
+            resultado['superficie_ha'] = round(float(dn) / 10000, 4)
+
+        ref_cat = pi.get('referencia_cat', '')
+        resultado['referencia_cat'] = ref_cat
+
+        # Paso 3: uso SIGPAC via Catastro (parcelaInfo no lo incluye)
+        if ref_cat:
+            try:
+                import xml.etree.ElementTree as ET
+                cat_r = req_lib.get(
+                    'https://ovc.catastro.meh.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx/Consulta_DNPRC',
+                    params={'Provincia': '', 'Municipio': '', 'RC': ref_cat},
+                    timeout=8
+                )
+                ns = {'c': 'http://www.catastro.meh.es/'}
+                root = ET.fromstring(cat_r.text)
+                ccc = root.find('.//c:ccc', ns)
+                dcc = root.find('.//c:dcc', ns)
+                uso = _catastro_a_uso_sigpac(
+                    ccc.text if ccc is not None else '',
+                    dcc.text if dcc is not None else ''
+                )
+                if uso:
+                    resultado['uso_sigpac'] = uso
+                    resultado['cultivo_catastro'] = dcc.text if dcc is not None else ''
+            except Exception:
+                pass  # Catastro es opcional
 
     except Exception as e:
         resultado['error'] = str(e)
