@@ -1,3 +1,43 @@
+// Catálogo de cultivos con códigos IACS (Anexo VII FEGA — para SIEX 2027)
+const CULTIVOS_IACS = [
+    { cod: '1820', nombre: 'Olivar',                   grupo: 'Leñosos' },
+    { cod: '1711', nombre: 'Viñedo vinificación',      grupo: 'Leñosos' },
+    { cod: '1712', nombre: 'Viñedo uva de mesa',       grupo: 'Leñosos' },
+    { cod: '1710', nombre: 'Almendro',                 grupo: 'Leñosos' },
+    { cod: '1740', nombre: 'Pistachero',               grupo: 'Leñosos' },
+    { cod: '1750', nombre: 'Higuera',                  grupo: 'Leñosos' },
+    { cod: '1760', nombre: 'Nogal',                    grupo: 'Leñosos' },
+    { cod: '1770', nombre: 'Cerezo / Guindo',          grupo: 'Leñosos' },
+    { cod: '1720', nombre: 'Melocotonero / Nectarino', grupo: 'Leñosos' },
+    { cod: '1730', nombre: 'Ciruelo',                  grupo: 'Leñosos' },
+    { cod: '1830', nombre: 'Naranjo',                  grupo: 'Leñosos' },
+    { cod: '1840', nombre: 'Limonero',                 grupo: 'Leñosos' },
+    { cod: '410',  nombre: 'Trigo blando',             grupo: 'Cereales' },
+    { cod: '415',  nombre: 'Trigo duro',               grupo: 'Cereales' },
+    { cod: '430',  nombre: 'Cebada',                   grupo: 'Cereales' },
+    { cod: '440',  nombre: 'Avena',                    grupo: 'Cereales' },
+    { cod: '450',  nombre: 'Centeno',                  grupo: 'Cereales' },
+    { cod: '454',  nombre: 'Maíz',                     grupo: 'Cereales' },
+    { cod: '460',  nombre: 'Sorgo',                    grupo: 'Cereales' },
+    { cod: '470',  nombre: 'Arroz',                    grupo: 'Cereales' },
+    { cod: '701',  nombre: 'Girasol',                  grupo: 'Industriales' },
+    { cod: '720',  nombre: 'Colza / Nabina',           grupo: 'Industriales' },
+    { cod: '780',  nombre: 'Remolacha azucarera',      grupo: 'Industriales' },
+    { cod: '481',  nombre: 'Guisante proteaginoso',    grupo: 'Leguminosas' },
+    { cod: '484',  nombre: 'Veza / Yeros',             grupo: 'Leguminosas' },
+    { cod: '490',  nombre: 'Haba',                     grupo: 'Leguminosas' },
+    { cod: '495',  nombre: 'Soja',                     grupo: 'Leguminosas' },
+    { cod: '100',  nombre: 'Ajo',                      grupo: 'Hortalizas' },
+    { cod: '110',  nombre: 'Cebolla',                  grupo: 'Hortalizas' },
+    { cod: '120',  nombre: 'Patata',                   grupo: 'Hortalizas' },
+    { cod: '140',  nombre: 'Tomate',                   grupo: 'Hortalizas' },
+    { cod: '160',  nombre: 'Melón',                    grupo: 'Hortalizas' },
+    { cod: '162',  nombre: 'Sandía',                   grupo: 'Hortalizas' },
+    { cod: '550',  nombre: 'Alfalfa',                  grupo: 'Forrajeras' },
+    { cod: '560',  nombre: 'Esparceta / Zulla',        grupo: 'Forrajeras' },
+    { cod: '980',  nombre: 'Barbecho',                 grupo: 'Barbecho' },
+];
+
 // ── Screen: Mis Parcelas — split panel + cascading SIGPAC ──
 
 // Lista oficial INE de las 52 provincias españolas. Hardcoded porque
@@ -71,8 +111,8 @@ function ScreenParcelas({ campana, showToast }) {
     // Parcela form state
     const EMPTY_FORM = {
         nombre_finca:'', comunidad:'07-Castilla-La Mancha',
-        provincia_cod:'13', provincia_nombre:'Ciudad Real',
-        municipio_cod:'131', municipio_nombre:'Santa Cruz de Mudela',
+        provincia_cod:'', provincia_nombre:'',
+        municipio_cod:'', municipio_nombre:'',
         poligono:'', parcela_num:'', recinto:'',
         superficie_ha:'', uso_sigpac:'', sistema_explotacion:'Secano',
         masa_agua_cercana:false, notas:'',
@@ -220,11 +260,14 @@ function ScreenParcelas({ campana, showToast }) {
         try {
             const res = await fetch(`/api/sigpac/recintos?provincia=${form.provincia_cod}&municipio=${form.municipio_cod}&poligono=${form.poligono}&parcela=${form.parcela_num}`);
             const data = await res.json();
-            const recintos = data?.recintos || data?.data || data || [];
-            if (Array.isArray(recintos) && recintos.length > 0) {
-                const r = recintos.find(x => String(x.dn_oid||x.recinto||x.num_recinto) === String(form.recinto)) || recintos[0];
-                const sup = r.superficie ? (parseFloat(r.superficie)/10000).toFixed(4) : r.sup_gis || r.area || '';
-                const uso = r.uso_sigpac || r.coef_admis || '';
+            // SIGPAC devuelve GeoJSON: { features: [{ properties: {...} }] }
+            const features = data?.features || [];
+            const recintos = features.map(f => f.properties || f);
+            if (recintos.length > 0) {
+                const r = recintos.find(x => String(x.dn_oid||x.num_recinto||x.recinto) === String(form.recinto)) || recintos[0];
+                const supM2 = r.dn_surface || r.superficie;
+                const sup = supM2 ? (parseFloat(supM2)/10000).toFixed(4) : '';
+                const uso = r.uso_sigpac || '';
                 setForm(f => ({
                     ...f,
                     superficie_ha: sup || f.superficie_ha,
@@ -250,13 +293,15 @@ function ScreenParcelas({ campana, showToast }) {
     const openEdit = (p) => {
         setForm({
             nombre_finca: p.nombre_finca||'', comunidad: p.comunidad||'07-Castilla-La Mancha',
-            provincia_cod: p.provincia_cod||'13', provincia_nombre: p.provincia_nombre||'Ciudad Real',
-            municipio_cod: p.municipio_cod||'131', municipio_nombre: p.municipio_nombre||'Santa Cruz de Mudela',
+            provincia_cod: p.provincia_cod||'', provincia_nombre: p.provincia_nombre||'',
+            municipio_cod: p.municipio_cod||'', municipio_nombre: p.municipio_nombre||'',
             poligono: p.poligono||'', parcela_num: p.parcela_num||'', recinto: p.recinto||'',
             superficie_ha: p.superficie_ha||'', uso_sigpac: p.uso_sigpac||'',
             sistema_explotacion: p.sistema_explotacion||'Secano',
             masa_agua_cercana: !!p.masa_agua_cercana, notas: p.notas||'',
         });
+        setMunicipios([]); setPoligonos([]); setParcelasSig([]);
+        if (p.provincia_cod) loadMunicipios(p.provincia_cod);
         setEditId(p.id); setShowForm(true); setSigpacState('idle');
     };
 
@@ -444,8 +489,39 @@ function ScreenParcelas({ campana, showToast }) {
                             <div>
                                 <h2 className="section-title">Cultivo campaña {campana}</h2>
                                 <div className="responsive-grid cols-2" style={{ marginBottom:16 }}>
+                                    <div style={{ gridColumn: '1/-1' }}>
+                                        <label className="field-label">Cultivo (código IACS)</label>
+                                        <select className="input-field"
+                                            value={cultivo.cultivo_iacs_cod || ''}
+                                            onChange={e => {
+                                                const cod = e.target.value;
+                                                const entry = CULTIVOS_IACS.find(c => c.cod === cod);
+                                                setCultivo(c => ({ ...c,
+                                                    cultivo_iacs_cod: cod,
+                                                    cultivo: entry ? entry.nombre : c.cultivo,
+                                                }));
+                                            }}>
+                                            <option value="">Seleccionar cultivo…</option>
+                                            {Object.entries(
+                                                CULTIVOS_IACS.reduce((acc, c) => {
+                                                    (acc[c.grupo] = acc[c.grupo] || []).push(c);
+                                                    return acc;
+                                                }, {})
+                                            ).map(([grupo, items]) => (
+                                                <optgroup key={grupo} label={grupo}>
+                                                    {items.map(c => (
+                                                        <option key={c.cod} value={c.cod}>{c.nombre}</option>
+                                                    ))}
+                                                </optgroup>
+                                            ))}
+                                        </select>
+                                        {cultivo.cultivo_iacs_cod && (
+                                            <div style={{ fontSize:'0.75rem', color:'#6b7280', marginTop:4 }}>
+                                                Código IACS: <strong>{cultivo.cultivo_iacs_cod}</strong>
+                                            </div>
+                                        )}
+                                    </div>
                                     {[
-                                        ['cultivo','Cultivo','text','Olivar / Viñedo / Cereal…'],
                                         ['variedad','Variedad','text','Picual, Tempranillo…'],
                                         ['fecha_siembra','Fecha de siembra','date',''],
                                         ['fecha_recoleccion_prevista','Fecha recol. prevista','date',''],
