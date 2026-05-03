@@ -429,6 +429,12 @@ def manage_parcelas():
         return jsonify(all_p)
 
     data = request.json or {}
+
+    def _to_float(v):
+        if v is None or v == '': return None
+        try: return float(v)
+        except (ValueError, TypeError): return None
+
     c = conn.cursor()
     c.execute('''
         INSERT INTO parcelas (
@@ -441,7 +447,7 @@ def manage_parcelas():
         uid, data.get('comunidad'), data.get('provincia_cod'), data.get('provincia_nombre'),
         data.get('municipio_cod'), data.get('municipio_nombre'), data.get('nombre_finca'),
         data.get('poligono'), data.get('parcela_num'), data.get('recinto'),
-        data.get('superficie_ha'), data.get('uso_sigpac'),
+        _to_float(data.get('superficie_ha')), data.get('uso_sigpac'),
         data.get('sistema_explotacion', 'Secano'),
         1 if data.get('masa_agua_cercana') else 0,
         data.get('notas'),
@@ -467,11 +473,23 @@ def manage_parcela(pid):
         return jsonify({"status": "ok"})
 
     data = request.json or {}
+
+    def _to_float(v):
+        if v is None or v == '': return None
+        try: return float(v)
+        except (ValueError, TypeError): return None
+
+    def _field_val(f):
+        v = data.get(f)
+        if f == 'superficie_ha': return _to_float(v)
+        if f == 'masa_agua_cercana': return 1 if v else 0
+        return v
+
     fields = ['comunidad','provincia_cod','provincia_nombre','municipio_cod','municipio_nombre',
               'nombre_finca','poligono','parcela_num','recinto','superficie_ha','uso_sigpac',
               'sistema_explotacion','masa_agua_cercana','notas']
     sets = ', '.join(f"{f}=?" for f in fields)
-    vals = [data.get(f) for f in fields] + [pid, uid]
+    vals = [_field_val(f) for f in fields] + [pid, uid]
     conn.execute(f"UPDATE parcelas SET {sets} WHERE id=? AND user_id=?", vals)
     conn.commit(); conn.close()
     return jsonify({"status": "ok"})

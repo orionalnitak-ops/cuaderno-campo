@@ -14,6 +14,7 @@ const MODULE_CARDS = [
     { id: 'fertilizacion', icon: '🌱', title: 'Abono', desc: 'Abonado de fondo, cobertera o fertirrigación foliar.', bg: 'linear-gradient(135deg, #3730a3, #4f46e5)' },
     { id: 'labor',         icon: '🚜', title: 'Labor agrícola', desc: 'Siembra, riego, poda, laboreo de suelos y otras tareas.', bg: 'linear-gradient(135deg, #1e3a5f, #1d4ed8)' },
     { id: 'cosecha',       icon: '📦', title: 'Cosecha', desc: 'Recolección de producto, pesaje y control de lotes.', bg: 'linear-gradient(135deg, #9f1239, #db2777)' },
+    { id: 'compra',        icon: '🛒', title: 'Compra de insumos', desc: 'Registro de compras de fitosanitarios, fertilizantes y semillas.', bg: 'linear-gradient(135deg, #78350f, #b45309)' },
 ];
 
 function App() {

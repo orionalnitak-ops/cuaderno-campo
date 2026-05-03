@@ -138,6 +138,7 @@ function ScreenForms({ modulo, record, campana, onClose }) {
         fertilizacion: { icon: '🌱', title: 'Abono',                     color: '#4f46e5' },
         labor:         { icon: '🚜', title: 'Labor Agrícola',            color: '#1d4ed8' },
         cosecha:       { icon: '📦', title: 'Cosecha / Producción',      color: '#db2777' },
+        compra:        { icon: '🛒', title: 'Compra de Insumos',         color: '#b45309' },
     };
     const cfg = MODULE_CONFIG[modulo] || { icon: '📝', title: 'Registro', color: '#374151' };
 
@@ -157,6 +158,7 @@ function ScreenForms({ modulo, record, campana, onClose }) {
                 {modulo === 'fertilizacion' && <FormFertilizacion parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
                 {modulo === 'labor'         && <FormLabor         parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
                 {modulo === 'cosecha'       && <FormCosecha       parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
+                {modulo === 'compra'        && <FormCompra                            record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
             </div>
         </div>
     );
@@ -653,6 +655,126 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                 <button className="btn-ghost" onClick={() => onClose()} style={{ flex: 1 }}>Cancelar</button>
                 <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 2 }}>
                     {saving ? 'Guardando…' : (isEdit ? '💾 Actualizar' : '✓ Guardar cosecha')}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ── 5. COMPRA DE INSUMOS (Trazabilidad — Anexo III S5) ──
+function FormCompra({ record, campana, onClose, isEdit }) {
+    const today = new Date().toISOString().split('T')[0];
+    const [saving, setSaving] = React.useState(false);
+    const [error, setError]   = React.useState('');
+
+    const [f, setF] = React.useState({
+        fecha:           record?.fecha           || today,
+        tipo_producto:   record?.tipo_producto   || '',
+        producto:        record?.producto        || '',
+        proveedor:       record?.proveedor       || '',
+        cantidad_valor:  record?.cantidad_valor  || '',
+        cantidad_unidad: record?.cantidad_unidad || 'kg',
+        num_lote:        record?.num_lote        || '',
+        num_factura:     record?.num_factura     || '',
+        precio_total:    record?.precio_total    || '',
+        notas:           record?.notas           || '',
+        campana,
+    });
+    const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+
+    const save = async () => {
+        setError('');
+        setSaving(true);
+        const url    = isEdit ? `/api/compras/${record.id}` : '/api/compras';
+        const method = isEdit ? 'PUT' : 'POST';
+        try {
+            const res = await fetch(url, {
+                method, credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(f),
+            });
+            const data = await res.json();
+            if (!res.ok) { setError(data.error || 'Error al guardar'); setSaving(false); return; }
+            onClose(isEdit ? 'Compra actualizada' : 'Compra registrada');
+        } catch { setError('Error de conexión'); setSaving(false); }
+    };
+
+    return (
+        <div>
+            {error && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 10,
+                    padding: '10px 14px', marginBottom: 16, color: '#991b1b', fontSize: '0.88rem', fontWeight: 600 }}>
+                    ⚠️ {error}
+                </div>
+            )}
+
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10,
+                padding: '10px 14px', marginBottom: 20, fontSize: '0.82rem', color: '#92400e' }}>
+                📋 Obligatorio por RD 1311/2012 Anexo III S5 — Trazabilidad de insumos
+            </div>
+
+            <FieldGroup label="Fecha de compra *">
+                <input type="date" className="input-field" value={f.fecha}
+                    max={today} onChange={e => set('fecha', e.target.value)} />
+            </FieldGroup>
+
+            <FieldGroup label="Tipo de producto *">
+                <select className="input-field" value={f.tipo_producto} onChange={e => set('tipo_producto', e.target.value)}>
+                    <option value="">Seleccionar…</option>
+                    <option value="fitosanitario">Fitosanitario</option>
+                    <option value="fertilizante">Fertilizante / Abono</option>
+                    <option value="semilla">Semilla / Material vegetal</option>
+                    <option value="combustible">Combustible</option>
+                    <option value="otro">Otro insumo</option>
+                </select>
+            </FieldGroup>
+
+            <FieldGroup label="Nombre del producto *">
+                <ZoomInput label="Nombre del producto" value={f.producto}
+                    placeholder="Nombre comercial del producto"
+                    onConfirm={v => set('producto', v)} />
+            </FieldGroup>
+
+            <FieldGroup label="Proveedor / Vendedor">
+                <ZoomInput label="Proveedor" value={f.proveedor}
+                    placeholder="Cooperativa, almacén agrícola…"
+                    onConfirm={v => set('proveedor', v)} />
+            </FieldGroup>
+
+            <div className="responsive-grid cols-2">
+                <FieldGroup label="Cantidad">
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <ZoomInput label="Cantidad" value={f.cantidad_valor} placeholder="25" inputMode="decimal"
+                            style={{ flex: 2 }} onConfirm={v => set('cantidad_valor', v)} />
+                        <select className="input-field" value={f.cantidad_unidad}
+                            onChange={e => set('cantidad_unidad', e.target.value)} style={{ flex: 1 }}>
+                            {['kg', 'L', 'g', 't', 'sacos', 'envases', 'unidades'].map(u => <option key={u}>{u}</option>)}
+                        </select>
+                    </div>
+                </FieldGroup>
+                <FieldGroup label="Precio total (€)">
+                    <ZoomInput label="Precio total (€)" value={f.precio_total} placeholder="142.50"
+                        inputMode="decimal" onConfirm={v => set('precio_total', v)} />
+                </FieldGroup>
+                <FieldGroup label="Nº de lote">
+                    <ZoomInput label="Nº de lote" value={f.num_lote} placeholder="L-2025-001"
+                        onConfirm={v => set('num_lote', v)} />
+                </FieldGroup>
+                <FieldGroup label="Nº de factura / albarán">
+                    <ZoomInput label="Nº de factura" value={f.num_factura} placeholder="FAC-2025-1234"
+                        onConfirm={v => set('num_factura', v)} />
+                </FieldGroup>
+            </div>
+
+            <FieldGroup label="Notas">
+                <ZoomInput label="Notas" value={f.notas} placeholder="Observaciones…"
+                    multiline onConfirm={v => set('notas', v)} />
+            </FieldGroup>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button className="btn-ghost" onClick={() => onClose()} style={{ flex: 1 }}>Cancelar</button>
+                <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 2 }}>
+                    {saving ? 'Guardando…' : (isEdit ? '💾 Actualizar' : '✓ Registrar compra')}
                 </button>
             </div>
         </div>

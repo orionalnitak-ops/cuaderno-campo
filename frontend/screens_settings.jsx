@@ -468,8 +468,9 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout }
                                 ⬇ Descargar Excel (campaña {campana})
                             </button>
                         </div>
+                        {currentUser && currentUser.role === 'admin' && (
                         <div className="card card-p" style={{ marginBottom:12 }}>
-                            <h3 style={{ fontFamily:'Manrope', fontWeight:700, fontSize:'0.95rem', margin:'0 0 8px' }}>💾 Copia de seguridad</h3>
+                            <h3 style={{ fontFamily:'Manrope', fontWeight:700, fontSize:'0.95rem', margin:'0 0 8px' }}>💾 Copia de seguridad (solo admin)</h3>
                             <p style={{ fontSize:'0.82rem', color:'#6b7280', margin:'0 0 14px' }}>
                                 Descarga la base de datos completa (.db) para hacer una copia de seguridad.
                             </p>
@@ -477,8 +478,10 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout }
                                 ⬇ Descargar base de datos
                             </button>
                         </div>
+                        )}
+                        {currentUser && currentUser.role === 'admin' && (
                         <div className="card card-p">
-                            <h3 style={{ fontFamily:'Manrope', fontWeight:700, fontSize:'0.95rem', margin:'0 0 8px' }}>📥 Restaurar copia de seguridad</h3>
+                            <h3 style={{ fontFamily:'Manrope', fontWeight:700, fontSize:'0.95rem', margin:'0 0 8px' }}>📥 Restaurar copia de seguridad (solo admin)</h3>
                             <p style={{ fontSize:'0.82rem', color:'#6b7280', margin:'0 0 14px' }}>
                                 Sube una copia de seguridad (.db) para restaurar todos los datos. <strong>Atención:</strong> sobreescribirá los datos actuales.
                             </p>
@@ -493,6 +496,7 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout }
                                     setTimeout(() => window.location.reload(), 2000);
                                 }} />
                         </div>
+                        )}
                     </div>
                 )}
 
@@ -588,7 +592,7 @@ function ChangePwCard({ showToast }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
-        if (form.new_password.length < 6) { setError('La nueva contraseña debe tener al menos 6 caracteres'); return; }
+        if (form.new_password.length < 8) { setError('La nueva contraseña debe tener al menos 8 caracteres'); return; }
         if (form.new_password !== form.confirm) { setError('Las contraseñas no coinciden'); return; }
         setSaving(true);
         try {

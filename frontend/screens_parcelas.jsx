@@ -328,8 +328,20 @@ function ScreenParcelas({ campana, showToast }) {
         setSaving(true);
         const method = editId ? 'PUT' : 'POST';
         const url = editId ? `/api/parcelas/${editId}` : '/api/parcelas';
-        await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(form), credentials: 'include' });
-        showToast(editId ? 'Parcela actualizada' : 'Parcela añadida');
+        try {
+            const res = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(form), credentials: 'include' });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                showToast(`❌ Error al guardar: ${err.error || res.status}`);
+                setSaving(false);
+                return;
+            }
+        } catch {
+            showToast('❌ Error de conexión al guardar');
+            setSaving(false);
+            return;
+        }
+        showToast(editId ? '✅ Parcela actualizada' : '✅ Parcela añadida');
         setSaving(false); setShowForm(false);
         fetchParcelas();
         if (editId) {

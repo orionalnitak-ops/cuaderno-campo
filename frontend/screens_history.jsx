@@ -22,6 +22,7 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
         fertilizacion: { icon: '🌱', label: 'Abono',          chipClass: 'chip-fertilizacion', accentColor: '#4f46e5' },
         labores:       { icon: '🚜', label: 'Labor',          chipClass: 'chip-labor',         accentColor: '#1e4ed8' },
         cosecha:       { icon: '📦', label: 'Cosecha',        chipClass: 'chip-cosecha',        accentColor: '#be185d' },
+        compras:       { icon: '🛒', label: 'Compra',         chipClass: 'chip-compra',         accentColor: '#b45309' },
     };
 
     const MODULE_PILLS = [
@@ -30,6 +31,7 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
         ['fertilizacion', '🌱 Abono'],
         ['labores',       '🚜 Labores'],
         ['cosecha',       '📦 Cosecha'],
+        ['compras',       '🛒 Compras'],
     ];
 
     const fetchRecords = useCallback(() => {
@@ -58,7 +60,7 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
 
     const handleDelete = async (record) => {
         if (!confirm('¿Eliminar este registro?')) return;
-        const endpoint = { tratamientos: 'tratamientos', fertilizacion: 'fertilizacion', labores: 'labores', cosecha: 'cosecha' }[record._modulo];
+        const endpoint = { tratamientos: 'tratamientos', fertilizacion: 'fertilizacion', labores: 'labores', cosecha: 'cosecha', compras: 'compras' }[record._modulo];
         if (!endpoint) return;
         await fetch(`/api/${endpoint}/${record.id}`, { method: 'DELETE' });
         showToast('Registro eliminado');
