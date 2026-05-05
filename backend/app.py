@@ -1020,9 +1020,9 @@ def manage_compra(cid):
 # ─────────────────────────────────────────────
 SIGPAC_BASE = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/query"
 
-def _sigpac_get(url):
+def _sigpac_get(url, timeout=10):
     try:
-        r = req_lib.get(url, timeout=10)
+        r = req_lib.get(url, timeout=timeout)
         r.raise_for_status()
         return r.json()
     except Exception as e:
@@ -1607,7 +1607,7 @@ def _importar_parcelas_wb(wb, uid):
     def _get_prov_cod(nombre_prov):
         k = _norm(nombre_prov)
         if k not in _cache_prov:
-            data = _sigpac_get(f"{SIGPAC_BASE}/provincias")
+            data = _sigpac_get(f"{SIGPAC_BASE}/provincias", timeout=4)
             for f in data.get('features', []):
                 p = f.get('properties', {})
                 _cache_prov[_norm(p.get('nombre',''))] = str(p.get('codigo',''))
@@ -1616,7 +1616,7 @@ def _importar_parcelas_wb(wb, uid):
     def _get_mun_cod(prov_cod, nombre_mun):
         k = f"{prov_cod}:{_norm(nombre_mun)}"
         if k not in _cache_mun:
-            data = _sigpac_get(f"{SIGPAC_BASE}/municipios/{prov_cod}")
+            data = _sigpac_get(f"{SIGPAC_BASE}/municipios/{prov_cod}", timeout=4)
             for f in data.get('features', []):
                 p = f.get('properties', {})
                 _cache_mun[f"{prov_cod}:{_norm(p.get('nombre',''))}"] = str(p.get('codigo',''))
@@ -1643,7 +1643,7 @@ def _importar_parcelas_wb(wb, uid):
         sup_ha = None; uso_sigpac = ''
         if prov_cod and mun_cod:
             try:
-                sig = _sigpac_get(f"{SIGPAC_BASE}/recintos/{prov_cod}/{mun_cod}/0/0/{poligono}/{parcela}")
+                sig = _sigpac_get(f"{SIGPAC_BASE}/recintos/{prov_cod}/{mun_cod}/0/0/{poligono}/{parcela}", timeout=4)
                 feats = sig.get('features', [])
                 if feats:
                     props = feats[0].get('properties', {})
@@ -1683,7 +1683,10 @@ def route_import_excel():
         return jsonify({'ok': False, 'error': f'Error al leer el archivo: {e}'}), 400
 
     uid = get_uid()
-    n_ok, n_err, errores = _importar_parcelas_wb(wb, uid)
+    try:
+        n_ok, n_err, errores = _importar_parcelas_wb(wb, uid)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'Error interno al importar: {e}'}), 500
     msg = f"{n_ok} parcelas importadas"
     if n_err: msg += f", {n_err} filas con error"
     return jsonify({'ok': True, 'total': n_ok, 'resumen': msg, 'errores': errores})
@@ -1714,7 +1717,10 @@ def route_import_gsheet():
         return jsonify({'ok': False, 'error': f'Error al leer el archivo: {e}'}), 400
 
     uid = get_uid()
-    n_ok, n_err, errores = _importar_parcelas_wb(wb, uid)
+    try:
+        n_ok, n_err, errores = _importar_parcelas_wb(wb, uid)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'Error interno al importar: {e}'}), 500
     msg = f"{n_ok} parcelas importadas"
     if n_err: msg += f", {n_err} filas con error"
     return jsonify({'ok': True, 'total': n_ok, 'resumen': msg, 'errores': errores})
