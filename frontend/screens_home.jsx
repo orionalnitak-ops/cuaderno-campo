@@ -406,22 +406,34 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
             if (!file) return;
             setImportando(true);
             setImportResult(null);
+            let res;
             try {
                 const fd = new FormData();
                 fd.append('file', file);
-                const res = await fetch('/api/import/excel', { method: 'POST', body: fd, credentials: 'include' });
-                const json = await res.json();
-                if (json.ok) {
-                    setImportResult({ ok: true, msg: `✅ Importados ${json.total} registros: ${json.resumen || 'sin datos nuevos'}` });
-                } else {
-                    setImportResult({ ok: false, msg: `❌ ${json.error}` });
-                }
+                res = await fetch('/api/import/excel', { method: 'POST', body: fd, credentials: 'include' });
             } catch (err) {
-                setImportResult({ ok: false, msg: '❌ Error de conexión' });
-            } finally {
+                setImportResult({ ok: false, msg: `❌ Error de red: ${err.message}` });
                 setImportando(false);
                 e.target.value = '';
+                return;
             }
+            let json;
+            try {
+                json = await res.json();
+            } catch {
+                const txt = await res.text().catch(() => '');
+                setImportResult({ ok: false, msg: `❌ Error del servidor (${res.status}): ${txt.slice(0, 120) || 'respuesta vacía'}` });
+                setImportando(false);
+                e.target.value = '';
+                return;
+            }
+            if (json.ok) {
+                setImportResult({ ok: true, msg: `✅ Importados ${json.total} registros: ${json.resumen || 'sin datos nuevos'}` });
+            } else {
+                setImportResult({ ok: false, msg: `❌ ${json.error}` });
+            }
+            setImportando(false);
+            e.target.value = '';
         };
 
         return (
