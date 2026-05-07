@@ -66,7 +66,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
             const params = [
                 `latitude=${hit.latitude}`, `longitude=${hit.longitude}`,
                 `current=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,weather_code`,
-                `daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max`,
+                `daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max`,
                 `hourly=temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m`,
                 `wind_speed_unit=kmh`, `timezone=Europe%2FMadrid`, `forecast_days=7`,
             ].join('&');
@@ -83,6 +83,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 lluvia_mm: +(w.daily.precipitation_sum[i] ?? 0).toFixed(1),
                 prob_lluvia: w.daily.precipitation_probability_max[i] ?? 0,
                 viento: Math.round(w.daily.wind_speed_10m_max[i] ?? 0),
+                rachas: Math.round(w.daily.wind_gusts_10m_max[i] ?? 0),
             }));
 
             // Procesar pronóstico horario — próximas 24h
@@ -105,18 +106,25 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 // Tormentas (códigos WMO 95-99)
                 if (d.code === 99) alertas.push({ nivel: 'rojo',    icon: '🔴', texto: `⚡ Tormenta con granizo fuerte — ${lbl}` });
                 else if (d.code === 96) alertas.push({ nivel: 'naranja', icon: '🟠', texto: `⚡ Tormenta con granizo — ${lbl}` });
-                else if (d.code === 95) alertas.push({ nivel: 'amarillo',icon: '🟡', texto: `⚡ Tormenta eléctrica — ${lbl}` });
-                if (d.lluvia_mm >= 40) alertas.push({ nivel: 'rojo',    icon: '🔴', texto: `Lluvia intensa (${d.lluvia_mm}mm) — ${lbl}` });
-                else if (d.lluvia_mm >= 20) alertas.push({ nivel: 'naranja', icon: '🟠', texto: `Lluvia fuerte (${d.lluvia_mm}mm) — ${lbl}` });
-                else if (d.lluvia_mm >= 10) alertas.push({ nivel: 'amarillo',icon: '🟡', texto: `Lluvia moderada (${d.lluvia_mm}mm) — ${lbl}` });
-                if (d.viento >= 90) alertas.push({ nivel: 'rojo',    icon: '🔴', texto: `Viento muy fuerte (${d.viento}km/h) — ${lbl}` });
-                else if (d.viento >= 70) alertas.push({ nivel: 'naranja', icon: '🟠', texto: `Viento fuerte (${d.viento}km/h) — ${lbl}` });
-                else if (d.viento >= 50) alertas.push({ nivel: 'amarillo',icon: '🟡', texto: `Viento moderado (${d.viento}km/h) — ${lbl}` });
-                if (d.tmax >= 40) alertas.push({ nivel: 'rojo',    icon: '🔴', texto: `Calor extremo (${d.tmax}°C) — ${lbl}` });
-                else if (d.tmax >= 38) alertas.push({ nivel: 'naranja', icon: '🟠', texto: `Calor intenso (${d.tmax}°C) — ${lbl}` });
-                else if (d.tmax >= 36) alertas.push({ nivel: 'amarillo',icon: '🟡', texto: `Calor (${d.tmax}°C) — ${lbl}` });
-                if (d.tmin <= -8) alertas.push({ nivel: 'naranja', icon: '🟠', texto: `Helada fuerte (${d.tmin}°C) — ${lbl}` });
-                else if (d.tmin <= -4) alertas.push({ nivel: 'amarillo',icon: '🟡', texto: `Helada (${d.tmin}°C) — ${lbl}` });
+                else if ([95, 80, 81, 82].includes(d.code) && d.prob_lluvia >= 70)
+                    alertas.push({ nivel: 'amarillo', icon: '🟡', texto: `⚡ Tormentas/chubascos probables (${d.prob_lluvia}%) — ${lbl}` });
+                else if (d.code === 95) alertas.push({ nivel: 'amarillo', icon: '🟡', texto: `⚡ Tormenta eléctrica — ${lbl}` });
+                // Lluvia — umbrales AEMET CLM (acumulado diario)
+                if (d.lluvia_mm >= 60) alertas.push({ nivel: 'rojo',    icon: '🔴', texto: `Lluvia muy intensa (${d.lluvia_mm}mm) — ${lbl}` });
+                else if (d.lluvia_mm >= 30) alertas.push({ nivel: 'naranja', icon: '🟠', texto: `Lluvia intensa (${d.lluvia_mm}mm) — ${lbl}` });
+                else if (d.lluvia_mm >= 15) alertas.push({ nivel: 'amarillo', icon: '🟡', texto: `Lluvia fuerte (${d.lluvia_mm}mm) — ${lbl}` });
+                // Viento — AEMET usa rachas, no velocidad sostenida
+                const g = d.rachas;
+                if (g >= 90)      alertas.push({ nivel: 'rojo',    icon: '🔴', texto: `Rachas muy fuertes (${g}km/h) — ${lbl}` });
+                else if (g >= 70) alertas.push({ nivel: 'naranja', icon: '🟠', texto: `Rachas fuertes (${g}km/h) — ${lbl}` });
+                else if (g >= 55) alertas.push({ nivel: 'amarillo', icon: '🟡', texto: `Rachas moderadas (${g}km/h) — ${lbl}` });
+                // Calor — umbrales AEMET CLM
+                if (d.tmax >= 42)      alertas.push({ nivel: 'rojo',    icon: '🔴', texto: `Calor extremo (${d.tmax}°C) — ${lbl}` });
+                else if (d.tmax >= 40) alertas.push({ nivel: 'naranja', icon: '🟠', texto: `Calor intenso (${d.tmax}°C) — ${lbl}` });
+                else if (d.tmax >= 38) alertas.push({ nivel: 'amarillo', icon: '🟡', texto: `Calor (${d.tmax}°C) — ${lbl}` });
+                // Heladas
+                if (d.tmin <= -8)      alertas.push({ nivel: 'naranja', icon: '🟠', texto: `Helada fuerte (${d.tmin}°C) — ${lbl}` });
+                else if (d.tmin <= -4) alertas.push({ nivel: 'amarillo', icon: '🟡', texto: `Helada (${d.tmin}°C) — ${lbl}` });
             });
 
             // Alertas oficiales AEMET (si hay API key configurada)
