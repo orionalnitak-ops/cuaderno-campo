@@ -127,6 +127,30 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 else if (d.tmin <= -4) alertas.push({ nivel: 'amarillo', icon: '🟡', texto: `Helada (${d.tmin}°C) — ${lbl}` });
             });
 
+            // Avisos agrícolas — umbrales más bajos, prácticos para trabajo en campo
+            const avisos = [];
+            daily.slice(0, 5).forEach(d => {
+                const lbl = _wxDiaLabel(d.fecha);
+                const yaAlertaViento  = alertas.some(a => a.texto.includes(lbl) && a.texto.includes('km/h'));
+                const yaAlertaLluvia  = alertas.some(a => a.texto.includes(lbl) && (a.texto.includes('mm') || a.texto.includes('Tormenta') || a.texto.includes('chubascos')));
+                const yaAlertaCalor   = alertas.some(a => a.texto.includes(lbl) && a.texto.includes('°C') && a.texto.includes('Calor'));
+                const yaAlertaHelada  = alertas.some(a => a.texto.includes(lbl) && a.texto.includes('°C') && a.texto.includes('elada'));
+                // Viento: ≥40km/h rachas o ≥25km/h sostenido — impide tratamientos fitosanitarios
+                if (!yaAlertaViento && d.rachas >= 40)
+                    avisos.push({ nivel: 'aviso', icon: '💨', texto: `Viento fuerte (rachas ${d.rachas}km/h) — no tratar — ${lbl}` });
+                else if (!yaAlertaViento && d.viento >= 25)
+                    avisos.push({ nivel: 'aviso', icon: '💨', texto: `Viento moderado (${d.viento}km/h) — precaución al tratar — ${lbl}` });
+                // Lluvia leve: ≥5mm o probabilidad ≥50%
+                if (!yaAlertaLluvia && (d.lluvia_mm >= 5 || d.prob_lluvia >= 50))
+                    avisos.push({ nivel: 'aviso', icon: '🌧️', texto: `Lluvia prevista (${d.lluvia_mm}mm, ${d.prob_lluvia}%) — ${lbl}` });
+                // Calor agrícola: 35-37°C — riesgo para trabajadores y aplicación de fitosanitarios
+                if (!yaAlertaCalor && d.tmax >= 35 && d.tmax < 38)
+                    avisos.push({ nivel: 'aviso', icon: '☀️', texto: `Calor (${d.tmax}°C) — evitar horas centrales — ${lbl}` });
+                // Helada suave: 0-3°C — riesgo para viña, almendro y frutales en flor
+                if (!yaAlertaHelada && d.tmin <= 3 && d.tmin > -4)
+                    avisos.push({ nivel: 'aviso', icon: '❄️', texto: `Riesgo de helada (${d.tmin}°C mín) — ${lbl}` });
+            });
+
             // Alertas oficiales AEMET (si hay API key configurada)
             let aemetAlertas = [];
             try {
@@ -142,7 +166,9 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 temp: Math.round(c.temperature_2m), hum: Math.round(c.relative_humidity_2m),
                 wind: Math.round(c.wind_speed_10m), precip: c.precipitation ?? 0,
                 code: c.weather_code, municipio: hit.name,
-                daily, hourly, alertas: [...aemetAlertas, ...alertas],
+                daily, hourly,
+                alertas: [...aemetAlertas, ...alertas],
+                avisos,
             });
             setWxState('ok');
         } catch { setWxState('error'); }
@@ -333,7 +359,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 <button onClick={volverHome} style={S.backBtn}>← Volver</button>
                 <h2 style={{ fontWeight: 800, fontSize: '1.5rem', margin: '0 0 6px' }}>Habla que yo escribo</h2>
                 <p style={{ fontSize: '0.88rem', color: 'var(--on-surface-variant)', margin: '0 0 24px', lineHeight: 1.5 }}>
-                    Escribe lo que hiciste hoy, como si se lo dijeras a alguien:
+                    Escribe lo que has hecho hoy, como si se lo dijeras a alguien:
                 </p>
 
                 <div style={{ background: 'var(--surface-container-low)', borderRadius: 'var(--radius-lg)', padding: '14px', marginBottom: 16, fontSize: '0.8rem', color: 'var(--on-surface-variant)', lineHeight: 1.8 }}>
@@ -602,22 +628,41 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                                 </div>
                             </div>
 
-                            {/* Alertas — dentro de la zona meteo */}
-                            {weather.alertas?.length > 0 && (
-                                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                    {weather.alertas.map((a, i) => (
-                                        <div key={i} style={{ background: 'rgba(0,0,0,0.35)', borderLeft: `4px solid ${a.nivel==='rojo'?'#f87171':a.nivel==='naranja'?'#fb923c':'#fbbf24'}`, borderRadius: '0 8px 8px 0', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
-                                            <span style={{ fontSize: 16 }}>{a.icon}</span>
-                                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: a.nivel==='rojo'?'#fca5a5':a.nivel==='naranja'?'#fdba74':'#fde68a', flex: 1 }}>
-                                                ⚠️ {a.texto}
-                                            </span>
-                                            {a.fuente === 'AEMET' && (
-                                                <span style={{ fontSize: '0.6rem', fontWeight: 800, background: 'rgba(255,255,255,0.15)', borderRadius: 4, padding: '1px 5px', letterSpacing: '0.05em', opacity: 0.9 }}>AEMET</span>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                            {/* Alertas AEMET + avisos agrícolas */}
+                            {(() => {
+                                const alertas = weather.alertas || [];
+                                const avisos  = weather.avisos  || [];
+                                const hayAlgo = alertas.length > 0 || avisos.length > 0;
+                                return (
+                                    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                        {alertas.map((a, i) => (
+                                            <div key={`a${i}`} style={{ background: 'rgba(0,0,0,0.35)', borderLeft: `4px solid ${a.nivel==='rojo'?'#f87171':a.nivel==='naranja'?'#fb923c':'#fbbf24'}`, borderRadius: '0 8px 8px 0', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
+                                                <span style={{ fontSize: 16 }}>{a.icon}</span>
+                                                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: a.nivel==='rojo'?'#fca5a5':a.nivel==='naranja'?'#fdba74':'#fde68a', flex: 1 }}>
+                                                    ⚠️ {a.texto}
+                                                </span>
+                                                {a.fuente === 'AEMET' && (
+                                                    <span style={{ fontSize: '0.6rem', fontWeight: 800, background: 'rgba(255,255,255,0.15)', borderRadius: 4, padding: '1px 5px', letterSpacing: '0.05em', opacity: 0.9 }}>AEMET</span>
+                                                )}
+                                            </div>
+                                        ))}
+                                        {avisos.map((a, i) => (
+                                            <div key={`v${i}`} style={{ background: 'rgba(0,0,0,0.25)', borderLeft: '4px solid #60a5fa', borderRadius: '0 8px 8px 0', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
+                                                <span style={{ fontSize: 16 }}>{a.icon}</span>
+                                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#bfdbfe', flex: 1 }}>
+                                                    {a.texto}
+                                                </span>
+                                            </div>
+                                        ))}
+                                        {!hayAlgo && (
+                                            <div style={{ background: 'rgba(0,0,0,0.20)', borderLeft: '4px solid #4ade80', borderRadius: '0 8px 8px 0', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
+                                                <span style={{ fontSize: 16 }}>✅</span>
+                                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#bbf7d0', flex: 1 }}>Sin alertas meteorológicas activas</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
 
                             <div style={{ marginTop: 6, fontSize: '0.62rem', fontWeight: 600, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                                 📍 {weather.municipio}
