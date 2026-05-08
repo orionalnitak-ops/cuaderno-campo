@@ -25,6 +25,7 @@ function App() {
     // ── App state ──
     const [screen, setScreen]           = useState('inicio');
     const [homeKey, setHomeKey]         = useState(0);
+    const [historialKey, setHistorialKey] = useState(0);
     const [lopdOk, setLopdOk]           = useState(false);
     const [showModules, setShowModules] = useState(false);
     const [activeForm, setActiveForm]   = useState(null);
@@ -95,7 +96,7 @@ function App() {
     };
     const closeForm = (msg) => {
         setActiveForm(null);
-        if (msg) showMsg(msg);
+        if (msg) { showMsg(msg); setHistorialKey(k => k + 1); }
     };
 
     const navigate = (id) => {
@@ -155,7 +156,7 @@ function App() {
         switch (screen) {
             case 'inicio':    return <ScreenHome key={homeKey} campana={campana} onOpenForm={openForm} showToast={showMsg} onNavigate={navigate} />;
             case 'parcelas':  return <ScreenParcelas campana={campana} showToast={showMsg} />;
-            case 'historial': return <ScreenHistorial campana={campana} onEdit={openForm} showToast={showMsg} />;
+            case 'historial': return <ScreenHistorial key={historialKey} campana={campana} onEdit={openForm} showToast={showMsg} />;
             case 'mas':       return <ScreenSettings  campana={campana} onCampana={setCampana} showToast={showMsg} currentUser={currentUser} onLogout={handleLogout} />;
             case 'admin':     return isAdmin ? <ScreenAdmin currentUser={currentUser} onSwitchUser={handleSwitchUser} showToast={showMsg} /> : <ScreenHome campana={campana} onOpenForm={openForm} showToast={showMsg} />;
             default:          return <ScreenHome     campana={campana} onOpenForm={openForm} showToast={showMsg} />;
