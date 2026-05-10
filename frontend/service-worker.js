@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cuaderno-cache-v11';
+const CACHE_NAME = 'cuaderno-cache-v12';
 const urlsToCache = [
   '/manifest.json'
 ];
