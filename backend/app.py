@@ -802,7 +802,7 @@ def manage_labores():
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha'),
           data.get('tipo_labor'), data.get('descripcion'), data.get('producto'), data.get('maquinaria'),
-          data.get('horas_trabajadas'), data.get('operario'), data.get('notas'),
+          data.get('horas_trabajadas') or None, data.get('operario'), data.get('notas'),
           data.get('campana', '2025/2026')))
     conn.commit(); new_id = c.lastrowid; conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
@@ -824,7 +824,7 @@ def manage_labor(lid):
               'producto','maquinaria','horas_trabajadas','operario','notas','campana']
     sets = ', '.join(f"{f}=?" for f in fields)
     conn.execute(f"UPDATE labores SET {sets} WHERE id=? AND user_id=?",
-                 [data.get(f) for f in fields] + [lid, uid])
+                 [data.get(f) or None if f == 'horas_trabajadas' else data.get(f) for f in fields] + [lid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 

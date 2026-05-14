@@ -472,10 +472,13 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
     const save = async () => {
         if (!f.parcela_id || !f.fecha) { alert('Rellena: parcela y fecha'); return; }
         setSaving(true);
-        const method = isEdit ? 'PUT' : 'POST';
-        const url = isEdit ? `/api/labores/${record.id}` : '/api/labores';
-        await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
-        onClose('✅ Labor guardada');
+        try {
+            const method = isEdit ? 'PUT' : 'POST';
+            const url = isEdit ? `/api/labores/${record.id}` : '/api/labores';
+            const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
+            if (!res.ok) { alert('Error al guardar. Inténtalo de nuevo.'); setSaving(false); return; }
+            onClose('✅ Labor guardada');
+        } catch { alert('Error de conexión'); setSaving(false); }
     };
 
     return (
