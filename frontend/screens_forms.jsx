@@ -257,7 +257,8 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
         setSaving(true);
         const method = isEdit ? 'PUT' : 'POST';
         const url = isEdit ? `/api/tratamientos/${record.id}` : '/api/tratamientos';
-        await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
+        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
+        if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar el tratamiento'); setSaving(false); return; }
         onClose('✅ Tratamiento guardado');
     };
 
@@ -381,7 +382,8 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
         setSaving(true);
         const method = isEdit ? 'PUT' : 'POST';
         const url = isEdit ? `/api/fertilizacion/${record.id}` : '/api/fertilizacion';
-        await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
+        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
+        if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar el abono'); setSaving(false); return; }
         onClose('✅ Abono guardado');
     };
 
@@ -585,7 +587,8 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
         setSaving(true);
         const method = isEdit ? 'PUT' : 'POST';
         const url = isEdit ? `/api/cosecha/${record.id}` : '/api/cosecha';
-        await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
+        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
+        if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar la cosecha'); setSaving(false); return; }
         onClose('✅ Cosecha guardada');
     };
 

@@ -686,10 +686,10 @@ def manage_tratamientos():
     ''', (
         uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha_aplicacion'),
         data.get('producto_comercial'), data.get('num_registro_mapa'), data.get('sustancia_activa'),
-        data.get('plaga_objetivo'), data.get('dosis_valor'), data.get('dosis_unidad', 'L/ha'),
-        data.get('volumen_caldo'), data.get('equipo_id'), data.get('condiciones_meteo'),
-        data.get('plazo_seguridad_dias'), data.get('fecha_recoleccion_minima'),
-        data.get('eficacia'), data.get('aplicador_id'), data.get('notas'),
+        data.get('plaga_objetivo'), data.get('dosis_valor') or None, data.get('dosis_unidad', 'L/ha'),
+        data.get('volumen_caldo') or None, data.get('equipo_id') or None, data.get('condiciones_meteo'),
+        data.get('plazo_seguridad_dias') or None, data.get('fecha_recoleccion_minima'),
+        data.get('eficacia'), data.get('aplicador_id') or None, data.get('notas'),
         data.get('campana', '2025/2026'),
     ))
     conn.commit(); new_id = c.lastrowid; conn.close()
@@ -719,8 +719,9 @@ def manage_tratamiento(tid):
               'volumen_caldo','equipo_id','condiciones_meteo','plazo_seguridad_dias',
               'fecha_recoleccion_minima','eficacia','aplicador_id','notas','campana']
     sets = ', '.join(f"{f}=?" for f in fields)
+    _numeric_t = {'dosis_valor', 'volumen_caldo', 'equipo_id', 'plazo_seguridad_dias', 'aplicador_id'}
     conn.execute(f"UPDATE tratamientos SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
-                 [data.get(f) for f in fields] + [tid, uid])
+                 [data.get(f) or None if f in _numeric_t else data.get(f) for f in fields] + [tid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
@@ -751,7 +752,7 @@ def manage_fertilizacion():
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha_aplicacion'),
           data.get('tipo_fertilizante'), data.get('producto'), data.get('riqueza_npk'),
-          data.get('dosis_valor'), data.get('dosis_unidad', 'kg/ha'),
+          data.get('dosis_valor') or None, data.get('dosis_unidad', 'kg/ha'),
           data.get('metodo_aplicacion'), data.get('notas'), data.get('campana', '2025/2026')))
     conn.commit(); new_id = c.lastrowid; conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
@@ -779,7 +780,7 @@ def manage_fertilizacion_one(fid):
               'producto','riqueza_npk','dosis_valor','dosis_unidad','metodo_aplicacion','notas','campana']
     sets = ', '.join(f"{f}=?" for f in fields)
     conn.execute(f"UPDATE fertilizacion SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
-                 [data.get(f) for f in fields] + [fid, uid])
+                 [data.get(f) or None if f == 'dosis_valor' else data.get(f) for f in fields] + [fid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
@@ -854,7 +855,7 @@ def manage_cosecha():
           data.get('fecha_inicio'), data.get('fecha_fin'), data.get('cultivo'),
           data.get('variedad'), sup, prod, data.get('produccion_total_unidad', 'kg'),
           rend, data.get('destino'), data.get('comprador'),
-          data.get('precio_unidad'), data.get('notas'), data.get('campana', '2025/2026')))
+          data.get('precio_unidad') or None, data.get('notas'), data.get('campana', '2025/2026')))
     conn.commit(); new_id = c.lastrowid; conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
 
@@ -874,9 +875,10 @@ def manage_cosecha_one(cid):
     fields = ['parcela_id','parcela_etiqueta','fecha_inicio','fecha_fin','cultivo',
               'variedad','superficie_cosechada_ha','produccion_total_valor','produccion_total_unidad',
               'rendimiento_kg_ha','destino','comprador','precio_unidad','notas','campana']
+    _numeric_c = {'superficie_cosechada_ha', 'produccion_total_valor', 'rendimiento_kg_ha', 'precio_unidad'}
     sets = ', '.join(f"{f}=?" for f in fields)
     conn.execute(f"UPDATE cosecha SET {sets} WHERE id=? AND user_id=?",
-                 [data.get(f) for f in fields] + [cid, uid])
+                 [data.get(f) or None if f in _numeric_c else data.get(f) for f in fields] + [cid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
@@ -981,9 +983,9 @@ def manage_compras():
             cantidad_valor, cantidad_unidad, num_lote, num_factura, precio_total, campana, notas)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (uid, data.get('fecha'), data.get('tipo_producto'), data.get('producto'),
-          data.get('proveedor'), data.get('cantidad_valor'),
+          data.get('proveedor'), data.get('cantidad_valor') or None,
           data.get('cantidad_unidad', 'kg'), data.get('num_lote'),
-          data.get('num_factura'), data.get('precio_total'),
+          data.get('num_factura'), data.get('precio_total') or None,
           data.get('campana', '2025/2026'), data.get('notas')))
     conn.commit(); new_id = c.lastrowid; conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
@@ -1010,8 +1012,9 @@ def manage_compra(cid):
     fields = ['fecha','tipo_producto','producto','proveedor','cantidad_valor',
               'cantidad_unidad','num_lote','num_factura','precio_total','campana','notas']
     sets = ', '.join(f"{f}=?" for f in fields)
+    _numeric_co = {'cantidad_valor', 'precio_total'}
     conn.execute(f"UPDATE compras SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
-                 [data.get(f) for f in fields] + [cid, uid])
+                 [data.get(f) or None if f in _numeric_co else data.get(f) for f in fields] + [cid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
