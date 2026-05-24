@@ -321,11 +321,17 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                             {equipos.map(e => <option key={e.id} value={e.id}>{e.descripcion}</option>)}
                         </select>
                     </FieldGroup>
-                    <FieldGroup label="Aplicador (ROPO)">
+                    <FieldGroup label="Aplicador (ROPO) *">
                         <select className="input-field" value={f.aplicador_id} onChange={e => set('aplicador_id', e.target.value)}>
-                            <option value="">Sin especificar</option>
+                            <option value="">-- Selecciona aplicador --</option>
                             {aplicadores.map(a => <option key={a.id} value={a.id}>{a.nombre}{a.num_ropo ? ` (${a.num_ropo})` : ''}</option>)}
                         </select>
+                        {aplicadores.length === 0 && (
+                            <p style={{ margin:'6px 0 0', fontSize:'0.82rem', color:'#dc2626' }}>
+                                No tienes aplicadores registrados. Ve a{' '}
+                                <strong>Configuración → Aplicadores</strong> y añade al menos uno antes de guardar un tratamiento.
+                            </p>
+                        )}
                     </FieldGroup>
                     <FieldGroup label="Eficacia observada">
                         <select className="input-field" value={f.eficacia} onChange={e => set('eficacia', e.target.value)}>
