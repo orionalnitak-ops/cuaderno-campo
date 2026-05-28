@@ -201,6 +201,8 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
     const [saving, setSaving]           = React.useState(false);
     const [plazoAlert, setPlazoAlert]   = React.useState('');
     const [cultivo, setCultivo]         = React.useState({});
+    const [showAddAplic, setShowAddAplic] = React.useState(false);
+    const [newAplic, setNewAplic]         = React.useState({ nombre: '', num_ropo: '', nif: '' });
 
     const [f, setF] = React.useState({
         parcela_id:               record?.parcela_id || '',
@@ -250,9 +252,24 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
         if (p) set('parcela_etiqueta', p.nombre_finca);
     }, [f.parcela_id]);
 
+    const saveNuevoAplicador = async () => {
+        if (!newAplic.nombre.trim()) { alert('El nombre del aplicador es obligatorio'); return; }
+        const res = await fetch('/api/aplicadores', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newAplic), credentials: 'include'
+        });
+        if (!res.ok) { alert('Error al guardar el aplicador'); return; }
+        const d = await res.json();
+        const lista = await fetch('/api/aplicadores', { credentials: 'include' }).then(r => r.json());
+        setAplicadores(Array.isArray(lista) ? lista : []);
+        set('aplicador_id', String(d.id));
+        setNewAplic({ nombre: '', num_ropo: '', nif: '' });
+        setShowAddAplic(false);
+    };
+
     const save = async () => {
-        if (!f.parcela_id || !f.fecha_aplicacion || !f.producto_comercial) {
-            alert('Rellena los campos obligatorios: parcela, fecha y producto'); return;
+        if (!f.parcela_id || !f.fecha_aplicacion || !f.aplicador_id || !f.producto_comercial) {
+            alert('Rellena los campos obligatorios: parcela, fecha, aplicador y producto'); return;
         }
         setSaving(true);
         const method = isEdit ? 'PUT' : 'POST';
@@ -267,22 +284,55 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
             <FieldGroup label="Parcela *">
                 <ParcelSelect parcelas={parcelas} value={f.parcela_id} onChange={v => set('parcela_id', v)} />
             </FieldGroup>
-            <div className="responsive-grid cols-2">
-                <FieldGroup label="Fecha de aplicación *">
-                    <input type="date" className="input-field" value={f.fecha_aplicacion} onChange={e => set('fecha_aplicacion', e.target.value)} />
-                </FieldGroup>
-                <FieldGroup label="Producto comercial *">
-                    <ZoomInput label="Producto comercial" value={f.producto_comercial} placeholder="Nombre del producto"
-                        onConfirm={v => set('producto_comercial', v)} />
-                </FieldGroup>
-            </div>
+            <FieldGroup label="Fecha de aplicación *">
+                <input type="date" className="input-field" value={f.fecha_aplicacion} onChange={e => set('fecha_aplicacion', e.target.value)} />
+            </FieldGroup>
+            <FieldGroup label="Aplicador (ROPO) *">
+                {aplicadores.length > 0 ? (
+                    <select className="input-field" value={f.aplicador_id} onChange={e => set('aplicador_id', e.target.value)}>
+                        <option value="">-- Selecciona aplicador --</option>
+                        {aplicadores.map(a => <option key={a.id} value={a.id}>{a.nombre}{a.num_ropo ? ` (${a.num_ropo})` : ''}</option>)}
+                    </select>
+                ) : (
+                    <div style={{ padding: '10px 12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8 }}>
+                        <p style={{ margin: '0 0 8px', fontSize: '0.85rem', color: '#c2410c', fontWeight: 600 }}>
+                            No tienes aplicadores registrados. Es un campo obligatorio.
+                        </p>
+                        {!showAddAplic ? (
+                            <button type="button" className="btn-primary" style={{ fontSize: '0.85rem', padding: '8px 16px' }}
+                                onClick={() => setShowAddAplic(true)}>
+                                + Añadir aplicador ahora
+                            </button>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                <input className="input-field" placeholder="Nombre completo *" value={newAplic.nombre}
+                                    onChange={e => setNewAplic(x => ({ ...x, nombre: e.target.value }))} />
+                                <input className="input-field" placeholder="Nº ROPO (opcional)" value={newAplic.num_ropo}
+                                    onChange={e => setNewAplic(x => ({ ...x, num_ropo: e.target.value }))} />
+                                <input className="input-field" placeholder="NIF (opcional)" value={newAplic.nif}
+                                    onChange={e => setNewAplic(x => ({ ...x, nif: e.target.value }))} />
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <button type="button" className="btn-ghost" style={{ flex: 1, fontSize: '0.85rem' }}
+                                        onClick={() => setShowAddAplic(false)}>Cancelar</button>
+                                    <button type="button" className="btn-primary" style={{ flex: 2, fontSize: '0.85rem' }}
+                                        onClick={saveNuevoAplicador}>Guardar aplicador</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </FieldGroup>
+            <FieldGroup label="Producto comercial *">
+                <ZoomInput label="Producto comercial" value={f.producto_comercial} placeholder="Nombre del producto"
+                    onConfirm={v => set('producto_comercial', v)} />
+            </FieldGroup>
+            <FieldGroup label="Plaga / Objetivo">
+                <ZoomInput label="Plaga / Objetivo" value={f.plaga_objetivo} placeholder="Repilo, Antracnosis…"
+                    onConfirm={v => set('plaga_objetivo', v)} />
+            </FieldGroup>
 
             <MasCampos>
                 <div className="responsive-grid cols-2">
-                    <FieldGroup label="Plaga / Objetivo">
-                        <ZoomInput label="Plaga / Objetivo" value={f.plaga_objetivo} placeholder="Repilo, Antracnosis…"
-                            onConfirm={v => set('plaga_objetivo', v)} />
-                    </FieldGroup>
                     <FieldGroup label="Sustancia activa">
                         <ZoomInput label="Sustancia activa" value={f.sustancia_activa} placeholder="Cobre, Glifosato…"
                             onConfirm={v => set('sustancia_activa', v)} />
@@ -320,18 +370,6 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                             <option value="">Sin especificar</option>
                             {equipos.map(e => <option key={e.id} value={e.id}>{e.descripcion}</option>)}
                         </select>
-                    </FieldGroup>
-                    <FieldGroup label="Aplicador (ROPO) *">
-                        <select className="input-field" value={f.aplicador_id} onChange={e => set('aplicador_id', e.target.value)}>
-                            <option value="">-- Selecciona aplicador --</option>
-                            {aplicadores.map(a => <option key={a.id} value={a.id}>{a.nombre}{a.num_ropo ? ` (${a.num_ropo})` : ''}</option>)}
-                        </select>
-                        {aplicadores.length === 0 && (
-                            <p style={{ margin:'6px 0 0', fontSize:'0.82rem', color:'#dc2626' }}>
-                                No tienes aplicadores registrados. Ve a{' '}
-                                <strong>Configuración → Aplicadores</strong> y añade al menos uno antes de guardar un tratamiento.
-                            </p>
-                        )}
                     </FieldGroup>
                     <FieldGroup label="Eficacia observada">
                         <select className="input-field" value={f.eficacia} onChange={e => set('eficacia', e.target.value)}>
