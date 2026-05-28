@@ -412,6 +412,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
             { icon: '🌿', label: 'Tratamiento fitosanitario',  m: 'tratamiento' },
             { icon: '🌱', label: 'Abono / Fertilización',      m: 'fertilizacion' },
             { icon: '📦', label: 'Cosecha',                    m: 'cosecha' },
+            { icon: '🛒', label: 'Compras',                    m: 'compra' },
         ];
         return (
             <div style={{ padding: '16px' }}>

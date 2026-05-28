@@ -138,7 +138,7 @@ function ScreenForms({ modulo, record, campana, onClose }) {
         fertilizacion: { icon: '🌱', title: 'Abono',                     color: '#4f46e5' },
         labor:         { icon: '🚜', title: 'Labor Agrícola',            color: '#1d4ed8' },
         cosecha:       { icon: '📦', title: 'Cosecha / Producción',      color: '#db2777' },
-        compra:        { icon: '🛒', title: 'Compra de Insumos',         color: '#b45309' },
+        compra:        { icon: '🛒', title: 'Compras',                   color: '#b45309' },
     };
     const cfg = MODULE_CONFIG[modulo] || { icon: '📝', title: 'Registro', color: '#374151' };
 
