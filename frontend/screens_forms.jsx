@@ -268,8 +268,10 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
     };
 
     const save = async () => {
-        if (!f.parcela_id || !f.fecha_aplicacion || !f.aplicador_id || !f.producto_comercial) {
-            alert('Rellena los campos obligatorios: parcela, fecha, aplicador y producto'); return;
+        if (!f.parcela_id || !f.fecha_aplicacion || !f.aplicador_id || !f.producto_comercial ||
+            !f.plaga_objetivo || !f.sustancia_activa || !f.num_registro_mapa || !f.dosis_valor ||
+            !f.equipo_id || !f.plazo_seguridad_dias) {
+            alert('Rellena todos los campos obligatorios (marcados con *)'); return;
         }
         setSaving(true);
         const method = isEdit ? 'PUT' : 'POST';
@@ -326,30 +328,42 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                 <ZoomInput label="Producto comercial" value={f.producto_comercial} placeholder="Nombre del producto"
                     onConfirm={v => set('producto_comercial', v)} />
             </FieldGroup>
-            <FieldGroup label="Plaga / Objetivo">
+            <FieldGroup label="Plaga / Objetivo *">
                 <ZoomInput label="Plaga / Objetivo" value={f.plaga_objetivo} placeholder="Repilo, Antracnosis…"
                     onConfirm={v => set('plaga_objetivo', v)} />
+            </FieldGroup>
+            <div className="responsive-grid cols-2">
+                <FieldGroup label="Sustancia activa *">
+                    <ZoomInput label="Sustancia activa" value={f.sustancia_activa} placeholder="Cobre, Glifosato…"
+                        onConfirm={v => set('sustancia_activa', v)} />
+                </FieldGroup>
+                <FieldGroup label="Nº Registro MAPA *">
+                    <ZoomInput label="Nº Registro MAPA" value={f.num_registro_mapa} placeholder="ES-00000-0"
+                        onConfirm={v => set('num_registro_mapa', v)} />
+                </FieldGroup>
+            </div>
+            <FieldGroup label="Dosis *">
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <ZoomInput label="Dosis" value={f.dosis_valor} placeholder="2.5" inputMode="decimal"
+                        style={{ flex: 2 }} onConfirm={v => set('dosis_valor', v)} />
+                    <select className="input-field" value={f.dosis_unidad} onChange={e => set('dosis_unidad', e.target.value)} style={{ flex: 1 }}>
+                        {['cc/ha', 'g/ha', 'kg/ha', 'L/100L', 'L/ha'].map(u => <option key={u}>{u}</option>)}
+                    </select>
+                </div>
+            </FieldGroup>
+            <FieldGroup label="Equipo de aplicación *">
+                <select className="input-field" value={f.equipo_id} onChange={e => set('equipo_id', e.target.value)}>
+                    <option value="">-- Selecciona equipo --</option>
+                    {equipos.map(e => <option key={e.id} value={e.id}>{e.descripcion}</option>)}
+                </select>
+            </FieldGroup>
+            <FieldGroup label="Plazo de seguridad (días) *">
+                <ZoomInput label="Plazo de seguridad (días)" value={f.plazo_seguridad_dias} placeholder="15" inputMode="numeric"
+                    onConfirm={v => set('plazo_seguridad_dias', v)} />
             </FieldGroup>
 
             <MasCampos>
                 <div className="responsive-grid cols-2">
-                    <FieldGroup label="Sustancia activa">
-                        <ZoomInput label="Sustancia activa" value={f.sustancia_activa} placeholder="Cobre, Glifosato…"
-                            onConfirm={v => set('sustancia_activa', v)} />
-                    </FieldGroup>
-                    <FieldGroup label="Nº Registro MAPA">
-                        <ZoomInput label="Nº Registro MAPA" value={f.num_registro_mapa} placeholder="ES-00000-0"
-                            onConfirm={v => set('num_registro_mapa', v)} />
-                    </FieldGroup>
-                    <FieldGroup label="Dosis">
-                        <div style={{ display: 'flex', gap: 8 }}>
-                            <ZoomInput label="Dosis" value={f.dosis_valor} placeholder="2.5" inputMode="decimal"
-                                style={{ flex: 2 }} onConfirm={v => set('dosis_valor', v)} />
-                            <select className="input-field" value={f.dosis_unidad} onChange={e => set('dosis_unidad', e.target.value)} style={{ flex: 1 }}>
-                                {['cc/ha', 'g/ha', 'kg/ha', 'L/100L', 'L/ha'].map(u => <option key={u}>{u}</option>)}
-                            </select>
-                        </div>
-                    </FieldGroup>
                     <FieldGroup label="Volumen de caldo (L/ha)">
                         <ZoomInput label="Volumen de caldo (L/ha)" value={f.volumen_caldo} placeholder="300" inputMode="numeric"
                             onConfirm={v => set('volumen_caldo', v)} />
@@ -358,18 +372,8 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                         <ZoomInput label="Condiciones meteorológicas" value={f.condiciones_meteo} placeholder="T 22°C · V <3 m/s · HR 45%"
                             onConfirm={v => set('condiciones_meteo', v)} />
                     </FieldGroup>
-                    <FieldGroup label="Plazo de seguridad (días)">
-                        <ZoomInput label="Plazo de seguridad (días)" value={f.plazo_seguridad_dias} placeholder="15" inputMode="numeric"
-                            onConfirm={v => set('plazo_seguridad_dias', v)} />
-                    </FieldGroup>
                     <FieldGroup label="Fecha mínima de cosecha">
                         <input type="date" className="input-field" value={f.fecha_recoleccion_minima} onChange={e => set('fecha_recoleccion_minima', e.target.value)} style={{ borderColor: plazoAlert ? '#ef4444' : undefined }} />
-                    </FieldGroup>
-                    <FieldGroup label="Equipo de aplicación">
-                        <select className="input-field" value={f.equipo_id} onChange={e => set('equipo_id', e.target.value)}>
-                            <option value="">Sin especificar</option>
-                            {equipos.map(e => <option key={e.id} value={e.id}>{e.descripcion}</option>)}
-                        </select>
                     </FieldGroup>
                     <FieldGroup label="Eficacia observada">
                         <select className="input-field" value={f.eficacia} onChange={e => set('eficacia', e.target.value)}>
