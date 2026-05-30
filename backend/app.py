@@ -167,10 +167,58 @@ def auth_login():
     if not u or not bcrypt.checkpw(password, u['password_hash'].encode('utf-8')):
         return jsonify({"error": "Email o contraseña incorrectos"}), 401
 
-    user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'])
+    user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
+                u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'))
     login_user(user, remember=True)
     return jsonify({"id": user.id, "email": user.email,
                     "nombre": user.nombre, "role": user.role})
+
+
+@app.route('/api/auth/register', methods=['POST'])
+@limiter.limit("5 per minute")
+def auth_register():
+    data     = request.json or {}
+    nombre   = (data.get('nombre') or '').strip()
+    email    = (data.get('email') or '').strip().lower()
+    password = (data.get('password') or '')
+
+    if not nombre:
+        return jsonify({"error": "El nombre es obligatorio"}), 400
+    if not email or '@' not in email:
+        return jsonify({"error": "Email no válido"}), 400
+    if len(password) < 8:
+        return jsonify({"error": "La contraseña debe tener al menos 8 caracteres"}), 400
+
+    conn = get_db()
+    existing = one(conn, "SELECT id FROM users WHERE email=?", (email,))
+    if existing:
+        conn.close()
+        return jsonify({"error": "Ya existe una cuenta con ese email"}), 409
+
+    pw_hash    = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    trial_ends = datetime.datetime.utcnow() + datetime.timedelta(days=7)
+    try:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO users (email, password_hash, nombre, role, plan, trial_ends_at) VALUES (?,?,?,?,?,?)",
+            (email, pw_hash, nombre, 'agricultor', 'trial', trial_ends.strftime('%Y-%m-%d %H:%M:%S'))
+        )
+        new_id = c.lastrowid
+        c.execute("INSERT INTO explotacion (user_id, titular, campana_activa) VALUES (?,?,?)",
+                  (new_id, nombre, '2025/2026'))
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        app.logger.error("Register error: %s", e)
+        return jsonify({"error": "Error al crear la cuenta"}), 500
+
+    u = one(conn, "SELECT * FROM users WHERE id=?", (new_id,))
+    conn.close()
+    user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
+                u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'))
+    login_user(user, remember=True)
+    return jsonify({"id": user.id, "email": user.email, "nombre": user.nombre, "role": user.role}), 201
+
 
 @app.route('/api/auth/logout', methods=['POST'])
 @login_required
