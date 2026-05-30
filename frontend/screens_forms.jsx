@@ -722,16 +722,18 @@ function FormCompra({ record, campana, onClose, isEdit }) {
     const [error, setError]   = React.useState('');
 
     const [f, setF] = React.useState({
-        fecha:           record?.fecha           || today,
-        tipo_producto:   record?.tipo_producto   || '',
-        producto:        record?.producto        || '',
-        proveedor:       record?.proveedor       || '',
-        cantidad_valor:  record?.cantidad_valor  || '',
-        cantidad_unidad: record?.cantidad_unidad || 'kg',
-        num_lote:        record?.num_lote        || '',
-        num_factura:     record?.num_factura     || '',
-        precio_total:    record?.precio_total    || '',
-        notas:           record?.notas           || '',
+        fecha:             record?.fecha             || today,
+        tipo_producto:     record?.tipo_producto     || '',
+        producto:          record?.producto          || '',
+        num_registro_mapa: record?.num_registro_mapa || '',
+        sustancia_activa:  record?.sustancia_activa  || '',
+        proveedor:         record?.proveedor         || '',
+        cantidad_valor:    record?.cantidad_valor    || '',
+        cantidad_unidad:   record?.cantidad_unidad   || 'kg',
+        num_lote:          record?.num_lote          || '',
+        num_factura:       record?.num_factura       || '',
+        precio_total:      record?.precio_total      || '',
+        notas:             record?.notas             || '',
         campana,
     });
     const set = (k, v) => setF(x => ({ ...x, [k]: v }));
@@ -788,6 +790,23 @@ function FormCompra({ record, campana, onClose, isEdit }) {
                     placeholder="Nombre comercial del producto"
                     onConfirm={v => set('producto', v)} />
             </FieldGroup>
+
+            {f.tipo_producto === 'fitosanitario' && (<>
+                <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8,
+                    padding: '8px 12px', marginBottom: 12, fontSize: '0.8rem', color: '#92400e' }}>
+                    ⚖️ Campos obligatorios por ley para fitosanitarios (RD 1311/2012 Anexo III S5)
+                </div>
+                <FieldGroup label="Nº de registro MAPA *">
+                    <ZoomInput label="Nº de registro MAPA" value={f.num_registro_mapa}
+                        placeholder="ES-XXXXX-X"
+                        onConfirm={v => set('num_registro_mapa', v)} />
+                </FieldGroup>
+                <FieldGroup label="Sustancia activa *">
+                    <ZoomInput label="Sustancia activa" value={f.sustancia_activa}
+                        placeholder="p.ej. glifosato, clorpirifos…"
+                        onConfirm={v => set('sustancia_activa', v)} />
+                </FieldGroup>
+            </>)}
 
             <FieldGroup label="Proveedor / Vendedor">
                 <ZoomInput label="Proveedor" value={f.proveedor}

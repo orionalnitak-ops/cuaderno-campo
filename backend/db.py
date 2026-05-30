@@ -249,6 +249,8 @@ def init_db():
             fecha TEXT,
             tipo_producto TEXT,
             producto TEXT,
+            num_registro_mapa TEXT,
+            sustancia_activa TEXT,
             proveedor TEXT,
             cantidad_valor REAL,
             cantidad_unidad TEXT DEFAULT 'kg',
@@ -263,6 +265,7 @@ def init_db():
     ''')
     for col, typ in [
         ('fecha', 'TEXT'), ('tipo_producto', 'TEXT'), ('producto', 'TEXT'),
+        ('num_registro_mapa', 'TEXT'), ('sustancia_activa', 'TEXT'),
         ('proveedor', 'TEXT'), ('cantidad_valor', 'REAL'), ('cantidad_unidad', 'TEXT'),
         ('num_lote', 'TEXT'), ('num_factura', 'TEXT'), ('precio_total', 'REAL'),
         ('campana', 'TEXT'), ('notas', 'TEXT'), ('deleted_at', 'TEXT'),
@@ -425,9 +428,24 @@ def init_db():
             nombre TEXT,
             role TEXT DEFAULT 'agricultor',
             active INTEGER DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            plan TEXT DEFAULT 'trial',
+            trial_ends_at TIMESTAMP,
+            subscription_ends_at TIMESTAMP,
+            stripe_customer_id TEXT,
+            stripe_subscription_id TEXT
         )
     ''')
+    for col, typ in [
+        ('plan', "TEXT DEFAULT 'trial'"),
+        ('trial_ends_at', 'TIMESTAMP'),
+        ('subscription_ends_at', 'TIMESTAMP'),
+        ('stripe_customer_id', 'TEXT'),
+        ('stripe_subscription_id', 'TEXT'),
+    ]:
+        _add_col(c, 'users', col, typ)
+    # Admin accounts never expire
+    c.execute("UPDATE users SET plan='pro' WHERE role='admin' AND (plan='trial' OR plan IS NULL)")
 
     conn.commit()
     _seed_admin(conn)
@@ -447,8 +465,8 @@ def _seed_admin(conn):
             print(f"\n*** ADMIN CREADO — contraseña inicial: {admin_pw} ***")
             print("*** Cámbiala inmediatamente en Ajustes > Mi Cuenta ***\n")
         pw = bcrypt.hashpw(admin_pw.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        c.execute("INSERT INTO users (email, password_hash, nombre, role) VALUES (?,?,?,?)",
-                  ('admin@cuaderno.es', pw, 'Administrador', 'admin'))
+        c.execute("INSERT INTO users (email, password_hash, nombre, role, plan) VALUES (?,?,?,?,?)",
+                  ('admin@cuaderno.es', pw, 'Administrador', 'admin', 'pro'))
         conn.commit()
 
 
