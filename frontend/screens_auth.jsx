@@ -45,9 +45,7 @@ function ScreenLogin({ onLogin }) {
             const data = await res.json();
             if (!res.ok) { setError(data.error || 'No se pudo crear la cuenta'); }
             else {
-                // Auto-login: /api/auth/register devuelve los datos del usuario
-                const me = await fetch('/api/auth/me', { credentials: 'include' }).then(r => r.json());
-                onLogin(me);
+                onLogin(data);
             }
         } catch { setError('Error de conexión.'); }
         finally { setLoading(false); }
