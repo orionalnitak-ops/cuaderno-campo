@@ -38,12 +38,38 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 
 class User(UserMixin):
-    def __init__(self, id, email, nombre, role, active):
+    def __init__(self, id, email, nombre, role, active, plan='trial', trial_ends_at=None, subscription_ends_at=None):
         self.id = id
         self.email = email
         self.nombre = nombre
         self.role = role
         self.active = active
+        self.plan = plan
+        self.trial_ends_at = trial_ends_at
+        self.subscription_ends_at = subscription_ends_at
+
+    def plan_is_active(self):
+        """True si el usuario puede escribir datos (trial vigente, basic o pro)."""
+        if self.role == 'admin':
+            return True
+        if self.plan in ('basic', 'pro'):
+            return True
+        if self.plan == 'trial' and self.trial_ends_at:
+            ends = self.trial_ends_at
+            if isinstance(ends, str):
+                ends = datetime.datetime.fromisoformat(ends.replace('Z', ''))
+            return datetime.datetime.utcnow() < ends
+        return False
+
+    def plan_label(self):
+        """Estado legible para el frontend."""
+        if self.plan in ('basic', 'pro'):
+            return self.plan
+        if self.plan == 'trial':
+            if self.plan_is_active():
+                return 'trial'
+            return 'expired'
+        return 'expired'
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -52,11 +78,21 @@ def load_user(user_id):
     conn.close()
     if not u:
         return None
-    return User(u['id'], u['email'], u['nombre'], u['role'], u['active'])
+    return User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
+                u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'))
 
 @login_manager.unauthorized_handler
 def unauthorized():
     return jsonify({"error": "No autenticado"}), 401
+
+def requires_active_plan(f):
+    """Decorador para rutas GET que también requieren suscripción activa (ej. exportaciones)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.plan_is_active():
+            return jsonify({"error": "subscription_required", "plan": current_user.plan_label()}), 403
+        return f(*args, **kwargs)
+    return decorated
 
 def admin_required(f):
     @wraps(f)
@@ -73,6 +109,24 @@ def get_uid():
         if imp:
             return imp
     return current_user.id
+
+
+_PLAN_EXEMPT_PREFIXES = ('/api/auth/', '/api/admin/', '/api/stripe/')
+
+@app.before_request
+def guard_active_plan():
+    """Bloquea escrituras si el trial ha caducado o la suscripción ha expirado."""
+    if request.method in ('GET', 'HEAD', 'OPTIONS'):
+        return
+    if any(request.path.startswith(p) for p in _PLAN_EXEMPT_PREFIXES):
+        return
+    if not current_user.is_authenticated:
+        return
+    if not current_user.plan_is_active():
+        return jsonify({
+            "error": "subscription_required",
+            "plan": current_user.plan_label(),
+        }), 403
 
 
 # ─────────────────────────────────────────────
@@ -137,12 +191,20 @@ def auth_me():
         conn.close()
         if t:
             imp_info = t
+    trial_ends = None
+    if current_user.trial_ends_at:
+        te = current_user.trial_ends_at
+        trial_ends = te.isoformat() if hasattr(te, 'isoformat') else str(te)
     return jsonify({
         "id": current_user.id,
         "email": current_user.email,
         "nombre": current_user.nombre,
         "role": current_user.role,
         "impersonating": imp_info,
+        "plan": current_user.plan_label(),
+        "plan_raw": current_user.plan,
+        "trial_ends_at": trial_ends,
+        "plan_active": current_user.plan_is_active(),
     })
 
 @app.route('/api/auth/change-password', methods=['POST'])
@@ -198,10 +260,13 @@ def admin_users():
         return jsonify({"error": "Email y contraseña son obligatorios"}), 400
 
     pw_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    trial_ends = datetime.datetime.utcnow() + datetime.timedelta(days=7)
     try:
         c = conn.cursor()
-        c.execute("INSERT INTO users (email, password_hash, nombre, role) VALUES (?,?,?,?)",
-                  (email, pw_hash, nombre, role))
+        c.execute(
+            "INSERT INTO users (email, password_hash, nombre, role, plan, trial_ends_at) VALUES (?,?,?,?,?,?)",
+            (email, pw_hash, nombre, role, 'trial', trial_ends.strftime('%Y-%m-%d %H:%M:%S'))
+        )
         new_id = c.lastrowid
         # Crear explotación vacía para el nuevo usuario
         c.execute("INSERT INTO explotacion (user_id, titular, campana_activa) VALUES (?,?,?)",
@@ -628,6 +693,14 @@ def _validate_compra(data):
     missing = [label for field, label in required.items() if not data.get(field)]
     if missing:
         return f"Campos obligatorios: {', '.join(missing)}"
+    if data.get('tipo_producto') == 'fitosanitario':
+        fito_required = {
+            'num_registro_mapa': 'Nº de registro MAPA',
+            'sustancia_activa':  'Sustancia activa',
+        }
+        missing_fito = [label for field, label in fito_required.items() if not data.get(field)]
+        if missing_fito:
+            return f"Obligatorio para fitosanitarios (RD 1311/2012 Anexo III S5): {', '.join(missing_fito)}"
     try:
         fecha = datetime.date.fromisoformat(str(data['fecha']))
         if fecha > datetime.date.today():
@@ -979,10 +1052,12 @@ def manage_compras():
 
     c = conn.cursor()
     c.execute('''
-        INSERT INTO compras (user_id, fecha, tipo_producto, producto, proveedor,
-            cantidad_valor, cantidad_unidad, num_lote, num_factura, precio_total, campana, notas)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        INSERT INTO compras (user_id, fecha, tipo_producto, producto, num_registro_mapa,
+            sustancia_activa, proveedor, cantidad_valor, cantidad_unidad, num_lote,
+            num_factura, precio_total, campana, notas)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (uid, data.get('fecha'), data.get('tipo_producto'), data.get('producto'),
+          data.get('num_registro_mapa'), data.get('sustancia_activa'),
           data.get('proveedor'), data.get('cantidad_valor') or None,
           data.get('cantidad_unidad', 'kg'), data.get('num_lote'),
           data.get('num_factura'), data.get('precio_total') or None,
@@ -1009,8 +1084,9 @@ def manage_compra(cid):
     if err:
         conn.close()
         return jsonify({"error": err}), 400
-    fields = ['fecha','tipo_producto','producto','proveedor','cantidad_valor',
-              'cantidad_unidad','num_lote','num_factura','precio_total','campana','notas']
+    fields = ['fecha','tipo_producto','producto','num_registro_mapa','sustancia_activa',
+              'proveedor','cantidad_valor','cantidad_unidad','num_lote','num_factura',
+              'precio_total','campana','notas']
     sets = ', '.join(f"{f}=?" for f in fields)
     _numeric_co = {'cantidad_valor', 'precio_total'}
     conn.execute(f"UPDATE compras SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
@@ -1733,6 +1809,7 @@ def route_import_gsheet():
 # ─────────────────────────────────────────────
 @app.route('/api/export/excel')
 @login_required
+@requires_active_plan
 def route_export_excel():
     from exports import export_excel
     uid = get_uid()
@@ -1741,6 +1818,7 @@ def route_export_excel():
 
 @app.route('/api/export/pdf')
 @login_required
+@requires_active_plan
 def route_export_pdf():
     from export_pdf import export_pdf
     uid = get_uid()
@@ -1838,6 +1916,206 @@ def aemet_alertas():
         return jsonify({'ok': True, 'alertas': alertas})
     except Exception as e:
         return jsonify({'ok': False, 'alertas': [], 'error': str(e)})
+
+
+# ─────────────────────────────────────────────
+# STRIPE — PAGOS
+# ─────────────────────────────────────────────
+
+STRIPE_SECRET_KEY      = os.environ.get('STRIPE_SECRET_KEY', '')
+STRIPE_WEBHOOK_SECRET  = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
+STRIPE_PRICES = {
+    ('basic', 'monthly'): os.environ.get('STRIPE_PRICE_BASIC_MONTHLY', ''),
+    ('basic', 'yearly'):  os.environ.get('STRIPE_PRICE_BASIC_YEARLY', ''),
+    ('pro',   'monthly'): os.environ.get('STRIPE_PRICE_PRO_MONTHLY', ''),
+    ('pro',   'yearly'):  os.environ.get('STRIPE_PRICE_PRO_YEARLY', ''),
+}
+
+def _stripe():
+    """Devuelve el módulo stripe inicializado, o None si no hay clave configurada."""
+    if not STRIPE_SECRET_KEY:
+        return None
+    import stripe as _s
+    _s.api_key = STRIPE_SECRET_KEY
+    return _s
+
+
+def _plan_from_price(stripe_price_id):
+    """Identifica el plan ('basic'/'pro') a partir del Price ID de Stripe."""
+    for (plan, _), pid in STRIPE_PRICES.items():
+        if pid and pid == stripe_price_id:
+            return plan
+    return 'basic'
+
+
+@app.route('/api/stripe/checkout', methods=['POST'])
+@login_required
+def stripe_checkout():
+    """Crea una sesión de Stripe Checkout y devuelve la URL de pago."""
+    s = _stripe()
+    if not s:
+        return jsonify({"error": "Stripe no configurado"}), 503
+
+    data    = request.json or {}
+    plan    = data.get('plan', 'basic')    # 'basic' | 'pro'
+    billing = data.get('billing', 'monthly')  # 'monthly' | 'yearly'
+
+    price_id = STRIPE_PRICES.get((plan, billing))
+    if not price_id:
+        return jsonify({"error": "Plan o intervalo no válido"}), 400
+
+    base_url = request.host_url.rstrip('/')
+
+    conn = get_db()
+    u = one(conn, "SELECT stripe_customer_id FROM users WHERE id=?", (current_user.id,))
+    conn.close()
+    customer_id = u.get('stripe_customer_id') if u else None
+
+    try:
+        params = {
+            "mode": "subscription",
+            "line_items": [{"price": price_id, "quantity": 1}],
+            "success_url": f"{base_url}/pago-completado?session_id={{CHECKOUT_SESSION_ID}}",
+            "cancel_url":  f"{base_url}/#planes",
+            "metadata": {
+                "user_id": str(current_user.id),
+                "plan":    plan,
+            },
+            "subscription_data": {
+                "metadata": {"user_id": str(current_user.id), "plan": plan}
+            },
+        }
+        if customer_id:
+            params["customer"] = customer_id
+        else:
+            params["customer_email"] = current_user.email
+
+        session_obj = s.checkout.Session.create(**params)
+        return jsonify({"url": session_obj.url})
+    except Exception as e:
+        app.logger.error("Stripe checkout error: %s", e)
+        return jsonify({"error": "Error al crear sesión de pago"}), 500
+
+
+@app.route('/api/stripe/portal', methods=['POST'])
+@login_required
+def stripe_portal():
+    """Crea una sesión del portal de cliente de Stripe (gestión de suscripción)."""
+    s = _stripe()
+    if not s:
+        return jsonify({"error": "Stripe no configurado"}), 503
+
+    conn = get_db()
+    u = one(conn, "SELECT stripe_customer_id FROM users WHERE id=?", (current_user.id,))
+    conn.close()
+
+    customer_id = u.get('stripe_customer_id') if u else None
+    if not customer_id:
+        return jsonify({"error": "No tienes una suscripción activa en Stripe"}), 400
+
+    try:
+        portal = s.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=request.host_url,
+        )
+        return jsonify({"url": portal.url})
+    except Exception as e:
+        app.logger.error("Stripe portal error: %s", e)
+        return jsonify({"error": "Error al abrir el portal"}), 500
+
+
+@app.route('/api/stripe/webhook', methods=['POST'])
+def stripe_webhook():
+    """Recibe eventos de Stripe y actualiza el plan del usuario."""
+    s = _stripe()
+    if not s:
+        return jsonify({"error": "Stripe no configurado"}), 503
+
+    payload   = request.get_data()
+    sig_header = request.headers.get('Stripe-Signature', '')
+
+    try:
+        event = s.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+    except Exception as e:
+        app.logger.warning("Stripe webhook signature failed: %s", e)
+        return jsonify({"error": "Firma inválida"}), 400
+
+    conn = get_db()
+    try:
+        ev_type = event['type']
+        obj     = event['data']['object']
+
+        if ev_type == 'checkout.session.completed':
+            user_id    = int(obj['metadata'].get('user_id', 0))
+            plan       = obj['metadata'].get('plan', 'basic')
+            customer   = obj.get('customer')
+            sub_id     = obj.get('subscription')
+            # Calcular subscription_ends_at (renovación al mes o año)
+            sub_ends = None
+            if sub_id:
+                sub = s.Subscription.retrieve(sub_id)
+                import datetime as _dt
+                sub_ends = _dt.datetime.utcfromtimestamp(
+                    sub['current_period_end']
+                ).strftime('%Y-%m-%d %H:%M:%S')
+            conn.execute(
+                "UPDATE users SET plan=?, stripe_customer_id=?, stripe_subscription_id=?, subscription_ends_at=? WHERE id=?",
+                (plan, customer, sub_id, sub_ends, user_id)
+            )
+            conn.commit()
+
+        elif ev_type == 'invoice.paid':
+            customer = obj.get('customer')
+            sub_id   = obj.get('subscription')
+            if sub_id:
+                sub = s.Subscription.retrieve(sub_id)
+                import datetime as _dt
+                sub_ends = _dt.datetime.utcfromtimestamp(
+                    sub['current_period_end']
+                ).strftime('%Y-%m-%d %H:%M:%S')
+                conn.execute(
+                    "UPDATE users SET subscription_ends_at=? WHERE stripe_customer_id=?",
+                    (sub_ends, customer)
+                )
+                conn.commit()
+
+        elif ev_type == 'customer.subscription.deleted':
+            customer = obj.get('customer')
+            conn.execute(
+                "UPDATE users SET plan='expired' WHERE stripe_customer_id=?",
+                (customer,)
+            )
+            conn.commit()
+
+        elif ev_type == 'customer.subscription.updated':
+            customer = obj.get('customer')
+            items    = obj.get('items', {}).get('data', [])
+            if items:
+                price_id = items[0].get('price', {}).get('id', '')
+                new_plan = _plan_from_price(price_id)
+                import datetime as _dt
+                sub_ends = _dt.datetime.utcfromtimestamp(
+                    obj['current_period_end']
+                ).strftime('%Y-%m-%d %H:%M:%S')
+                conn.execute(
+                    "UPDATE users SET plan=?, subscription_ends_at=? WHERE stripe_customer_id=?",
+                    (new_plan, sub_ends, customer)
+                )
+                conn.commit()
+
+    except Exception as e:
+        conn.close()
+        app.logger.error("Stripe webhook handler error: %s", e)
+        return jsonify({"error": "Error interno"}), 500
+
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+@app.route('/pago-completado')
+def pago_completado():
+    """Página de éxito tras el pago — redirige a la app."""
+    return app.send_static_file('index.html')
 
 
 # ─────────────────────────────────────────────

@@ -20,7 +20,7 @@ const MODULE_CARDS = [
 function App() {
     // ── Auth state ──
     const [authState, setAuthState]   = useState('loading'); // loading | guest | authenticated
-    const [currentUser, setCurrentUser] = useState(null);     // {id, email, nombre, role, impersonating}
+    const [currentUser, setCurrentUser] = useState(null);     // {id, email, nombre, role, impersonating, plan, plan_active, trial_ends_at}
 
     // ── App state ──
     const [screen, setScreen]           = useState('inicio');
@@ -152,12 +152,27 @@ function App() {
     const isAdmin = currentUser?.role === 'admin';
     const isImpersonating = !!currentUser?.impersonating;
 
+    // ── Plan status ──
+    // topOffset: espacio para banners fijos en la parte superior
+    const planActive   = isAdmin || currentUser?.plan_active !== false;
+    const planLabel    = currentUser?.plan; // 'trial' | 'basic' | 'pro' | 'expired'
+    const trialEndsAt  = currentUser?.trial_ends_at;
+    const trialDaysLeft = (() => {
+        if (planLabel !== 'trial' || !trialEndsAt || !planActive) return null;
+        const diff = Math.ceil((new Date(trialEndsAt) - new Date()) / 86400000);
+        return diff;
+    })();
+    const showExpiredBanner = !planActive && !isAdmin;
+    const showTrialWarning  = planLabel === 'trial' && planActive && trialDaysLeft !== null && trialDaysLeft <= 3 && !isAdmin;
+    const topOffset = (isImpersonating ? 38 : 0) + (showExpiredBanner || showTrialWarning ? 38 : 0);
+
     const renderScreen = () => {
         switch (screen) {
             case 'inicio':    return <ScreenHome key={homeKey} campana={campana} onOpenForm={openForm} showToast={showMsg} onNavigate={navigate} />;
             case 'parcelas':  return <ScreenParcelas campana={campana} showToast={showMsg} />;
             case 'historial': return <ScreenHistorial key={historialKey} campana={campana} onEdit={openForm} showToast={showMsg} />;
             case 'mas':       return <ScreenSettings  campana={campana} onCampana={setCampana} showToast={showMsg} currentUser={currentUser} onLogout={handleLogout} />;
+            case 'planes':    return <ScreenPlanes currentUser={currentUser} showToast={showMsg} onClose={() => setScreen('inicio')} />;
             case 'admin':     return isAdmin ? <ScreenAdmin currentUser={currentUser} onSwitchUser={handleSwitchUser} showToast={showMsg} /> : <ScreenHome campana={campana} onOpenForm={openForm} showToast={showMsg} />;
             default:          return <ScreenHome     campana={campana} onOpenForm={openForm} showToast={showMsg} />;
         }
@@ -206,8 +221,48 @@ function App() {
                 </div>
             )}
 
+            {/* ── Banner: suscripción caducada ── */}
+            {showExpiredBanner && (
+                <div style={{
+                    position: 'fixed', top: isImpersonating ? 38 : 0, left: 0, right: 0, zIndex: 199,
+                    background: 'linear-gradient(135deg, #7f1d1d, #dc2626)',
+                    color: '#fff', padding: '10px 20px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    gap: 12, fontSize: '0.82rem', fontWeight: 600,
+                }}>
+                    <span>🔒 Tu período de prueba ha caducado — solo lectura</span>
+                    <button onClick={() => setScreen('planes')} style={{
+                        background: 'rgba(255,255,255,0.22)', border: 'none',
+                        borderRadius: 'var(--radius-full)', padding: '6px 14px',
+                        color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.78rem', flexShrink: 0,
+                    }}>
+                        Activar suscripción →
+                    </button>
+                </div>
+            )}
+
+            {/* ── Banner: trial con pocos días ── */}
+            {showTrialWarning && (
+                <div style={{
+                    position: 'fixed', top: isImpersonating ? 38 : 0, left: 0, right: 0, zIndex: 199,
+                    background: 'linear-gradient(135deg, #78350f, #d97706)',
+                    color: '#fff', padding: '10px 20px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    gap: 12, fontSize: '0.82rem', fontWeight: 600,
+                }}>
+                    <span>⏳ Tu prueba gratuita termina {trialDaysLeft === 0 ? 'hoy' : `en ${trialDaysLeft} día${trialDaysLeft > 1 ? 's' : ''}`}</span>
+                    <button onClick={() => setScreen('planes')} style={{
+                        background: 'rgba(255,255,255,0.22)', border: 'none',
+                        borderRadius: 'var(--radius-full)', padding: '6px 14px',
+                        color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.78rem', flexShrink: 0,
+                    }}>
+                        Ver planes →
+                    </button>
+                </div>
+            )}
+
             {/* ── Desktop Sidebar ── */}
-            <nav id="sidebar" style={isImpersonating ? { paddingTop: 40 } : {}}>
+            <nav id="sidebar" style={topOffset ? { paddingTop: topOffset } : {}}>
                 <div className="sidebar-logo">
                     <div className="logo-icon">🌿</div>
                     <span className="logo-text">Cuaderno de Campo</span>
@@ -257,7 +312,7 @@ function App() {
             </nav>
 
             {/* ── Right: TopBar + Screen ── */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, ...(isImpersonating ? { marginTop: 38 } : {}) }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, ...(topOffset ? { marginTop: topOffset } : {}) }}>
 
                 {/* Desktop Top Bar */}
                 <header id="topbar">
