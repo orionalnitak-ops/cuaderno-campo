@@ -34,15 +34,19 @@ function App() {
 
     // ── Boot: check session ──
     useEffect(() => {
+        const isPagoCompletado = window.location.pathname.includes('pago-completado');
         fetch('/api/auth/me', { credentials: 'include' })
             .then(r => r.ok ? r.json() : null)
             .then(data => {
                 if (data && data.id) {
                     setCurrentUser(data);
                     setAuthState('authenticated');
-                    // LOPD per-user
                     const key = `lopd_accepted_${data.id}`;
                     setLopdOk(!!localStorage.getItem(key));
+                    if (isPagoCompletado) {
+                        window.history.replaceState({}, '', '/');
+                        setTimeout(() => showMsg('¡Suscripción activada! Bienvenido al plan ' + (data.plan_raw || 'activo') + '.'), 500);
+                    }
                 } else {
                     setAuthState('guest');
                 }
@@ -151,6 +155,7 @@ function App() {
 
     const isAdmin = currentUser?.role === 'admin';
     const isImpersonating = !!currentUser?.impersonating;
+    const planExpired = !isAdmin && currentUser?.plan_active === false;
 
     const renderScreen = () => {
         switch (screen) {
@@ -159,6 +164,7 @@ function App() {
             case 'historial': return <ScreenHistorial key={historialKey} campana={campana} onEdit={openForm} showToast={showMsg} />;
             case 'mas':       return <ScreenSettings  campana={campana} onCampana={setCampana} showToast={showMsg} currentUser={currentUser} onLogout={handleLogout} />;
             case 'admin':     return isAdmin ? <ScreenAdmin currentUser={currentUser} onSwitchUser={handleSwitchUser} showToast={showMsg} /> : <ScreenHome campana={campana} onOpenForm={openForm} showToast={showMsg} />;
+            case 'planes':    return <ScreenPlanes currentUser={currentUser} showToast={showMsg} onClose={() => navigate('inicio')} />;
             default:          return <ScreenHome     campana={campana} onOpenForm={openForm} showToast={showMsg} />;
         }
     };
@@ -169,7 +175,7 @@ function App() {
         { id: 'parcelas',  icon: '🗺️', label: 'Mis parcelas' },
         { id: 'historial', icon: '📋', label: 'Historial' },
         { id: 'mas',       icon: '⚙️', label: 'Datos' },
-        ...(isAdmin ? [{ id: 'admin', icon: '👥', label: 'Panel Admin' }] : []),
+        ...(isAdmin ? [{ id: 'admin', icon: '👥', label: 'Panel Admin' }] : [{ id: 'planes', icon: '💳', label: 'Suscripción' }]),
     ];
 
     // Bottom nav items (admin replaces last item)
@@ -185,6 +191,27 @@ function App() {
 
     return (
         <div style={{ display: 'flex', minHeight: '100vh', background: '#f8f9fb' }}>
+
+            {/* ── Trial caducado / suscripción requerida ── */}
+            {planExpired && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, zIndex: 201,
+                    background: 'linear-gradient(135deg, #7f1d1d, #dc2626)',
+                    color: '#fff', padding: '10px 20px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    gap: 12, fontSize: '0.82rem', fontWeight: 600,
+                }}>
+                    <span>⏰ Tu período de prueba ha terminado. Solo puedes consultar tus datos.</span>
+                    <button onClick={() => navigate('planes')} style={{
+                        background: 'rgba(255,255,255,0.20)', border: 'none',
+                        borderRadius: 'var(--radius-full)', padding: '6px 14px',
+                        color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.78rem',
+                        whiteSpace: 'nowrap',
+                    }}>
+                        Ver planes →
+                    </button>
+                </div>
+            )}
 
             {/* ── Impersonation banner ── */}
             {isImpersonating && (
@@ -207,7 +234,7 @@ function App() {
             )}
 
             {/* ── Desktop Sidebar ── */}
-            <nav id="sidebar" style={isImpersonating ? { paddingTop: 40 } : {}}>
+            <nav id="sidebar" style={(isImpersonating || planExpired) ? { paddingTop: 40 } : {}}>
                 <div className="sidebar-logo">
                     <div className="logo-icon">🌿</div>
                     <span className="logo-text">Cuaderno de Campo</span>
@@ -257,7 +284,7 @@ function App() {
             </nav>
 
             {/* ── Right: TopBar + Screen ── */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, ...(isImpersonating ? { marginTop: 38 } : {}) }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, ...((isImpersonating || planExpired) ? { marginTop: 38 } : {}) }}>
 
                 {/* Desktop Top Bar */}
                 <header id="topbar">
