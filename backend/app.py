@@ -217,7 +217,13 @@ def auth_register():
     user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
                 u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'))
     login_user(user, remember=True)
-    return jsonify({"id": user.id, "email": user.email, "nombre": user.nombre, "role": user.role}), 201
+    te = user.trial_ends_at
+    return jsonify({
+        "id": user.id, "email": user.email, "nombre": user.nombre, "role": user.role,
+        "plan": user.plan_label(), "plan_raw": user.plan,
+        "trial_ends_at": (te.isoformat() if hasattr(te, 'isoformat') else str(te)) if te else None,
+        "plan_active": user.plan_is_active(), "impersonating": None,
+    }), 201
 
 
 @app.route('/api/auth/logout', methods=['POST'])
