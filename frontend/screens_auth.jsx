@@ -53,25 +53,6 @@ function ScreenLogin({ onLogin }) {
         finally { setLoading(false); }
     };
 
-    const PwInput = ({ autoComplete }) => (
-        <div style={{ position: 'relative' }}>
-            <input
-                className="input-field"
-                type={showPw ? 'text' : 'password'}
-                placeholder="••••••••"
-                value={password}
-                onChange={e => { setPassword(e.target.value); setError(''); }}
-                autoComplete={autoComplete}
-                style={{ fontSize: '1rem', paddingRight: 48 }}
-            />
-            <button type="button" onClick={() => setShowPw(s => !s)} style={{
-                position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: 18, color: 'var(--outline)', padding: 4,
-            }}>{showPw ? '🙈' : '👁'}</button>
-        </div>
-    );
-
     return (
         <div style={{ minHeight: '100vh', background: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
 
@@ -133,7 +114,17 @@ function ScreenLogin({ onLogin }) {
                             </div>
                             <div>
                                 <label className="field-label">Contraseña</label>
-                                <PwInput autoComplete="current-password" />
+                                <div style={{ position: 'relative' }}>
+                                    <input className="input-field" type={showPw ? 'text' : 'password'}
+                                        placeholder="••••••••" value={password}
+                                        onChange={e => { setPassword(e.target.value); setError(''); }}
+                                        autoComplete="current-password" style={{ fontSize: '1rem', paddingRight: 48 }} />
+                                    <button type="button" onClick={() => setShowPw(s => !s)} style={{
+                                        position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
+                                        background: 'none', border: 'none', cursor: 'pointer',
+                                        fontSize: 18, color: 'var(--outline)', padding: 4,
+                                    }}>{showPw ? '🙈' : '👁'}</button>
+                                </div>
                             </div>
                             {error && <div style={{ background:'rgba(153,63,58,0.10)', border:'1px solid rgba(153,63,58,0.20)', borderRadius:'var(--radius-lg)', padding:'12px 16px', fontSize:'0.85rem', color:'var(--tertiary)', fontWeight:600 }}>⚠️ {error}</div>}
                             <button type="submit" className="btn-primary" disabled={loading} style={{ width:'100%', marginTop:4, fontSize:'1rem' }}>
@@ -164,7 +155,17 @@ function ScreenLogin({ onLogin }) {
                             </div>
                             <div>
                                 <label className="field-label">Contraseña <span style={{ fontWeight:400, fontSize:'0.75rem' }}>(mín. 8 caracteres)</span></label>
-                                <PwInput autoComplete="new-password" />
+                                <div style={{ position: 'relative' }}>
+                                    <input className="input-field" type={showPw ? 'text' : 'password'}
+                                        placeholder="••••••••" value={password}
+                                        onChange={e => { setPassword(e.target.value); setError(''); }}
+                                        autoComplete="new-password" style={{ fontSize: '1rem', paddingRight: 48 }} />
+                                    <button type="button" onClick={() => setShowPw(s => !s)} style={{
+                                        position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
+                                        background: 'none', border: 'none', cursor: 'pointer',
+                                        fontSize: 18, color: 'var(--outline)', padding: 4,
+                                    }}>{showPw ? '🙈' : '👁'}</button>
+                                </div>
                             </div>
                             {error && <div style={{ background:'rgba(153,63,58,0.10)', border:'1px solid rgba(153,63,58,0.20)', borderRadius:'var(--radius-lg)', padding:'12px 16px', fontSize:'0.85rem', color:'var(--tertiary)', fontWeight:600 }}>⚠️ {error}</div>}
                             <button type="submit" className="btn-primary" disabled={loading} style={{ width:'100%', marginTop:4, fontSize:'1rem' }}>
