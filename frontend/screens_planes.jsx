@@ -151,17 +151,24 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                 }}>
                     <div style={{
                         background: 'linear-gradient(135deg, #00694c, #008560)',
-                        padding: '18px 20px 14px', color: '#fff',
+                        padding: '20px 24px 24px', color: '#fff',
                     }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                            <div>
-                                <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.85 }}>Plan</div>
-                                <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.55rem', fontWeight: 800 }}>Básico</div>
+                        {/* Nombre del plan */}
+                        <div style={{ marginBottom: 18 }}>
+                            <div style={{ fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', opacity: 0.65, marginBottom: 4 }}>Plan</div>
+                            <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.65rem', fontWeight: 800, lineHeight: 1 }}>Básico</div>
+                        </div>
+                        {/* Precio */}
+                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: 18 }}>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+                                <span style={{ fontSize: '2.2rem', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1 }}>
+                                    {PRICES[billing].basic.split('/')[0]}
+                                </span>
+                                <span style={{ fontSize: '0.9rem', fontWeight: 600, opacity: 0.75 }}>
+                                    /{PRICES[billing].basic.split('/')[1]}
+                                </span>
                             </div>
-                            <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: '1.4rem', fontWeight: 800 }}>{PRICES[billing].basic}</div>
-                                <div style={{ fontSize: '0.68rem', opacity: 0.8 }}>IVA incluido</div>
-                            </div>
+                            <div style={{ fontSize: '0.72rem', opacity: 0.6, marginTop: 6 }}>IVA incluido</div>
                         </div>
                     </div>
                     <div style={{ padding: '14px 20px 18px' }}>
@@ -209,25 +216,32 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                 }}>
                     <div style={{
                         background: 'linear-gradient(135deg, #3730a3, #4f46e5)',
-                        padding: '18px 20px 14px', color: '#fff', position: 'relative',
+                        padding: '20px 24px 24px', color: '#fff',
                     }}>
-                        <div style={{
-                            position: 'absolute', top: 12, right: 12,
-                            background: 'rgba(255,255,255,0.18)', borderRadius: 20,
-                            padding: '3px 10px', fontSize: '0.65rem', fontWeight: 700,
-                            letterSpacing: '0.05em',
-                        }}>
-                            LISTO PARA 2027
+                        {/* Badge */}
+                        <div style={{ marginBottom: 16 }}>
+                            <span style={{
+                                background: 'rgba(255,255,255,0.18)', borderRadius: 20,
+                                padding: '5px 13px', fontSize: '0.62rem', fontWeight: 700,
+                                letterSpacing: '0.07em',
+                            }}>LISTO PARA 2027</span>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                            <div>
-                                <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.85 }}>Plan</div>
-                                <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.55rem', fontWeight: 800 }}>Pro</div>
+                        {/* Nombre del plan */}
+                        <div style={{ marginBottom: 18 }}>
+                            <div style={{ fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', opacity: 0.65, marginBottom: 4 }}>Plan</div>
+                            <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.65rem', fontWeight: 800, lineHeight: 1 }}>Pro</div>
+                        </div>
+                        {/* Precio */}
+                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: 18 }}>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+                                <span style={{ fontSize: '2.2rem', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1 }}>
+                                    {PRICES[billing].pro.split('/')[0]}
+                                </span>
+                                <span style={{ fontSize: '0.9rem', fontWeight: 600, opacity: 0.75 }}>
+                                    /{PRICES[billing].pro.split('/')[1]}
+                                </span>
                             </div>
-                            <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: '1.4rem', fontWeight: 800 }}>{PRICES[billing].pro}</div>
-                                <div style={{ fontSize: '0.68rem', opacity: 0.8 }}>IVA incluido</div>
-                            </div>
+                            <div style={{ fontSize: '0.72rem', opacity: 0.6, marginTop: 6 }}>IVA incluido</div>
                         </div>
                     </div>
                     <div style={{ padding: '14px 20px 18px' }}>
