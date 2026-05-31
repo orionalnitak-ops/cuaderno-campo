@@ -165,6 +165,9 @@ def init_db():
     conn = get_db()
     c = conn.cursor()
 
+    if USE_PG:
+        c.execute("SELECT pg_advisory_lock(7311201201)")
+
     # ── EXPLOTACION ──
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS explotacion (
@@ -450,6 +453,8 @@ def init_db():
     conn.commit()
     _seed_admin(conn)
     _seed_if_needed(conn)
+    if USE_PG:
+        c.execute("SELECT pg_advisory_unlock(7311201201)")
     conn.close()
 
 
