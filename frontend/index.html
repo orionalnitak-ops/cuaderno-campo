@@ -246,8 +246,9 @@
     }
     /* Desktop: main-content scrolls independently (topbar stays visible) */
     @media (min-width: 1024px) {
-      html, body { height: 100%; overflow: hidden; }
-      #main-content { overflow-y: auto; height: 100%; min-height: unset; }
+      html, body, #root { height: 100%; overflow: hidden; }
+      #root > div { height: 100%; }
+      #main-content { overflow-y: auto; min-height: unset; flex: 1; }
     }
 
     /* ── BOTTOM NAV — "Dark Glass" Glassmorphism ── */
