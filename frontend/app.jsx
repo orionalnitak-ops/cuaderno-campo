@@ -162,7 +162,7 @@ function App() {
             case 'inicio':    return <ScreenHome key={homeKey} campana={campana} onOpenForm={openForm} showToast={showMsg} onNavigate={navigate} />;
             case 'parcelas':  return <ScreenParcelas campana={campana} showToast={showMsg} />;
             case 'historial': return <ScreenHistorial key={historialKey} campana={campana} onEdit={openForm} showToast={showMsg} />;
-            case 'mas':       return <ScreenSettings  campana={campana} onCampana={setCampana} showToast={showMsg} currentUser={currentUser} onLogout={handleLogout} />;
+            case 'mas':       return <ScreenSettings  campana={campana} onCampana={setCampana} showToast={showMsg} currentUser={currentUser} onLogout={handleLogout} onNavigate={navigate} />;
             case 'admin':     return isAdmin ? <ScreenAdmin currentUser={currentUser} onSwitchUser={handleSwitchUser} showToast={showMsg} /> : <ScreenHome campana={campana} onOpenForm={openForm} showToast={showMsg} />;
             case 'planes':    return <ScreenPlanes currentUser={currentUser} showToast={showMsg} onClose={() => navigate('inicio')} />;
             default:          return <ScreenHome     campana={campana} onOpenForm={openForm} showToast={showMsg} />;
