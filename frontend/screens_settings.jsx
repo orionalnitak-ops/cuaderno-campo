@@ -293,7 +293,7 @@ function AplicadorModal({ aplicador, onSave, onClose }) {
 }
 
 // ── Screen: Ajustes / Más ──
-function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout }) {
+function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, onNavigate }) {
     const { useState, useEffect } = React;
     const [section, setSection] = useState('explotacion');
     const [equipos, setEquipos] = useState([]);
@@ -341,13 +341,16 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout }
         setAplicadores(a => a.filter(x => x.id !== id));
     };
 
+    const isAdmin = currentUser?.role === 'admin';
+
     const SECTIONS = [
-        { id: 'explotacion', icon: '🏡', label: 'Explotación' },
-        { id: 'equipos',     icon: '🚜', label: 'Equipos' },
-        { id: 'aplicadores', icon: '👤', label: 'Aplicadores' },
-        { id: 'datos',       icon: '💾', label: 'Datos y exportación' },
-        { id: 'cuenta',      icon: '🔑', label: 'Mi cuenta' },
-        { id: 'legal',       icon: '📄', label: 'Legal y privacidad' },
+        { id: 'explotacion',  icon: '🏡', label: 'Explotación' },
+        { id: 'equipos',      icon: '🚜', label: 'Equipos' },
+        { id: 'aplicadores',  icon: '👤', label: 'Aplicadores' },
+        { id: 'datos',        icon: '💾', label: 'Datos y exportación' },
+        { id: 'cuenta',       icon: '🔑', label: 'Mi cuenta' },
+        ...(!isAdmin ? [{ id: 'suscripcion', icon: '💳', label: 'Suscripción' }] : []),
+        { id: 'legal',        icon: '📄', label: 'Legal y privacidad' },
     ];
 
     return (
@@ -524,6 +527,39 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout }
                                 🚪 Cerrar sesión
                             </button>
                         </div>
+                    </div>
+                )}
+
+                {section === 'suscripcion' && !isAdmin && (
+                    <div>
+                        <h2 className="section-title" style={{ marginBottom: 20 }}>Suscripción</h2>
+                        {currentUser && (
+                            <div className="card card-p" style={{ marginBottom: 12 }}>
+                                <h3 style={{ fontFamily: 'Manrope', fontWeight: 700, fontSize: '0.95rem', margin: '0 0 10px' }}>
+                                    💳 Plan actual
+                                </h3>
+                                {currentUser.plan_active === false ? (
+                                    <p style={{ fontSize: '0.85rem', color: '#991b1b', margin: '0 0 14px', fontWeight: 600 }}>
+                                        ⏰ Tu período de prueba ha terminado. Suscríbete para seguir usando el cuaderno.
+                                    </p>
+                                ) : currentUser.plan === 'basic' || currentUser.plan === 'pro' ? (
+                                    <p style={{ fontSize: '0.85rem', color: '#166534', margin: '0 0 14px', fontWeight: 600 }}>
+                                        ✅ Plan {currentUser.plan === 'basic' ? 'Básico' : 'Pro'} activo.
+                                    </p>
+                                ) : (
+                                    <p style={{ fontSize: '0.85rem', color: '#374151', margin: '0 0 14px' }}>
+                                        Estás en el período de prueba gratuito.
+                                    </p>
+                                )}
+                                <button
+                                    className="btn-primary"
+                                    style={{ background: 'linear-gradient(135deg, #00694c, #008560)' }}
+                                    onClick={() => onNavigate && onNavigate('planes')}
+                                >
+                                    💳 Ver planes y suscripción →
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
 
