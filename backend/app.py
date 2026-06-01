@@ -2142,11 +2142,21 @@ def stripe_webhook():
             session_obj = obj
             customer    = session_obj.get('customer')
             uid_meta    = session_obj.get('metadata', {}).get('user_id')
+            plan_meta   = session_obj.get('metadata', {}).get('plan')
+            sub_id      = session_obj.get('subscription')
             if uid_meta and customer:
-                conn.execute(
-                    "UPDATE users SET stripe_customer_id=? WHERE id=?",
-                    (customer, int(uid_meta))
-                )
+                if plan_meta in ('basic', 'pro'):
+                    import datetime as _dt
+                    sub_end = (_dt.datetime.utcnow() + _dt.timedelta(days=365)).strftime('%Y-%m-%d %H:%M:%S')
+                    conn.execute(
+                        "UPDATE users SET plan=?, stripe_customer_id=?, stripe_subscription_id=?, subscription_ends_at=? WHERE id=?",
+                        (plan_meta, customer, sub_id, sub_end, int(uid_meta))
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE users SET stripe_customer_id=? WHERE id=?",
+                        (customer, int(uid_meta))
+                    )
                 conn.commit()
     finally:
         conn.close()
