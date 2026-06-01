@@ -140,6 +140,10 @@ def guard_active_plan():
 def serve_index():
     return app.send_static_file('index.html')
 
+@app.route('/pago-completado')
+def serve_pago_completado():
+    return app.send_static_file('index.html')
+
 @app.route('/<path:path>')
 def serve_static(path):
     if path.startswith('api/'):
