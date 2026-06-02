@@ -1,4 +1,5 @@
 import os
+import re
 import bcrypt
 import requests as req_lib
 import datetime
@@ -507,7 +508,11 @@ def historial():
         rows = dicts(conn, "SELECT * FROM fertilizacion WHERE user_id=? AND deleted_at IS NULL ORDER BY fecha_aplicacion DESC", (uid,))
         for r in apply_filters(rows, 'fecha_aplicacion'):
             records.append({**r, '_modulo': 'fertilizacion', '_fecha': r.get('fecha_aplicacion', ''),
-                            '_resumen': f"{r.get('tipo_fertilizante','')} — {r.get('producto','')}"})
+                            '_resumen': (
+                                f"{r.get('tipo_fertilizante','')} — {r.get('producto','')}"
+                                + (f" · N:{r['n_aplicado']} P:{r['p2o5_aplicado']} K:{r['k2o_aplicado']} kg/ha"
+                                   if r.get('n_aplicado') is not None else '')
+                            )})
 
     if modulo in ('todos', 'labores'):
         rows = dicts(conn, "SELECT * FROM labores WHERE user_id=? ORDER BY fecha DESC", (uid,))
@@ -787,6 +792,23 @@ def _validate_fertilizacion(data):
     return None
 
 
+def _calc_npk(riqueza_npk, dosis_valor):
+    """Parsea 'N-P-K' y devuelve (n, p, k) en kg/ha, o (None, None, None) si no parseable."""
+    if not riqueza_npk or not dosis_valor:
+        return None, None, None
+    m = re.search(r'(\d+\.?\d*)[^\d]+(\d+\.?\d*)[^\d]+(\d+\.?\d*)', str(riqueza_npk))
+    if not m:
+        return None, None, None
+    try:
+        dosis = float(dosis_valor)
+        n = round(float(m.group(1)) / 100 * dosis, 2)
+        p = round(float(m.group(2)) / 100 * dosis, 2)
+        k = round(float(m.group(3)) / 100 * dosis, 2)
+        return n, p, k
+    except (ValueError, TypeError):
+        return None, None, None
+
+
 # ─────────────────────────────────────────────
 @app.route('/api/tratamientos', methods=['GET', 'POST'])
 @login_required
@@ -873,17 +895,20 @@ def manage_fertilizacion():
         conn.close()
         return jsonify({"error": err}), 400
 
+    n_ap, p_ap, k_ap = _calc_npk(data.get('riqueza_npk'), data.get('dosis_valor'))
     c = conn.cursor()
     c.execute('''
         INSERT INTO fertilizacion (
             user_id, parcela_id, parcela_etiqueta, fecha_aplicacion,
             tipo_fertilizante, producto, riqueza_npk,
-            dosis_valor, dosis_unidad, metodo_aplicacion, notas, campana
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            dosis_valor, dosis_unidad, metodo_aplicacion, notas, campana,
+            n_aplicado, p2o5_aplicado, k2o_aplicado
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha_aplicacion'),
           data.get('tipo_fertilizante'), data.get('producto'), data.get('riqueza_npk'),
           data.get('dosis_valor') or None, data.get('dosis_unidad', 'kg/ha'),
-          data.get('metodo_aplicacion'), data.get('notas'), data.get('campana', '2025/2026')))
+          data.get('metodo_aplicacion'), data.get('notas'), data.get('campana', '2025/2026'),
+          n_ap, p_ap, k_ap))
     conn.commit(); new_id = c.lastrowid; conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
 
@@ -906,11 +931,15 @@ def manage_fertilizacion_one(fid):
     if err:
         conn.close()
         return jsonify({"error": err}), 400
+    n_ap, p_ap, k_ap = _calc_npk(data.get('riqueza_npk'), data.get('dosis_valor'))
     fields = ['parcela_id','parcela_etiqueta','fecha_aplicacion','tipo_fertilizante',
-              'producto','riqueza_npk','dosis_valor','dosis_unidad','metodo_aplicacion','notas','campana']
+              'producto','riqueza_npk','dosis_valor','dosis_unidad','metodo_aplicacion','notas','campana',
+              'n_aplicado','p2o5_aplicado','k2o_aplicado']
     sets = ', '.join(f"{f}=?" for f in fields)
+    npk_map = {'n_aplicado': n_ap, 'p2o5_aplicado': p_ap, 'k2o_aplicado': k_ap}
+    values = [data.get(f) or None if f == 'dosis_valor' else npk_map.get(f, data.get(f)) for f in fields]
     conn.execute(f"UPDATE fertilizacion SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
-                 [data.get(f) or None if f == 'dosis_valor' else data.get(f) for f in fields] + [fid, uid])
+                 values + [fid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
