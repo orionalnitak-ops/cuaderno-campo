@@ -433,6 +433,7 @@ def stats():
     f_count = one(conn, "SELECT COUNT(*) as n FROM fertilizacion WHERE user_id=? AND campana=?", (uid, campana))
     l_count = one(conn, "SELECT COUNT(*) as n FROM labores WHERE user_id=? AND campana=?", (uid, campana))
     c_count = one(conn, "SELECT COUNT(*) as n FROM cosecha WHERE user_id=? AND campana=?", (uid, campana))
+    r_count = one(conn, "SELECT COUNT(*) as n FROM riego WHERE user_id=? AND campana=? AND deleted_at IS NULL", (uid, campana))
 
     alertas = dicts(conn, """
         SELECT parcela_etiqueta, producto_comercial, fecha_recoleccion_minima
@@ -444,8 +445,9 @@ def stats():
             SELECT fecha_aplicacion as fecha FROM tratamientos WHERE user_id=?
             UNION ALL SELECT fecha FROM labores WHERE user_id=?
             UNION ALL SELECT fecha_aplicacion as fecha FROM fertilizacion WHERE user_id=?
+            UNION ALL SELECT fecha FROM riego WHERE user_id=? AND deleted_at IS NULL
         )
-    """, (uid, uid, uid))
+    """, (uid, uid, uid, uid))
     days_inactive = 0
     if last_row and last_row.get('last_fecha'):
         try:
@@ -462,6 +464,7 @@ def stats():
         "total_fertilizacion": f_count['n'] if f_count else 0,
         "total_labores": l_count['n'] if l_count else 0,
         "total_cosecha": c_count['n'] if c_count else 0,
+        "total_riego": r_count['n'] if r_count else 0,
         "dias_sin_registro": days_inactive,
         "alertas_plazo": alertas,
     })
@@ -532,6 +535,13 @@ def historial():
         for r in apply_filters(rows, 'fecha'):
             records.append({**r, '_modulo': 'compras', '_fecha': r.get('fecha', ''),
                             '_resumen': f"{r.get('tipo_producto','')} — {r.get('producto','')} · {r.get('proveedor','')}"})
+
+    if modulo in ('todos', 'riego'):
+        rows = dicts(conn, "SELECT * FROM riego WHERE user_id=? AND deleted_at IS NULL ORDER BY fecha DESC", (uid,))
+        for r in apply_filters(rows, 'fecha'):
+            vol = f"{r['volumen_m3']} m³" if r.get('volumen_m3') else f"{r.get('horas_riego','')} h"
+            records.append({**r, '_modulo': 'riego', '_fecha': r.get('fecha', ''),
+                            '_resumen': f"{r.get('tipo_riego','')} — {vol}"})
 
     records.sort(key=lambda x: x.get('_fecha', '') or '', reverse=True)
     conn.close()
@@ -809,6 +819,28 @@ def _calc_npk(riqueza_npk, dosis_valor):
         return None, None, None
 
 
+def _validate_riego(data):
+    """Valida campos obligatorios del registro de riego (RD 934/2025).
+    Requiere fecha, parcela, tipo y al menos horas o m³."""
+    required = {
+        'fecha':      'Fecha de riego',
+        'parcela_id': 'Parcela',
+        'tipo_riego': 'Tipo de riego',
+    }
+    missing = [label for field, label in required.items() if not data.get(field)]
+    if missing:
+        return f"Campos obligatorios: {', '.join(missing)}"
+    if not data.get('horas_riego') and not data.get('volumen_m3'):
+        return "Indica al menos las horas de riego o el volumen en m³"
+    try:
+        fecha = datetime.date.fromisoformat(str(data['fecha']))
+        if fecha > datetime.date.today():
+            return "La fecha de riego no puede ser futura"
+    except (ValueError, TypeError):
+        return "Fecha con formato inválido (use YYYY-MM-DD)"
+    return None
+
+
 # ─────────────────────────────────────────────
 @app.route('/api/tratamientos', methods=['GET', 'POST'])
 @login_required
@@ -940,6 +972,67 @@ def manage_fertilizacion_one(fid):
     values = [data.get(f) or None if f == 'dosis_valor' else npk_map.get(f, data.get(f)) for f in fields]
     conn.execute(f"UPDATE fertilizacion SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
                  values + [fid, uid])
+    conn.commit(); conn.close(); return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# RIEGO
+# ─────────────────────────────────────────────
+@app.route('/api/riego', methods=['GET', 'POST'])
+@login_required
+def manage_riego():
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'GET':
+        campana = request.args.get('campana', '2025/2026')
+        rows = dicts(conn, "SELECT * FROM riego WHERE user_id=? AND campana=? AND deleted_at IS NULL ORDER BY fecha DESC", (uid, campana))
+        conn.close(); return jsonify(rows)
+
+    data = request.json or {}
+    err = _validate_riego(data)
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
+
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO riego (
+            user_id, parcela_id, parcela_etiqueta, fecha,
+            tipo_riego, volumen_m3, horas_riego, fuente_agua, notas, campana
+        ) VALUES (?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha'),
+          data.get('tipo_riego'), data.get('volumen_m3') or None,
+          data.get('horas_riego') or None, data.get('fuente_agua'), data.get('notas'),
+          data.get('campana', '2025/2026')))
+    conn.commit(); new_id = c.lastrowid; conn.close()
+    return jsonify({"status": "ok", "id": new_id}), 201
+
+
+@app.route('/api/riego/<int:rid>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def manage_riego_one(rid):
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'DELETE':
+        conn.execute(
+            "UPDATE riego SET deleted_at=datetime('now') WHERE id=? AND user_id=?",
+            (rid, uid))
+        conn.commit(); conn.close(); return jsonify({"status": "ok"})
+    if request.method == 'GET':
+        row = one(conn, "SELECT * FROM riego WHERE id=? AND user_id=? AND deleted_at IS NULL", (rid, uid))
+        conn.close(); return jsonify(row or {})
+    data = request.json or {}
+    err = _validate_riego(data)
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
+    fields = ['parcela_id','parcela_etiqueta','fecha','tipo_riego','volumen_m3',
+              'horas_riego','fuente_agua','notas','campana']
+    sets = ', '.join(f"{f}=?" for f in fields)
+    numeric = {'volumen_m3', 'horas_riego'}
+    values = [data.get(f) or None if f in numeric else data.get(f) for f in fields]
+    conn.execute(f"UPDATE riego SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
+                 values + [rid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
