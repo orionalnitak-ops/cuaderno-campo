@@ -434,6 +434,7 @@ def stats():
     l_count = one(conn, "SELECT COUNT(*) as n FROM labores WHERE user_id=? AND campana=?", (uid, campana))
     c_count = one(conn, "SELECT COUNT(*) as n FROM cosecha WHERE user_id=? AND campana=?", (uid, campana))
     r_count = one(conn, "SELECT COUNT(*) as n FROM riego WHERE user_id=? AND campana=? AND deleted_at IS NULL", (uid, campana))
+    a_count = one(conn, "SELECT COUNT(*) as n FROM abonado WHERE user_id=? AND campana=? AND deleted_at IS NULL", (uid, campana))
 
     alertas = dicts(conn, """
         SELECT parcela_etiqueta, producto_comercial, fecha_recoleccion_minima
@@ -465,6 +466,7 @@ def stats():
         "total_labores": l_count['n'] if l_count else 0,
         "total_cosecha": c_count['n'] if c_count else 0,
         "total_riego": r_count['n'] if r_count else 0,
+        "total_abonado": a_count['n'] if a_count else 0,
         "dias_sin_registro": days_inactive,
         "alertas_plazo": alertas,
     })
@@ -542,6 +544,12 @@ def historial():
             vol = f"{r['volumen_m3']} m³" if r.get('volumen_m3') else f"{r.get('horas_riego','')} h"
             records.append({**r, '_modulo': 'riego', '_fecha': r.get('fecha', ''),
                             '_resumen': f"{r.get('tipo_riego','')} — {vol}"})
+
+    if modulo in ('todos', 'abonado'):
+        rows = dicts(conn, "SELECT * FROM abonado WHERE user_id=? AND deleted_at IS NULL ORDER BY fecha_preparacion DESC", (uid,))
+        for r in apply_filters(rows, 'fecha_preparacion'):
+            records.append({**r, '_modulo': 'abonado', '_fecha': r.get('fecha_preparacion', ''),
+                            '_resumen': f"{r.get('cultivo','')} — N:{r.get('n_necesario_kg_ha','')} P:{r.get('p_necesario_kg_ha','')} K:{r.get('k_necesario_kg_ha','')} kg/ha"})
 
     records.sort(key=lambda x: x.get('_fecha', '') or '', reverse=True)
     conn.close()
@@ -841,6 +849,29 @@ def _validate_riego(data):
     return None
 
 
+def _validate_abonado(data):
+    required = {
+        'parcela_id':               'Parcela',
+        'cultivo':                  'Cultivo',
+        'cultivo_anterior':         'Cultivo anterior',
+        'rendimiento_esperado_kg_ha': 'Rendimiento esperado',
+        'fecha_preparacion':        'Fecha de preparación',
+        'n_necesario_kg_ha':        'N necesario',
+        'p_necesario_kg_ha':        'P necesario',
+        'k_necesario_kg_ha':        'K necesario',
+    }
+    missing = [label for field, label in required.items() if not str(data.get(field, '')).strip()]
+    if missing:
+        return f"Campos obligatorios: {', '.join(missing)}"
+    try:
+        fecha = datetime.date.fromisoformat(str(data['fecha_preparacion']))
+        if fecha > datetime.date.today():
+            return "La fecha de preparación no puede ser futura"
+    except (ValueError, TypeError):
+        return "Fecha con formato inválido (use YYYY-MM-DD)"
+    return None
+
+
 # ─────────────────────────────────────────────
 @app.route('/api/tratamientos', methods=['GET', 'POST'])
 @login_required
@@ -1033,6 +1064,75 @@ def manage_riego_one(rid):
     values = [data.get(f) or None if f in numeric else data.get(f) for f in fields]
     conn.execute(f"UPDATE riego SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
                  values + [rid, uid])
+    conn.commit(); conn.close(); return jsonify({"status": "ok"})
+
+
+# ─────────────────────────────────────────────
+# PLAN DE ABONADO
+# ─────────────────────────────────────────────
+@app.route('/api/abonado', methods=['GET', 'POST'])
+@login_required
+def manage_abonado():
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'GET':
+        campana = request.args.get('campana', '2025/2026')
+        rows = dicts(conn, "SELECT * FROM abonado WHERE user_id=? AND campana=? AND deleted_at IS NULL ORDER BY fecha_preparacion DESC", (uid, campana))
+        conn.close(); return jsonify(rows)
+
+    data = request.json or {}
+    err = _validate_abonado(data)
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
+
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO abonado (
+            user_id, parcela_id, parcela_etiqueta, cultivo, cultivo_anterior,
+            rendimiento_esperado_kg_ha, n_necesario_kg_ha, p_necesario_kg_ha,
+            k_necesario_kg_ha, fecha_preparacion, datos_suelo,
+            abono_recomendado, dosis_recomendada_kg_ha, notas, campana
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'),
+          data.get('cultivo'), data.get('cultivo_anterior'),
+          data.get('rendimiento_esperado_kg_ha') or None,
+          data.get('n_necesario_kg_ha'), data.get('p_necesario_kg_ha'), data.get('k_necesario_kg_ha'),
+          data.get('fecha_preparacion'), data.get('datos_suelo'),
+          data.get('abono_recomendado'), data.get('dosis_recomendada_kg_ha') or None,
+          data.get('notas'), data.get('campana', '2025/2026')))
+    conn.commit(); new_id = c.lastrowid; conn.close()
+    return jsonify({"status": "ok", "id": new_id}), 201
+
+
+@app.route('/api/abonado/<int:aid>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+def manage_abonado_one(aid):
+    uid = get_uid()
+    conn = get_db()
+    if request.method == 'DELETE':
+        conn.execute(
+            "UPDATE abonado SET deleted_at=datetime('now') WHERE id=? AND user_id=?",
+            (aid, uid))
+        conn.commit(); conn.close(); return jsonify({"status": "ok"})
+    if request.method == 'GET':
+        row = one(conn, "SELECT * FROM abonado WHERE id=? AND user_id=? AND deleted_at IS NULL", (aid, uid))
+        conn.close(); return jsonify(row or {})
+    data = request.json or {}
+    err = _validate_abonado(data)
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
+    fields = ['parcela_id', 'parcela_etiqueta', 'cultivo', 'cultivo_anterior',
+              'rendimiento_esperado_kg_ha', 'n_necesario_kg_ha', 'p_necesario_kg_ha',
+              'k_necesario_kg_ha', 'fecha_preparacion', 'datos_suelo',
+              'abono_recomendado', 'dosis_recomendada_kg_ha', 'notas', 'campana']
+    numeric = {'rendimiento_esperado_kg_ha', 'n_necesario_kg_ha', 'p_necesario_kg_ha',
+               'k_necesario_kg_ha', 'dosis_recomendada_kg_ha'}
+    sets = ', '.join(f"{f}=?" for f in fields)
+    values = [data.get(f) or None if f in numeric else data.get(f) for f in fields]
+    conn.execute(f"UPDATE abonado SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
+                 values + [aid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
