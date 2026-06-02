@@ -31,6 +31,8 @@ function App() {
     const [activeForm, setActiveForm]   = useState(null);
     const [toast, setToast]             = useState({ msg: '', on: false });
     const [campana, setCampana]         = useState('2025/2026');
+    const [installPrompt, setInstallPrompt] = useState(null);
+    const [showInstallBanner, setShowInstallBanner] = useState(false);
 
     // ── Boot: check session ──
     useEffect(() => {
@@ -45,7 +47,7 @@ function App() {
                     setLopdOk(!!localStorage.getItem(key));
                     if (isPagoCompletado) {
                         window.history.replaceState({}, '', '/');
-                        setTimeout(() => showMsg('¡Suscripción activada! Bienvenido al plan ' + (data.plan_raw || 'activo') + '.'), 500);
+                        setTimeout(() => showMsg('¡Pago completado! Tu suscripción se activará en unos momentos.'), 500);
                     }
                 } else {
                     setAuthState('guest');
@@ -62,6 +64,31 @@ function App() {
             .then(d => { if (d && d.campana_activa) setCampana(d.campana_activa); })
             .catch(() => {});
     }, [authState]);
+
+    // PWA install prompt
+    useEffect(() => {
+        // No mostrar si ya está instalada como PWA
+        if (window.matchMedia('(display-mode: standalone)').matches) return;
+        // No mostrar si el usuario ya la descartó
+        if (localStorage.getItem('pwa_dismissed')) return;
+
+        const isIos = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const isMobile = window.innerWidth < 1024;
+
+        if (isIos && isMobile) {
+            // iOS no dispara beforeinstallprompt — mostramos guía manual
+            setShowInstallBanner('ios');
+            return;
+        }
+
+        const handler = (e) => {
+            e.preventDefault();
+            setInstallPrompt(e);
+            if (isMobile) setShowInstallBanner('android');
+        };
+        window.addEventListener('beforeinstallprompt', handler);
+        return () => window.removeEventListener('beforeinstallprompt', handler);
+    }, []);
 
     const handleLogin = useCallback((userData) => {
         setCurrentUser(userData);
@@ -156,6 +183,10 @@ function App() {
     const isAdmin = currentUser?.role === 'admin';
     const isImpersonating = !!currentUser?.impersonating;
     const planExpired = !isAdmin && currentUser?.plan_active === false;
+    const isTrialActive = !isAdmin && currentUser?.plan_raw === 'trial' && currentUser?.plan_active === true;
+    const trialDaysLeft = isTrialActive && currentUser?.trial_ends_at
+        ? Math.max(0, Math.ceil((new Date(currentUser.trial_ends_at) - new Date()) / 86400000))
+        : 0;
 
     const renderScreen = () => {
         switch (screen) {
@@ -253,6 +284,42 @@ function App() {
                         </button>
                     ))}
                 </div>
+
+                {/* Trial countdown notice */}
+                {isTrialActive && (
+                    <div style={{ padding: '0 8px 8px' }}>
+                        <div style={{
+                            background: 'linear-gradient(135deg, #78350f, #b45309)',
+                            borderRadius: 'var(--radius-lg)',
+                            padding: '10px 12px',
+                            cursor: 'pointer',
+                        }} onClick={() => navigate('planes')}>
+                            <div style={{ fontSize: '0.65rem', color: 'rgba(255,220,100,0.9)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>
+                                ⏳ Período de prueba
+                            </div>
+                            <div style={{ fontSize: '0.82rem', color: '#fff', fontWeight: 600, marginBottom: 8 }}>
+                                {trialDaysLeft <= 1
+                                    ? 'Último día de prueba'
+                                    : `${trialDaysLeft} días restantes`}
+                            </div>
+                            <button onClick={(e) => { e.stopPropagation(); navigate('planes'); }} style={{
+                                width: '100%',
+                                background: '#f59e0b',
+                                border: 'none',
+                                borderRadius: 'var(--radius-md)',
+                                padding: '7px 0',
+                                color: '#fff',
+                                fontWeight: 700,
+                                fontSize: '0.78rem',
+                                cursor: 'pointer',
+                                fontFamily: 'var(--font-body)',
+                            }}>
+                                Suscribirse →
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* User info + logout */}
                 <div style={{ padding: '12px 8px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                     <div style={{ padding: '8px 10px', marginBottom: 4 }}>
@@ -326,10 +393,46 @@ function App() {
                 </header>
 
                 {/* Screen content */}
-                <main id="main-content">
+                <main id="main-content" className={isTrialActive ? 'with-trial-strip' : ''}>
                     {renderScreen()}
                 </main>
             </div>
+
+            {/* ── Mobile trial strip (above bottom nav) ── */}
+            {isTrialActive && (
+                <div className="trial-strip-mobile" style={{
+                    position: 'fixed', bottom: 'var(--nav-h)', left: 0, right: 0,
+                    zIndex: 39,
+                    background: 'linear-gradient(90deg, #92400e, #b45309)',
+                    color: '#fff',
+                    padding: '7px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 10,
+                    fontSize: '0.78rem',
+                    fontFamily: 'var(--font-body)',
+                    boxShadow: '0 -2px 10px rgba(0,0,0,0.2)',
+                }}>
+                    <span style={{ fontWeight: 500 }}>
+                        ⏳ {trialDaysLeft <= 1 ? 'Último día de prueba' : `${trialDaysLeft} días de prueba restantes`}
+                    </span>
+                    <button onClick={() => navigate('planes')} style={{
+                        background: '#f59e0b',
+                        border: 'none',
+                        borderRadius: 'var(--radius-full)',
+                        padding: '5px 13px',
+                        color: '#fff',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        fontSize: '0.74rem',
+                        fontFamily: 'var(--font-body)',
+                        whiteSpace: 'nowrap',
+                    }}>
+                        Suscribirse
+                    </button>
+                </div>
+            )}
 
             {/* ── Mobile / Tablet Bottom Nav ── */}
             <nav id="bottom-nav">
@@ -403,6 +506,58 @@ function App() {
                             </div>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* ── PWA Install Banner ── */}
+            {showInstallBanner && (
+                <div style={{
+                    position: 'fixed', bottom: 84, left: 8, right: 8,
+                    background: '#111827', borderRadius: 16,
+                    padding: '14px 16px', zIndex: 250,
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
+                    animation: 'slideUp 0.3s ease',
+                }}>
+                    <span style={{ fontSize: 28, flexShrink: 0 }}>📲</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '0.88rem', color: '#fff', marginBottom: 2 }}>
+                            Instala la app en tu móvil
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.55)', lineHeight: 1.4 }}>
+                            {showInstallBanner === 'ios'
+                                ? 'Pulsa Compartir (□↑) → "Añadir a inicio"'
+                                : 'Accede sin internet y más rápido'}
+                        </div>
+                    </div>
+                    {showInstallBanner === 'android' && (
+                        <button
+                            onClick={async () => {
+                                if (installPrompt) {
+                                    installPrompt.prompt();
+                                    const { outcome } = await installPrompt.userChoice;
+                                    if (outcome === 'accepted') localStorage.setItem('pwa_dismissed', '1');
+                                }
+                                setShowInstallBanner(false);
+                            }}
+                            style={{
+                                background: 'var(--primary)', color: '#fff',
+                                border: 'none', borderRadius: 10,
+                                padding: '9px 14px', fontWeight: 700, fontSize: '0.78rem',
+                                cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                            }}>
+                            Instalar
+                        </button>
+                    )}
+                    <button
+                        onClick={() => { localStorage.setItem('pwa_dismissed', '1'); setShowInstallBanner(false); }}
+                        style={{
+                            background: 'rgba(255,255,255,0.10)', border: 'none',
+                            borderRadius: '50%', width: 28, height: 28,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            color: 'rgba(255,255,255,0.60)', fontSize: 14, cursor: 'pointer',
+                            flexShrink: 0,
+                        }}>✕</button>
                 </div>
             )}
 
