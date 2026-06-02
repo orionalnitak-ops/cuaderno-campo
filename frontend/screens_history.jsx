@@ -23,6 +23,7 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
         labores:       { icon: '🚜', label: 'Labor',          chipClass: 'chip-labor',         accentColor: '#1e4ed8' },
         cosecha:       { icon: '📦', label: 'Cosecha',        chipClass: 'chip-cosecha',        accentColor: '#be185d' },
         compras:       { icon: '🛒', label: 'Compras',        chipClass: 'chip-compra',         accentColor: '#b45309' },
+        riego:         { icon: '💧', label: 'Riego',          chipClass: 'chip-riego',           accentColor: '#0369a1' },
     };
 
     const MODULE_PILLS = [
@@ -32,6 +33,7 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
         ['labores',       '🚜 Labores'],
         ['cosecha',       '📦 Cosecha'],
         ['compras',       '🛒 Compras'],
+        ['riego',         '💧 Riego'],
     ];
 
     const fetchRecords = useCallback(() => {

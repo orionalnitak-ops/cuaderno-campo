@@ -139,6 +139,7 @@ function ScreenForms({ modulo, record, campana, onClose }) {
         labor:         { icon: '🚜', title: 'Labor Agrícola',            color: '#1d4ed8' },
         cosecha:       { icon: '📦', title: 'Cosecha / Producción',      color: '#db2777' },
         compra:        { icon: '🛒', title: 'Compras',                   color: '#b45309' },
+        riego:         { icon: '💧', title: 'Riego',                    color: '#0ea5e9' },
     };
     const cfg = MODULE_CONFIG[modulo] || { icon: '📝', title: 'Registro', color: '#374151' };
 
@@ -159,6 +160,7 @@ function ScreenForms({ modulo, record, campana, onClose }) {
                 {modulo === 'labor'         && <FormLabor         parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
                 {modulo === 'cosecha'       && <FormCosecha       parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
                 {modulo === 'compra'        && <FormCompra                            record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
+                {modulo === 'riego'         && <FormRiego         parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
             </div>
         </div>
     );
@@ -881,6 +883,96 @@ function FormCompra({ record, campana, onClose, isEdit }) {
                 <button className="btn-ghost" onClick={() => onClose()} style={{ flex: 1 }}>Cancelar</button>
                 <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 2 }}>
                     {saving ? 'Guardando…' : (isEdit ? '💾 Actualizar' : '✓ Registrar compra')}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
+    const today = new Date().toISOString().split('T')[0];
+    const [saving, setSaving] = React.useState(false);
+    const [f, setF] = React.useState({
+        parcela_id:       record?.parcela_id       || '',
+        parcela_etiqueta: record?.parcela_etiqueta  || '',
+        fecha:            record?.fecha             || today,
+        tipo_riego:       record?.tipo_riego        || '',
+        volumen_m3:       record?.volumen_m3        || '',
+        horas_riego:      record?.horas_riego       || '',
+        fuente_agua:      record?.fuente_agua       || '',
+        notas:            record?.notas             || '',
+        campana,
+    });
+    const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+
+    React.useEffect(() => {
+        if (!f.parcela_id) return;
+        const p = parcelas.find(x => String(x.id) === String(f.parcela_id));
+        if (p) set('parcela_etiqueta', p.nombre_finca);
+    }, [f.parcela_id]);
+
+    const save = async () => {
+        if (!f.parcela_id || !f.fecha || !f.tipo_riego) {
+            alert('Rellena: parcela, fecha y tipo de riego'); return;
+        }
+        if (!f.horas_riego && !f.volumen_m3) {
+            alert('Indica al menos las horas de riego o el volumen en m³'); return;
+        }
+        setSaving(true);
+        const method = isEdit ? 'PUT' : 'POST';
+        const url = isEdit ? `/api/riego/${record.id}` : '/api/riego';
+        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
+        if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar'); setSaving(false); return; }
+        onClose('✅ Riego guardado');
+    };
+
+    return (
+        <div>
+            <FieldGroup label="Parcela *">
+                <ParcelSelect parcelas={parcelas} value={f.parcela_id} onChange={v => set('parcela_id', v)} />
+            </FieldGroup>
+            <div className="responsive-grid cols-2">
+                <FieldGroup label="Fecha *">
+                    <input type="date" className="input-field" value={f.fecha} onChange={e => set('fecha', e.target.value)} />
+                </FieldGroup>
+                <FieldGroup label="Tipo de riego *">
+                    <select className="input-field" value={f.tipo_riego} onChange={e => set('tipo_riego', e.target.value)}>
+                        <option value="">Seleccionar…</option>
+                        {['Aspersión', 'Goteo', 'Gravedad', 'Pivot', 'Otro'].map(t => <option key={t}>{t}</option>)}
+                    </select>
+                </FieldGroup>
+            </div>
+            <div className="responsive-grid cols-2">
+                <FieldGroup label="Horas de riego">
+                    <ZoomInput label="Horas" value={f.horas_riego} placeholder="4.5" inputMode="decimal"
+                        onConfirm={v => set('horas_riego', v)} />
+                </FieldGroup>
+                <FieldGroup label="Volumen (m³)">
+                    <ZoomInput label="Volumen (m³)" value={f.volumen_m3} placeholder="150" inputMode="decimal"
+                        onConfirm={v => set('volumen_m3', v)} />
+                </FieldGroup>
+            </div>
+            <p style={{ fontSize: '0.74rem', color: 'var(--on-surface-variant)', margin: '-8px 0 12px', padding: '0 2px' }}>
+                Rellena al menos uno de los dos campos de arriba.
+            </p>
+
+            <MasCampos>
+                <FieldGroup label="Fuente de agua">
+                    <select className="input-field" value={f.fuente_agua} onChange={e => set('fuente_agua', e.target.value)}>
+                        <option value="">Seleccionar…</option>
+                        {['Balsa', 'Comunidad de regantes', 'Pozo propio', 'Río', 'Otro'].map(s => <option key={s}>{s}</option>)}
+                    </select>
+                </FieldGroup>
+                <FieldGroup label="Notas">
+                    <ZoomInput label="Notas" value={f.notas} placeholder="Observaciones…"
+                        multiline onConfirm={v => set('notas', v)} />
+                </FieldGroup>
+            </MasCampos>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button className="btn-ghost" onClick={() => onClose()} style={{ flex: 1 }}>Cancelar</button>
+                <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 2 }}>
+                    {saving ? 'Guardando…' : (isEdit ? 'Guardar cambios' : '💧 Guardar riego')}
                 </button>
             </div>
         </div>
