@@ -373,6 +373,7 @@ def init_db():
         ('dosis_valor', 'REAL'), ('dosis_unidad', 'TEXT'), ('metodo_aplicacion', 'TEXT'),
         ('campana', 'TEXT'), ('updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
         ('deleted_at', 'TEXT'),
+        ('n_aplicado', 'REAL'), ('p2o5_aplicado', 'REAL'), ('k2o_aplicado', 'REAL'),
     ]:
         _add_col(c, 'fertilizacion', col, typ)
 
