@@ -377,6 +377,26 @@ def init_db():
     ]:
         _add_col(c, 'fertilizacion', col, typ)
 
+    # ── RIEGO ──
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS riego (
+            id {_PK},
+            user_id INTEGER DEFAULT 2,
+            parcela_id INTEGER,
+            parcela_etiqueta TEXT,
+            fecha TEXT,
+            tipo_riego TEXT,
+            volumen_m3 REAL,
+            horas_riego REAL,
+            fuente_agua TEXT,
+            notas TEXT,
+            campana TEXT DEFAULT '2025/2026',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TEXT
+        )
+    ''')
+
     # ── LABORES ──
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS labores (
