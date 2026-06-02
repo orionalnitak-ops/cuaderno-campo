@@ -140,6 +140,7 @@ function ScreenForms({ modulo, record, campana, onClose }) {
         cosecha:       { icon: '📦', title: 'Cosecha / Producción',      color: '#db2777' },
         compra:        { icon: '🛒', title: 'Compras',                   color: '#b45309' },
         riego:         { icon: '💧', title: 'Riego',                    color: '#0ea5e9' },
+        abonado:       { icon: '📋', title: 'Plan de abono',            color: '#0d9488' },
     };
     const cfg = MODULE_CONFIG[modulo] || { icon: '📝', title: 'Registro', color: '#374151' };
 
@@ -161,6 +162,7 @@ function ScreenForms({ modulo, record, campana, onClose }) {
                 {modulo === 'cosecha'       && <FormCosecha       parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
                 {modulo === 'compra'        && <FormCompra                            record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
                 {modulo === 'riego'         && <FormRiego         parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
+                {modulo === 'abonado'       && <FormAbonado       parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
             </div>
         </div>
     );
@@ -973,6 +975,158 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
                 <button className="btn-ghost" onClick={() => onClose()} style={{ flex: 1 }}>Cancelar</button>
                 <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 2 }}>
                     {saving ? 'Guardando…' : (isEdit ? 'Guardar cambios' : '💧 Guardar riego')}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function calcNpkAbonado(cultivo) {
+    const c = (cultivo || '').toUpperCase();
+    if (c.includes('TRIGO'))                                                        return { n: 120, p: 60,  k: 60  };
+    if (c.includes('CEBADA'))                                                       return { n: 100, p: 50,  k: 50  };
+    if (c.includes('GIRASOL'))                                                      return { n: 80,  p: 60,  k: 60  };
+    if (c.includes('MAÍZ') || c.includes('MAIZ'))                                  return { n: 150, p: 80,  k: 100 };
+    if (c.includes('OLIVAR'))                                                       return { n: 80,  p: 30,  k: 100 };
+    if (c.includes('VIÑA') || c.includes('VID') || c.includes('VIÑEDO'))           return { n: 40,  p: 30,  k: 60  };
+    if (c.includes('FRUTALES') || c.includes('FRUTAL'))                            return { n: 100, p: 50,  k: 150 };
+    if (c.includes('YEROS') || c.includes('LEGUMINOSA') || c.includes('GUISANTE')
+        || c.includes('GARBANZO') || c.includes('LENTEJA'))                        return { n: 20,  p: 40,  k: 40  };
+    if (c.includes('BARBECHO'))                                                     return { n: 0,   p: 0,   k: 0   };
+    return { n: 60, p: 40, k: 40 };
+}
+
+function FormAbonado({ parcelas, record, campana, onClose, isEdit }) {
+    const today = new Date().toISOString().split('T')[0];
+    const [saving, setSaving] = React.useState(false);
+    const [f, setF] = React.useState({
+        parcela_id:                  record?.parcela_id                  || '',
+        parcela_etiqueta:            record?.parcela_etiqueta            || '',
+        cultivo:                     record?.cultivo                     || '',
+        cultivo_anterior:            record?.cultivo_anterior            || '',
+        rendimiento_esperado_kg_ha:  record?.rendimiento_esperado_kg_ha  || '',
+        fecha_preparacion:           record?.fecha_preparacion           || today,
+        n_necesario_kg_ha:           record?.n_necesario_kg_ha           || '',
+        p_necesario_kg_ha:           record?.p_necesario_kg_ha           || '',
+        k_necesario_kg_ha:           record?.k_necesario_kg_ha           || '',
+        datos_suelo:                 record?.datos_suelo                 || '',
+        abono_recomendado:           record?.abono_recomendado           || '',
+        dosis_recomendada_kg_ha:     record?.dosis_recomendada_kg_ha     || '',
+        notas:                       record?.notas                       || '',
+        campana,
+    });
+    const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+
+    React.useEffect(() => {
+        if (!f.parcela_id) return;
+        const p = parcelas.find(x => String(x.id) === String(f.parcela_id));
+        if (p) set('parcela_etiqueta', p.nombre_finca);
+    }, [f.parcela_id]);
+
+    React.useEffect(() => {
+        if (!f.cultivo) return;
+        const { n, p, k } = calcNpkAbonado(f.cultivo);
+        setF(x => ({ ...x, n_necesario_kg_ha: n, p_necesario_kg_ha: p, k_necesario_kg_ha: k }));
+    }, [f.cultivo]);
+
+    const save = async () => {
+        if (!f.parcela_id || !f.cultivo || !f.cultivo_anterior || !f.rendimiento_esperado_kg_ha || !f.fecha_preparacion) {
+            alert('Rellena: parcela, cultivo, cultivo anterior, rendimiento y fecha'); return;
+        }
+        setSaving(true);
+        const method = isEdit ? 'PUT' : 'POST';
+        const url    = isEdit ? `/api/abonado/${record.id}` : '/api/abonado';
+        const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(f),
+            credentials: 'include',
+        });
+        if (!res.ok) {
+            const d = await res.json().catch(() => ({}));
+            alert(d.error || 'Error al guardar');
+            setSaving(false);
+            return;
+        }
+        onClose('✅ Plan de abono guardado');
+    };
+
+    const npkReady = f.n_necesario_kg_ha !== '' && f.n_necesario_kg_ha !== null;
+
+    return (
+        <div>
+            <FieldGroup label="Parcela *">
+                <ParcelSelect parcelas={parcelas} value={f.parcela_id} onChange={v => set('parcela_id', v)} />
+            </FieldGroup>
+
+            <div className="responsive-grid cols-2">
+                <FieldGroup label="Cultivo *">
+                    <input type="text" className="input-field" value={f.cultivo}
+                        placeholder="Ej: Trigo, Olivar, Viña…"
+                        onChange={e => set('cultivo', e.target.value)} />
+                </FieldGroup>
+                <FieldGroup label="Cultivo anterior *">
+                    <input type="text" className="input-field" value={f.cultivo_anterior}
+                        placeholder="Ej: Cebada, Barbecho…"
+                        onChange={e => set('cultivo_anterior', e.target.value)} />
+                </FieldGroup>
+            </div>
+
+            <div className="responsive-grid cols-2">
+                <FieldGroup label="Rendimiento esperado (kg/ha) *">
+                    <ZoomInput label="Rendimiento (kg/ha)" value={f.rendimiento_esperado_kg_ha}
+                        placeholder="Ej: 3500" inputMode="decimal"
+                        onConfirm={v => set('rendimiento_esperado_kg_ha', v)} />
+                </FieldGroup>
+                <FieldGroup label="Fecha de preparación *">
+                    <input type="date" className="input-field" value={f.fecha_preparacion}
+                        onChange={e => set('fecha_preparacion', e.target.value)} />
+                </FieldGroup>
+            </div>
+
+            {npkReady && (
+                <div style={{ background: 'rgba(13,148,136,0.08)', border: '1px solid rgba(13,148,136,0.25)', borderRadius: 12, padding: '12px 14px', marginBottom: 16 }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#0f766e', marginBottom: 8 }}>
+                        🌱 Necesidades NPK calculadas
+                    </div>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                        {[['N', f.n_necesario_kg_ha, '#1d4ed8'], ['P₂O₅', f.p_necesario_kg_ha, '#b45309'], ['K₂O', f.k_necesario_kg_ha, '#0f766e']].map(([label, val, color]) => (
+                            <div key={label} style={{ flex: 1, background: '#fff', borderRadius: 8, padding: '8px 4px', textAlign: 'center', border: `1px solid ${color}22` }}>
+                                <div style={{ fontSize: '0.65rem', fontWeight: 700, color, textTransform: 'uppercase' }}>{label}</div>
+                                <div style={{ fontSize: '1.1rem', fontWeight: 900, color }}>{val}</div>
+                                <div style={{ fontSize: '0.6rem', color: 'var(--on-surface-variant)' }}>kg/ha</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            <MasCampos>
+                <FieldGroup label="Datos de suelo">
+                    <ZoomInput label="Datos de suelo" value={f.datos_suelo}
+                        placeholder="Ej: Análisis 2024 — pH 7.5, M.O. 1.2%, textura franca…"
+                        multiline onConfirm={v => set('datos_suelo', v)} />
+                </FieldGroup>
+                <FieldGroup label="Abono recomendado">
+                    <input type="text" className="input-field" value={f.abono_recomendado}
+                        placeholder="Ej: Urea 46%, NPK 8-15-15…"
+                        onChange={e => set('abono_recomendado', e.target.value)} />
+                </FieldGroup>
+                <FieldGroup label="Dosis recomendada (kg/ha)">
+                    <ZoomInput label="Dosis (kg/ha)" value={f.dosis_recomendada_kg_ha}
+                        placeholder="Ej: 250" inputMode="decimal"
+                        onConfirm={v => set('dosis_recomendada_kg_ha', v)} />
+                </FieldGroup>
+                <FieldGroup label="Notas">
+                    <ZoomInput label="Notas" value={f.notas} placeholder="Observaciones…"
+                        multiline onConfirm={v => set('notas', v)} />
+                </FieldGroup>
+            </MasCampos>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button className="btn-ghost" onClick={() => onClose()} style={{ flex: 1 }}>Cancelar</button>
+                <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 2 }}>
+                    {saving ? 'Guardando…' : (isEdit ? 'Guardar cambios' : '📋 Guardar plan')}
                 </button>
             </div>
         </div>
