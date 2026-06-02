@@ -397,6 +397,31 @@ def init_db():
         )
     ''')
 
+    # ── ABONADO ──
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS abonado (
+            id {_PK},
+            user_id INTEGER DEFAULT 2,
+            parcela_id INTEGER,
+            parcela_etiqueta TEXT,
+            cultivo TEXT,
+            cultivo_anterior TEXT,
+            rendimiento_esperado_kg_ha REAL,
+            n_necesario_kg_ha REAL,
+            p_necesario_kg_ha REAL,
+            k_necesario_kg_ha REAL,
+            fecha_preparacion TEXT,
+            datos_suelo TEXT,
+            abono_recomendado TEXT,
+            dosis_recomendada_kg_ha REAL,
+            notas TEXT,
+            campana TEXT DEFAULT '2025/2026',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TEXT
+        )
+    ''')
+
     # ── LABORES ──
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS labores (
