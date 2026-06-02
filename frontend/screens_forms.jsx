@@ -435,6 +435,20 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
         onClose('✅ Abono guardado');
     };
 
+    const calcNPK = (riqueza, dosis) => {
+        if (!riqueza || !dosis) return null;
+        const m = riqueza.match(/(\d+\.?\d*)[^\d]+(\d+\.?\d*)[^\d]+(\d+\.?\d*)/);
+        if (!m) return null;
+        const d = parseFloat(dosis);
+        if (isNaN(d) || d <= 0) return null;
+        return {
+            n: Math.round(parseFloat(m[1]) / 100 * d * 100) / 100,
+            p: Math.round(parseFloat(m[2]) / 100 * d * 100) / 100,
+            k: Math.round(parseFloat(m[3]) / 100 * d * 100) / 100,
+        };
+    };
+    const npkPreview = calcNPK(f.riqueza_npk, f.dosis_valor);
+
     return (
         <div>
             <FieldGroup label="Parcela *">
@@ -477,6 +491,25 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
                             {['Fertirrigación', 'Foliar', 'Incorporado', 'Inyectado', 'Localizado', 'Voleo'].map(m => <option key={m}>{m}</option>)}
                         </select>
                     </FieldGroup>
+                    {npkPreview && (
+                        <div style={{
+                            gridColumn: '1 / -1',
+                            background: 'linear-gradient(135deg, #f0f4ff, #e8edff)',
+                            border: '1.5px solid #c7d2fe',
+                            borderRadius: 'var(--radius-lg)',
+                            padding: '10px 14px',
+                            fontSize: '0.82rem',
+                            color: '#3730a3',
+                            fontWeight: 600,
+                        }}>
+                            🧪 Nutrientes calculados:&nbsp;
+                            <span>N: {npkPreview.n} kg/ha</span>
+                            <span style={{ margin: '0 8px', opacity: 0.4 }}>·</span>
+                            <span>P₂O₅: {npkPreview.p} kg/ha</span>
+                            <span style={{ margin: '0 8px', opacity: 0.4 }}>·</span>
+                            <span>K₂O: {npkPreview.k} kg/ha</span>
+                        </div>
+                    )}
                 </div>
                 <FieldGroup label="Notas">
                     <ZoomInput label="Notas" value={f.notas} placeholder="Observaciones…"
