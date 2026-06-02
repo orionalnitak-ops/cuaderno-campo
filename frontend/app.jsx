@@ -401,7 +401,7 @@ function App() {
             {/* ── Mobile trial strip (above bottom nav) ── */}
             {isTrialActive && (
                 <div className="trial-strip-mobile" style={{
-                    position: 'fixed', bottom: 'calc(var(--nav-h) + 22px)', left: 0, right: 0,
+                    position: 'fixed', bottom: 'var(--nav-h)', left: 0, right: 0,
                     zIndex: 39,
                     background: 'linear-gradient(90deg, #92400e, #b45309)',
                     color: '#fff',
