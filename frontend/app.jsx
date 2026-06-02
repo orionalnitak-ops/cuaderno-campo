@@ -401,11 +401,11 @@ function App() {
             {/* ── Mobile trial strip (above bottom nav) ── */}
             {isTrialActive && (
                 <div className="trial-strip-mobile" style={{
-                    position: 'fixed', bottom: 'var(--nav-h)', left: 0, right: 0,
+                    position: 'fixed', bottom: 'calc(var(--nav-h) + 22px)', left: 0, right: 0,
                     zIndex: 39,
                     background: 'linear-gradient(90deg, #92400e, #b45309)',
                     color: '#fff',
-                    padding: '7px 14px',
+                    padding: '6px 14px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -415,7 +415,7 @@ function App() {
                     boxShadow: '0 -2px 10px rgba(0,0,0,0.2)',
                 }}>
                     <span style={{ fontWeight: 500 }}>
-                        ⏳ {trialDaysLeft <= 1 ? 'Último día de prueba' : `${trialDaysLeft} días de prueba restantes`}
+                        ⏳ {trialDaysLeft <= 1 ? 'Último día' : `${trialDaysLeft} días restantes`}
                     </span>
                     <button onClick={() => navigate('planes')} style={{
                         background: '#f59e0b',
