@@ -375,6 +375,7 @@ def admin_switch_user(target_id):
 
 @app.route('/api/admin/switch-back', methods=['POST'])
 @login_required
+@admin_required
 def admin_switch_back():
     session.pop('impersonate_id', None)
     return jsonify({"status": "ok"})
@@ -580,6 +581,11 @@ def manage_parcelas():
         try: return float(v)
         except (ValueError, TypeError): return None
 
+    sup = _to_float(data.get('superficie_ha'))
+    if sup is not None and sup <= 0:
+        conn.close()
+        return jsonify({"error": "La superficie debe ser mayor que cero"}), 400
+
     c = conn.cursor()
     c.execute('''
         INSERT INTO parcelas (
@@ -592,7 +598,7 @@ def manage_parcelas():
         uid, data.get('comunidad'), data.get('provincia_cod'), data.get('provincia_nombre'),
         data.get('municipio_cod'), data.get('municipio_nombre'), data.get('nombre_finca'),
         data.get('poligono'), data.get('parcela_num'), data.get('recinto'),
-        _to_float(data.get('superficie_ha')), data.get('uso_sigpac'),
+        sup, data.get('uso_sigpac'),
         data.get('sistema_explotacion', 'Secano'),
         1 if data.get('masa_agua_cercana') else 0,
         data.get('notas'),
@@ -624,9 +630,14 @@ def manage_parcela(pid):
         try: return float(v)
         except (ValueError, TypeError): return None
 
+    sup_put = _to_float(data.get('superficie_ha'))
+    if sup_put is not None and sup_put <= 0:
+        conn.close()
+        return jsonify({"error": "La superficie debe ser mayor que cero"}), 400
+
     def _field_val(f):
         v = data.get(f)
-        if f == 'superficie_ha': return _to_float(v)
+        if f == 'superficie_ha': return sup_put
         if f == 'masa_agua_cercana': return 1 if v else 0
         return v
 
@@ -771,6 +782,14 @@ def _validate_tratamiento(data):
             return "El plazo de seguridad no puede ser negativo"
     except (ValueError, TypeError):
         return "El plazo de seguridad debe ser un número entero"
+    try:
+        if float(data['dosis_valor']) <= 0:
+            return "La dosis debe ser mayor que cero"
+    except (ValueError, TypeError):
+        return "La dosis debe ser un número válido"
+    mapa = str(data.get('num_registro_mapa', '')).strip()
+    if not re.fullmatch(r'\d{4,6}(/\d+)?', mapa):
+        return "El Nº de Registro MAPA debe ser numérico (ej: 12345 o 12345/2)"
     return None
 
 
@@ -805,6 +824,7 @@ def _validate_fertilizacion(data):
     """Devuelve mensaje de error si faltan campos obligatorios (Anexo III S4)."""
     required = {
         'fecha_aplicacion': 'Fecha de aplicación',
+        'parcela_id':       'Parcela SIGPAC (Anexo III S4)',
         'tipo_fertilizante': 'Tipo de fertilizante',
         'producto':          'Nombre del producto',
         'dosis_valor':       'Dosis (cantidad)',
@@ -818,6 +838,11 @@ def _validate_fertilizacion(data):
             return "La fecha de aplicación no puede ser futura"
     except (ValueError, TypeError):
         return "Fecha de aplicación con formato inválido (use YYYY-MM-DD)"
+    try:
+        if float(data['dosis_valor']) <= 0:
+            return "La dosis debe ser mayor que cero"
+    except (ValueError, TypeError):
+        return "La dosis debe ser un número válido"
     return None
 
 
@@ -1453,6 +1478,13 @@ def _sigpac_list(url):
     out.sort(key=lambda x: (x['nombre'] or '').lower())
     return out
 
+def _sigpac_param(val, default=''):
+    """Valida que un parámetro SIGPAC sea solo dígitos (máx 6). Evita inyección en URLs."""
+    s = str(val).strip() if val else default
+    if not re.fullmatch(r'\d{1,6}', s):
+        return None
+    return s
+
 @app.route('/api/sigpac/provincias')
 @login_required
 def sigpac_provincias():
@@ -1461,33 +1493,37 @@ def sigpac_provincias():
 @app.route('/api/sigpac/municipios')
 @login_required
 def sigpac_municipios():
-    prov = request.args.get('provincia_cod', '13')
+    prov = _sigpac_param(request.args.get('provincia_cod'), '13')
+    if not prov: return jsonify({"error": "Parámetro provincia inválido"}), 400
     return jsonify(_sigpac_list(f"{SIGPAC_BASE}/municipios/{prov}"))
 
 @app.route('/api/sigpac/poligonos')
 @login_required
 def sigpac_poligonos():
-    prov = request.args.get('provincia_cod', '13')
-    mun  = request.args.get('municipio_cod', '131')
+    prov = _sigpac_param(request.args.get('provincia_cod'), '13')
+    mun  = _sigpac_param(request.args.get('municipio_cod'), '131')
+    if not prov or not mun: return jsonify({"error": "Parámetros SIGPAC inválidos"}), 400
     return jsonify(_sigpac_get(f"{SIGPAC_BASE}/poligonos/{prov}/{mun}"))
 
 @app.route('/api/sigpac/parcelas')
 @login_required
 def sigpac_parcelas():
-    prov = request.args.get('provincia_cod', '13')
-    mun  = request.args.get('municipio_cod', '131')
-    pol  = request.args.get('poligono', '1')
+    prov = _sigpac_param(request.args.get('provincia_cod'), '13')
+    mun  = _sigpac_param(request.args.get('municipio_cod'), '131')
+    pol  = _sigpac_param(request.args.get('poligono'), '1')
+    if not prov or not mun or not pol: return jsonify({"error": "Parámetros SIGPAC inválidos"}), 400
     return jsonify(_sigpac_get(f"{SIGPAC_BASE}/parcelas/{prov}/{mun}/{pol}"))
 
 @app.route('/api/sigpac/recintos')
 @login_required
 def sigpac_recintos():
-    prov = request.args.get('provincia', '13')
-    mun  = request.args.get('municipio', '131')
-    pol  = request.args.get('poligono', '1')
-    par  = request.args.get('parcela', '1')
-    agr  = request.args.get('agregado', '0')
-    zona = request.args.get('zona', '0')
+    prov = _sigpac_param(request.args.get('provincia'), '13')
+    mun  = _sigpac_param(request.args.get('municipio'), '131')
+    pol  = _sigpac_param(request.args.get('poligono'), '1')
+    par  = _sigpac_param(request.args.get('parcela'), '1')
+    agr  = _sigpac_param(request.args.get('agregado'), '0')
+    zona = _sigpac_param(request.args.get('zona'), '0')
+    if not all([prov, mun, pol, par, agr, zona]): return jsonify({"error": "Parámetros SIGPAC inválidos"}), 400
     return jsonify(_sigpac_get(f"{SIGPAC_BASE}/recintos/{prov}/{mun}/{agr}/{zona}/{pol}/{par}"))
 
 
@@ -1534,11 +1570,13 @@ _USO_LABELS = {
 @login_required
 def sigpac_datos():
     """Obtiene superficie y uso SIGPAC via endpoint de intersección."""
-    prov = request.args.get('provincia', '')
-    mun  = request.args.get('municipio', '')
-    pol  = request.args.get('poligono', '')
-    par  = request.args.get('parcela', '')
-    rec  = request.args.get('recinto', '1') or '1'
+    prov = _sigpac_param(request.args.get('provincia'), '')
+    mun  = _sigpac_param(request.args.get('municipio'), '')
+    pol  = _sigpac_param(request.args.get('poligono'), '')
+    par  = _sigpac_param(request.args.get('parcela'), '')
+    rec  = _sigpac_param(request.args.get('recinto') or '1', '1')
+    if not all([prov, mun, pol, par, rec]):
+        return jsonify({"error": "Parámetros SIGPAC inválidos"}), 400
 
     resultado = {'superficie_ha': '', 'uso_sigpac': '', 'referencia_cat': '', 'num_recintos': 0}
 
