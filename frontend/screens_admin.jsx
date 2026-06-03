@@ -8,6 +8,18 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
     const [saving, setSaving]     = useState(false);
     const [formError, setFormError] = useState('');
     const [confirmDel, setConfirmDel] = useState(null); // user id a desactivar
+    const [pdfCampana, setPdfCampana] = useState('2025/2026');
+
+    const CAMPANAS = ['2023/2024', '2024/2025', '2025/2026', '2026/2027'];
+
+    const handleExportPdf = (uid, nombre) => {
+        const url = `/api/admin/users/${uid}/export/pdf?campana=${encodeURIComponent(pdfCampana)}`;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cuaderno_${(nombre || 'agricultor').replace(/\s+/g,'_')}_${pdfCampana.replace('/','_')}.pdf`;
+        a.click();
+        showToast(`📄 Exportando PDF de ${nombre || 'agricultor'}…`);
+    };
 
     const loadUsers = async () => {
         setLoading(true);
@@ -175,6 +187,14 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
                     </div>
                 )}
 
+                {/* ── Selector campaña para exportaciones ── */}
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16, background:'var(--surface-container-lowest)', borderRadius:'var(--radius-lg)', padding:'10px 14px', boxShadow:'var(--shadow-card)' }}>
+                    <span style={{ fontSize:'0.82rem', color:'var(--on-surface-variant)', fontWeight:600, whiteSpace:'nowrap' }}>📄 Campaña PDF:</span>
+                    <select className="input-field" value={pdfCampana} onChange={e => setPdfCampana(e.target.value)} style={{ flex:1, margin:0 }}>
+                        {CAMPANAS.map(c => <option key={c}>{c}</option>)}
+                    </select>
+                </div>
+
                 {/* ── Lista usuarios ── */}
                 <h2 className="section-title" style={{ marginBottom: 12 }}>
                     Usuarios ({users.length})
@@ -266,6 +286,15 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
                                         onClick={() => handleSwitchUser(u)}
                                     >
                                         👁 Ver cuaderno
+                                    </button>
+                                )}
+                                {u.active && u.role !== 'admin' && (
+                                    <button
+                                        className="btn-ghost"
+                                        style={{ fontSize:'0.82rem', minHeight:40, padding:'10px 14px' }}
+                                        onClick={() => handleExportPdf(u.id, u.nombre)}
+                                    >
+                                        📄 PDF
                                     </button>
                                 )}
                                 {u.active ? (

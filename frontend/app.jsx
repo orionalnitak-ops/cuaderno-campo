@@ -35,6 +35,7 @@ function App() {
     const [campana, setCampana]         = useState('2025/2026');
     const [installPrompt, setInstallPrompt] = useState(null);
     const [showInstallBanner, setShowInstallBanner] = useState(false);
+    const [showOnboarding, setShowOnboarding] = useState(false);
 
     // ── Boot: check session ──
     useEffect(() => {
@@ -58,13 +59,23 @@ function App() {
             .catch(() => setAuthState('guest'));
     }, []);
 
-    // Load campaign on auth
+    // Load campaign on auth + detectar onboarding
     useEffect(() => {
         if (authState !== 'authenticated') return;
-        fetch('/api/explotacion', { credentials: 'include' })
-            .then(r => r.ok ? r.json() : {})
-            .then(d => { if (d && d.campana_activa) setCampana(d.campana_activa); })
-            .catch(() => {});
+        // Admins no necesitan onboarding
+        if (currentUser?.role === 'admin') return;
+
+        const onboardingKey = `onboarding_done_${currentUser?.id}`;
+        if (localStorage.getItem(onboardingKey)) return;
+
+        Promise.all([
+            fetch('/api/explotacion', { credentials: 'include' }).then(r => r.ok ? r.json() : {}),
+            fetch('/api/parcelas', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
+        ]).then(([expl, parcelas]) => {
+            if (expl && expl.campana_activa) setCampana(expl.campana_activa);
+            const needsOnboarding = !expl?.titular && (!Array.isArray(parcelas) || parcelas.length === 0);
+            if (needsOnboarding) setShowOnboarding(true);
+        }).catch(() => {});
     }, [authState]);
 
     // PWA install prompt
@@ -164,6 +175,19 @@ function App() {
                 localStorage.setItem(key, '1');
                 setLopdOk(true);
             }} />
+        );
+    }
+
+    // ── Onboarding wizard (nuevos usuarios sin explotación ni parcelas) ──
+    if (showOnboarding) {
+        return (
+            <ScreenOnboarding
+                currentUser={currentUser}
+                onComplete={() => {
+                    localStorage.setItem(`onboarding_done_${currentUser?.id}`, '1');
+                    setShowOnboarding(false);
+                }}
+            />
         );
     }
 

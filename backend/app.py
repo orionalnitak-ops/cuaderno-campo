@@ -442,6 +442,19 @@ def admin_switch_back():
     session.pop('impersonate_id', None)
     return jsonify({"status": "ok"})
 
+@app.route('/api/admin/users/<int:uid>/export/pdf')
+@login_required
+@admin_required
+def admin_export_pdf(uid):
+    from export_pdf import export_pdf
+    conn = get_db()
+    row = conn.execute("SELECT id FROM users WHERE id=? AND active=1", (uid,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+    campana = request.args.get('campana', '2025/2026')
+    return export_pdf(uid, campana)
+
 
 # ─────────────────────────────────────────────
 # EXPLOTACION
