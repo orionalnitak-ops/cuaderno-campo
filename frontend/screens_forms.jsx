@@ -135,12 +135,12 @@ function ScreenForms({ modulo, record, campana, onClose }) {
 
     const MODULE_CONFIG = {
         tratamiento:   { icon: '🌿', title: 'Tratamiento Fitosanitario', color: '#1D9E75' },
-        fertilizacion: { icon: '🌱', title: 'Abono',                     color: '#4f46e5' },
+        fertilizacion: { icon: '🌱', title: 'Fertilización',              color: '#4f46e5' },
         labor:         { icon: '🚜', title: 'Labor Agrícola',            color: '#1d4ed8' },
         cosecha:       { icon: '📦', title: 'Cosecha / Producción',      color: '#db2777' },
         compra:        { icon: '🛒', title: 'Compras',                   color: '#b45309' },
         riego:         { icon: '💧', title: 'Riego',                    color: '#0ea5e9' },
-        abonado:       { icon: '📋', title: 'Plan de abono',            color: '#0d9488' },
+        abonado:       { icon: '📋', title: 'Plan de abonado',           color: '#0d9488' },
     };
     const cfg = MODULE_CONFIG[modulo] || { icon: '📝', title: 'Registro', color: '#374151' };
 
@@ -436,7 +436,7 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
         const url = isEdit ? `/api/fertilizacion/${record.id}` : '/api/fertilizacion';
         const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
         if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar el abono'); setSaving(false); return; }
-        onClose('✅ Abono guardado');
+        onClose('✅ Fertilización guardada');
     };
 
     const calcNPK = (riqueza, dosis) => {
@@ -1048,7 +1048,7 @@ function FormAbonado({ parcelas, record, campana, onClose, isEdit }) {
             setSaving(false);
             return;
         }
-        onClose('✅ Plan de abono guardado');
+        onClose('✅ Plan de abonado guardado');
     };
 
     const npkReady = f.n_necesario_kg_ha !== '' && f.n_necesario_kg_ha !== null;

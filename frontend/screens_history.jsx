@@ -19,18 +19,18 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
     // Module metadata
     const MODULE_META = {
         tratamientos:  { icon: '🌿', label: 'Fitosanitario', chipClass: 'chip-tratamiento', accentColor: 'var(--primary)' },
-        fertilizacion: { icon: '🌱', label: 'Abono',          chipClass: 'chip-fertilizacion', accentColor: '#4f46e5' },
+        fertilizacion: { icon: '🌱', label: 'Fertilización',  chipClass: 'chip-fertilizacion', accentColor: '#4f46e5' },
         labores:       { icon: '🚜', label: 'Labor',          chipClass: 'chip-labor',         accentColor: '#1e4ed8' },
         cosecha:       { icon: '📦', label: 'Cosecha',        chipClass: 'chip-cosecha',        accentColor: '#be185d' },
         compras:       { icon: '🛒', label: 'Compras',        chipClass: 'chip-compra',         accentColor: '#b45309' },
         riego:         { icon: '💧', label: 'Riego',          chipClass: 'chip-riego',           accentColor: '#0369a1' },
-        abonado:       { icon: '📋', label: 'Plan abono',    chipClass: 'chip-abonado',        accentColor: '#0f766e' },
+        abonado:       { icon: '📋', label: 'Plan abonado',  chipClass: 'chip-abonado',        accentColor: '#0f766e' },
     };
 
     const MODULE_PILLS = [
         ['todos',         'Todos'],
         ['tratamientos',  '🌿 Fitosanitarios'],
-        ['fertilizacion', '🌱 Abono'],
+        ['fertilizacion', '🌱 Fertilización'],
         ['labores',       '🚜 Labores'],
         ['cosecha',       '📦 Cosecha'],
         ['compras',       '🛒 Compras'],
