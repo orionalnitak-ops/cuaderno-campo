@@ -418,6 +418,7 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
         tipo_fertilizante: record?.tipo_fertilizante || '',
         producto: record?.producto || '', riqueza_npk: record?.riqueza_npk || '',
         dosis_valor: record?.dosis_valor || '', dosis_unidad: record?.dosis_unidad || 'kg/ha',
+        densidad_g_ml: record?.densidad_g_ml || '',
         metodo_aplicacion: record?.metodo_aplicacion || '', notas: record?.notas || '',
         campana,
     });
@@ -439,19 +440,26 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
         onClose('✅ Fertilización guardada');
     };
 
-    const calcNPK = (riqueza, dosis) => {
+    const isLiquid = (u) => u && (u.startsWith('L/') || u.toLowerCase().includes('litro'));
+
+    const calcNPK = (riqueza, dosis, unidad, densidad) => {
         if (!riqueza || !dosis) return null;
         const m = riqueza.match(/(\d+\.?\d*)[^\d]+(\d+\.?\d*)[^\d]+(\d+\.?\d*)/);
         if (!m) return null;
-        const d = parseFloat(dosis);
+        let d = parseFloat(String(dosis).replace(',', '.'));
         if (isNaN(d) || d <= 0) return null;
+        if (isLiquid(unidad)) {
+            const dens = parseFloat(String(densidad).replace(',', '.'));
+            if (!dens || dens <= 0) return null;
+            d = d * dens;
+        }
         return {
             n: Math.round(parseFloat(m[1]) / 100 * d * 100) / 100,
             p: Math.round(parseFloat(m[2]) / 100 * d * 100) / 100,
             k: Math.round(parseFloat(m[3]) / 100 * d * 100) / 100,
         };
     };
-    const npkPreview = calcNPK(f.riqueza_npk, f.dosis_valor);
+    const npkPreview = calcNPK(f.riqueza_npk, f.dosis_valor, f.dosis_unidad, f.densidad_g_ml);
 
     return (
         <div>
@@ -489,6 +497,15 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
                             </select>
                         </div>
                     </FieldGroup>
+                    {isLiquid(f.dosis_unidad) && (
+                        <FieldGroup label="Densidad del fertilizante (g/mL) *">
+                            <ZoomInput label="Densidad (g/mL)" value={f.densidad_g_ml} placeholder="1.2" inputMode="decimal"
+                                onConfirm={v => set('densidad_g_ml', v)} />
+                            <div style={{ fontSize:'0.72rem', color:'#6b7280', marginTop:4 }}>
+                                Necesaria para calcular N/P/K en fertilizantes líquidos (ej. solución nitrogenada: 1.32 g/mL)
+                            </div>
+                        </FieldGroup>
+                    )}
                     <FieldGroup label="Método de aplicación">
                         <select className="input-field" value={f.metodo_aplicacion} onChange={e => set('metodo_aplicacion', e.target.value)}>
                             <option value="">Seleccionar…</option>

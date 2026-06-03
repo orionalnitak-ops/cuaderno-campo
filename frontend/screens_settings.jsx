@@ -376,6 +376,25 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
                 ))}
             </div>
 
+            {/* ── Botón soporte permanente ── */}
+            <div style={{ padding: '12px 16px 0' }}>
+                <a
+                    href={`mailto:soporte@tualiado.es?subject=${encodeURIComponent('[Cuaderno] Problema — ' + (currentUser?.nombre || currentUser?.email || ''))}&body=${encodeURIComponent('Hola,\n\nTengo un problema con...\n\n\n--- Datos técnicos (no borres) ---\nUsuario: ' + (currentUser?.email || '') + '\nPlan: ' + (currentUser?.plan || 'trial') + '\nFecha: ' + new Date().toLocaleDateString('es-ES'))}`}
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        background: 'linear-gradient(135deg,#f0fdf4,#dcfce7)',
+                        border: '1.5px solid #86efac',
+                        borderRadius: 12, padding: '10px 14px',
+                        textDecoration: 'none', color: '#166534',
+                        fontSize: '0.85rem', fontWeight: 600,
+                    }}
+                >
+                    <span style={{ fontSize: 20 }}>🆘</span>
+                    <span style={{ flex: 1 }}>¿Tienes un problema? Escríbenos</span>
+                    <span style={{ fontSize: 16, opacity: 0.6 }}>→</span>
+                </a>
+            </div>
+
             <div style={{ padding: '24px 16px' }}>
 
                 {section === 'explotacion' && (
