@@ -24,6 +24,8 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     const [nlpResultado, setNlpResultado]       = useState(null);
     const [nlpGuardando, setNlpGuardando]       = useState(false);
     const [nlpParcelaNombre, setNlpParcelaNombre] = useState('');
+    const [nlpTipoRiego, setNlpTipoRiego]       = useState('Goteo');
+    const [nlpHorasRiego, setNlpHorasRiego]     = useState('');
     const [micActivo, setMicActivo]             = useState(false);
     const recognitionRef = React.useRef(null);
     const [importando, setImportando]           = useState(false);
@@ -260,6 +262,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
         }
         setNlpGuardando(true);
         try {
+            const esRiego = p?.accion?.tipo === 'riego';
             const res = await fetch('/api/parse/guardar', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -272,6 +275,10 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                     fecha:           p?.fecha,
                     texto_original:  nlpResultado.texto_original,
                     campana,
+                    ...(esRiego && {
+                        tipo_riego:  nlpTipoRiego || 'Goteo',
+                        horas_riego: nlpHorasRiego ? parseFloat(nlpHorasRiego) : null,
+                    }),
                 }),
                 credentials: 'include',
             });
@@ -295,6 +302,24 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
         const parcelaNombre = p?.parcela?.nombre || p?.parcela?.nombre_candidato;
         const esNueva = p?.parcela?.es_nueva;
         const faltaParcela = !parcelaNombre;
+        const esRiego = p?.accion?.tipo === 'riego';
+        const esCosecha = p?.accion?.tipo === 'cosecha';
+
+        // Pre-rellenar tipo_riego desde NLP la primera vez
+        React.useEffect(() => {
+            if (esRiego && p?.riego?.tipo_riego && !nlpTipoRiego) setNlpTipoRiego(p.riego.tipo_riego);
+            if (esRiego && p?.riego?.horas_riego && !nlpHorasRiego) setNlpHorasRiego(String(p.riego.horas_riego));
+        }, [nlpResultado]);
+
+        const accionLabel = () => {
+            if (esRiego) return 'Riego';
+            if (esCosecha) return 'Cosecha / recolección';
+            if (p?.accion?.tipo === 'labor' && p?.accion?.palabra_clave) return p.accion.palabra_clave;
+            return p?.accion?.tipo || '—';
+        };
+
+        const productoIcono = esCosecha ? '🌾' : '🧴';
+        const productoLabel = esCosecha ? 'Cultivo' : 'Producto';
 
         return (
             <div style={{ padding: '16px 16px 32px' }}>
@@ -331,15 +356,50 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                         />
                     )}
                     {/* Acción */}
-                    <NlpFila icono="⚡" label="Acción"
-                        valor={p?.accion?.tipo === 'labor' && p?.accion?.palabra_clave
-                            ? p.accion.palabra_clave
-                            : p?.accion?.tipo}
-                    />
-                    {/* Producto */}
-                    <NlpFila icono="🧴" label="Producto" valor={p?.producto?.nombre} />
+                    <NlpFila icono="⚡" label="Acción" valor={accionLabel()} />
+                    {/* Campos extra para RIEGO */}
+                    {esRiego && (
+                        <>
+                            <div style={{ background: 'var(--surface-container-low)', borderRadius: 'var(--radius-md)', padding: '12px 14px' }}>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--on-surface-variant)', marginBottom: 6 }}>
+                                    💧 Tipo de riego
+                                </div>
+                                <select
+                                    value={nlpTipoRiego}
+                                    onChange={e => setNlpTipoRiego(e.target.value)}
+                                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '2px solid var(--primary)', fontSize: '0.95rem', boxSizing: 'border-box', background: 'var(--surface)' }}
+                                >
+                                    {['Goteo','Aspersión','Gravedad','Pivot','Otro'].map(t => (
+                                        <option key={t} value={t}>{t}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div style={{ background: 'var(--surface-container-low)', borderRadius: 'var(--radius-md)', padding: '12px 14px' }}>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--on-surface-variant)', marginBottom: 6 }}>
+                                    ⏱ Horas de riego <span style={{ fontWeight: 400 }}>(opcional)</span>
+                                </div>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.5"
+                                    placeholder="p.ej. 3"
+                                    value={nlpHorasRiego}
+                                    onChange={e => setNlpHorasRiego(e.target.value)}
+                                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--outline)', fontSize: '0.95rem', boxSizing: 'border-box' }}
+                                />
+                            </div>
+                        </>
+                    )}
+                    {/* Producto / Cultivo */}
+                    <NlpFila icono={productoIcono} label={productoLabel} valor={p?.producto?.nombre} />
                     {/* Fecha */}
                     <NlpFila icono="📅" label="Fecha" valor={p?.fecha} />
+                    {/* Aviso cosecha: completar en formulario */}
+                    {esCosecha && (
+                        <div style={{ background: '#fef9c3', borderRadius: 'var(--radius-md)', padding: '10px 14px', fontSize: '0.8rem', color: '#92400e' }}>
+                            Se guardará como cosecha básica. Abre el módulo Cosecha para añadir producción, destino y precio.
+                        </div>
+                    )}
                 </div>
 
                     <button onClick={guardarRegistro} disabled={nlpGuardando || (faltaParcela && !nlpParcelaNombre.trim())}
@@ -364,9 +424,10 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
 
                 <div style={{ background: 'var(--surface-container-low)', borderRadius: 'var(--radius-lg)', padding: '14px', marginBottom: 16, fontSize: '0.8rem', color: 'var(--on-surface-variant)', lineHeight: 1.8 }}>
                     <div style={{ fontWeight: 700, marginBottom: 4 }}>Ejemplos:</div>
-                    <div>• "He tratado El Molino con cobre"</div>
-                    <div>• "Abonado La Vega con urea, 50 kg"</div>
-                    <div>• "Regé El Cerro esta mañana"</div>
+                    <div>• "Sembramos La Loma con trigo ayer"</div>
+                    <div>• "Podé El Río el lunes"</div>
+                    <div>• "Regué El Cerro esta mañana, 3 horas"</div>
+                    <div>• "Cosechamos La Vega, trigo"</div>
                 </div>
 
                 {/* Área de texto + botón micrófono */}
