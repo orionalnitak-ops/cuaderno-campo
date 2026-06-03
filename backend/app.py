@@ -1,3 +1,5 @@
+import io
+import json
 import os
 import re
 import bcrypt
@@ -17,7 +19,8 @@ frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'fr
 app = Flask(__name__, static_folder=frontend_dir, static_url_path='')
 _secret_key = os.environ.get('SECRET_KEY')
 if not _secret_key:
-    if os.environ.get('FLASK_ENV') == 'production':
+    _is_prod = os.environ.get('FLASK_ENV') == 'production' or bool(os.environ.get('DATABASE_URL'))
+    if _is_prod:
         raise RuntimeError("SECRET_KEY no está configurada. Establece la variable de entorno SECRET_KEY en producción.")
     import warnings
     warnings.warn("SECRET_KEY no configurada — usando clave de desarrollo insegura. NO usar en producción.")
@@ -282,6 +285,65 @@ def auth_change_password():
     conn.execute("UPDATE users SET password_hash=? WHERE id=?", (new_hash, current_user.id))
     conn.commit(); conn.close()
     return jsonify({"status": "ok"})
+
+
+@app.route('/api/account/export-data', methods=['GET'])
+@login_required
+def account_export_data():
+    """GDPR Art. 20 — portabilidad de datos. Devuelve todos los datos del usuario en JSON."""
+    uid = current_user.id
+    conn = get_db()
+    export = {
+        "usuario":         one(conn, "SELECT id,email,nombre,role,plan,created_at FROM users WHERE id=?", (uid,)),
+        "explotacion":     dicts(conn, "SELECT * FROM explotacion WHERE user_id=?", (uid,)),
+        "parcelas":        dicts(conn, "SELECT * FROM parcelas WHERE user_id=?", (uid,)),
+        "tratamientos":    dicts(conn, "SELECT * FROM tratamientos WHERE user_id=? AND deleted_at IS NULL", (uid,)),
+        "fertilizacion":   dicts(conn, "SELECT * FROM fertilizacion WHERE user_id=? AND deleted_at IS NULL", (uid,)),
+        "abonado":         dicts(conn, "SELECT * FROM abonado WHERE user_id=? AND deleted_at IS NULL", (uid,)),
+        "riego":           dicts(conn, "SELECT * FROM riego WHERE user_id=?", (uid,)),
+        "labores":         dicts(conn, "SELECT * FROM labores WHERE user_id=?", (uid,)),
+        "cosecha":         dicts(conn, "SELECT * FROM cosecha WHERE user_id=?", (uid,)),
+        "compras":         dicts(conn, "SELECT * FROM compras WHERE user_id=? AND deleted_at IS NULL", (uid,)),
+        "ventas":          dicts(conn, "SELECT * FROM ventas WHERE user_id=? AND deleted_at IS NULL", (uid,)),
+        "cultivos_campana":dicts(conn, """SELECT cc.* FROM cultivos_campana cc
+                                          JOIN parcelas p ON cc.parcela_id=p.id
+                                          WHERE p.user_id=?""", (uid,)),
+        "aplicadores":     dicts(conn, "SELECT * FROM aplicadores WHERE user_id=?", (uid,)),
+        "equipos":         dicts(conn, "SELECT * FROM equipos WHERE user_id=?", (uid,)),
+        "exportado_el":    datetime.datetime.utcnow().isoformat() + "Z",
+        "normativa":       "RGPD Art. 20 — Derecho a la portabilidad de datos",
+    }
+    conn.close()
+    buf = io.BytesIO(json.dumps(export, ensure_ascii=False, indent=2, default=str).encode('utf-8'))
+    return send_file(buf, as_attachment=True,
+                     download_name=f"datos_cuaderno_{uid}.json",
+                     mimetype='application/json')
+
+
+@app.route('/api/account/delete-account', methods=['DELETE'])
+@login_required
+def account_delete():
+    """GDPR Art. 17 — derecho de supresión. Borra todos los datos del usuario y desactiva la cuenta."""
+    uid = current_user.id
+    conn = get_db()
+    tables_soft = ['tratamientos', 'fertilizacion', 'abonado', 'compras', 'ventas']
+    for t in tables_soft:
+        conn.execute(f"UPDATE {t} SET deleted_at=datetime('now') WHERE user_id=? AND deleted_at IS NULL", (uid,))
+    for t in ['labores', 'riego', 'cosecha', 'cultivos_campana', 'aplicadores', 'equipos']:
+        try:
+            conn.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))
+        except Exception:
+            pass
+    conn.execute("UPDATE parcelas SET activa=0 WHERE user_id=?", (uid,))
+    conn.execute("DELETE FROM explotacion WHERE user_id=?", (uid,))
+    conn.execute(
+        "UPDATE users SET active=0, email=?, nombre='[eliminado]', password_hash='', "
+        "stripe_customer_id=NULL, stripe_subscription_id=NULL WHERE id=?",
+        (f"deleted_{uid}_{int(datetime.datetime.utcnow().timestamp())}@borrado.invalid", uid)
+    )
+    conn.commit(); conn.close()
+    logout_user()
+    return jsonify({"status": "ok", "mensaje": "Cuenta y datos eliminados conforme al RGPD Art. 17"})
 
 
 # ─────────────────────────────────────────────
@@ -877,12 +939,22 @@ def _validate_fertilizacion(data):
             return "La dosis debe ser mayor que cero"
     except (ValueError, TypeError):
         return "La dosis debe ser un número válido"
+    if str(data.get('dosis_unidad', '')).strip().lower() in ('l/ha', 'l ha', 'litros/ha'):
+        dens = data.get('densidad_g_ml')
+        if not dens:
+            return "Para fertilizantes líquidos (L/ha) indica la densidad en g/mL para calcular NPK correctamente"
+        try:
+            if float(str(dens).replace(',', '.')) <= 0:
+                return "La densidad debe ser mayor que cero"
+        except (ValueError, TypeError):
+            return "La densidad debe ser un número válido (g/mL)"
     return None
 
 
-def _calc_npk(riqueza_npk, dosis_valor):
+def _calc_npk(riqueza_npk, dosis_valor, dosis_unidad='kg/ha', densidad_g_ml=None):
     """Parsea riqueza N-P-K y devuelve (n, p, k) en kg/ha.
     Soporta: '15-15-15', '27-0-0', '46%N', '34,5%N', '18%N 46%P2O5 0%K2O'.
+    Para líquidos (L/ha) requiere densidad_g_ml para convertir a kg/ha correctamente.
     Devuelve (None, None, None) si no es parseable."""
     if not riqueza_npk or not dosis_valor:
         return None, None, None
@@ -892,6 +964,16 @@ def _calc_npk(riqueza_npk, dosis_valor):
             return None, None, None
     except (ValueError, TypeError):
         return None, None, None
+    # Convertir L/ha → kg/ha usando densidad (g/mL = kg/L)
+    if str(dosis_unidad).strip().lower() in ('l/ha', 'l ha', 'litros/ha'):
+        try:
+            dens = float(str(densidad_g_ml).replace(',', '.'))
+            if dens > 0:
+                dosis = dosis * dens
+            else:
+                return None, None, None
+        except (ValueError, TypeError):
+            return None, None, None
     s = str(riqueza_npk).replace(',', '.').upper()
     # Formato triple N-P-K (ej: "15-15-15", "27-0-0", "15 15 15")
     m3 = re.search(r'(\d+\.?\d*)[^\d]+(\d+\.?\d*)[^\d]+(\d+\.?\d*)', s)
@@ -1076,18 +1158,20 @@ def manage_fertilizacion():
         conn.close()
         return jsonify({"error": err}), 400
 
-    n_ap, p_ap, k_ap = _calc_npk(data.get('riqueza_npk'), data.get('dosis_valor'))
+    n_ap, p_ap, k_ap = _calc_npk(data.get('riqueza_npk'), data.get('dosis_valor'),
+                                  data.get('dosis_unidad', 'kg/ha'), data.get('densidad_g_ml'))
     c = conn.cursor()
     c.execute('''
         INSERT INTO fertilizacion (
             user_id, parcela_id, parcela_etiqueta, fecha_aplicacion,
             tipo_fertilizante, producto, riqueza_npk,
-            dosis_valor, dosis_unidad, metodo_aplicacion, notas, campana,
+            dosis_valor, dosis_unidad, densidad_g_ml, metodo_aplicacion, notas, campana,
             n_aplicado, p2o5_aplicado, k2o_aplicado
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha_aplicacion'),
           data.get('tipo_fertilizante'), data.get('producto'), data.get('riqueza_npk'),
           data.get('dosis_valor') or None, data.get('dosis_unidad', 'kg/ha'),
+          data.get('densidad_g_ml') or None,
           data.get('metodo_aplicacion'), data.get('notas'), data.get('campana', '2025/2026'),
           n_ap, p_ap, k_ap))
     conn.commit(); new_id = c.lastrowid; conn.close()
@@ -1112,13 +1196,16 @@ def manage_fertilizacion_one(fid):
     if err:
         conn.close()
         return jsonify({"error": err}), 400
-    n_ap, p_ap, k_ap = _calc_npk(data.get('riqueza_npk'), data.get('dosis_valor'))
+    n_ap, p_ap, k_ap = _calc_npk(data.get('riqueza_npk'), data.get('dosis_valor'),
+                                  data.get('dosis_unidad', 'kg/ha'), data.get('densidad_g_ml'))
     fields = ['parcela_id','parcela_etiqueta','fecha_aplicacion','tipo_fertilizante',
-              'producto','riqueza_npk','dosis_valor','dosis_unidad','metodo_aplicacion','notas','campana',
+              'producto','riqueza_npk','dosis_valor','dosis_unidad','densidad_g_ml',
+              'metodo_aplicacion','notas','campana',
               'n_aplicado','p2o5_aplicado','k2o_aplicado']
     sets = ', '.join(f"{f}=?" for f in fields)
+    _numeric_f = {'dosis_valor', 'densidad_g_ml'}
     npk_map = {'n_aplicado': n_ap, 'p2o5_aplicado': p_ap, 'k2o_aplicado': k_ap}
-    values = [data.get(f) or None if f == 'dosis_valor' else npk_map.get(f, data.get(f)) for f in fields]
+    values = [data.get(f) or None if f in _numeric_f else npk_map.get(f, data.get(f)) for f in fields]
     conn.execute(f"UPDATE fertilizacion SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
                  values + [fid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
