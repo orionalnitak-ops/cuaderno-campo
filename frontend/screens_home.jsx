@@ -294,6 +294,16 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
         finally { setNlpGuardando(false); }
     };
 
+    // Pre-rellenar tipo_riego desde NLP cuando llega resultado de riego
+    React.useEffect(() => {
+        const p = nlpResultado?.parseo;
+        if (!p) return;
+        if (p.accion?.tipo === 'riego') {
+            if (p.riego?.tipo_riego) setNlpTipoRiego(p.riego.tipo_riego);
+            if (p.riego?.horas_riego) setNlpHorasRiego(String(p.riego.horas_riego));
+        }
+    }, [nlpResultado]);
+
     // ════════════════════════════════════════════
     // PANTALLA: NLP — Confirmar resultado
     // ════════════════════════════════════════════
@@ -304,12 +314,6 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
         const faltaParcela = !parcelaNombre;
         const esRiego = p?.accion?.tipo === 'riego';
         const esCosecha = p?.accion?.tipo === 'cosecha';
-
-        // Pre-rellenar tipo_riego desde NLP la primera vez
-        React.useEffect(() => {
-            if (esRiego && p?.riego?.tipo_riego && !nlpTipoRiego) setNlpTipoRiego(p.riego.tipo_riego);
-            if (esRiego && p?.riego?.horas_riego && !nlpHorasRiego) setNlpHorasRiego(String(p.riego.horas_riego));
-        }, [nlpResultado]);
 
         const accionLabel = () => {
             if (esRiego) return 'Riego';
