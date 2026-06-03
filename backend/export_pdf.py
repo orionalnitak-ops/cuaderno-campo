@@ -492,6 +492,59 @@ def _section_cosecha(conn, user_id, campana, styles, story):
         styles['note']))
 
 
+def _section_compras(conn, user_id, campana, styles, story):
+    import sqlite3
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("""
+        SELECT * FROM compras
+        WHERE user_id=? AND campana=? AND deleted_at IS NULL
+        ORDER BY fecha ASC
+    """, (user_id, campana))
+    rows = [dict(r) for r in c.fetchall()]
+
+    story.append(PageBreak())
+    story.append(_section_banner(
+        'Compras de Fitosanitarios y Materias Primas',
+        'Trazabilidad de adquisiciones — RD 1311/2012 Anexo III Sección 5',
+        '🛒', C_AMBER, styles))
+    story.append(Spacer(1, 4))
+
+    if not rows:
+        story.append(Paragraph('Sin registros de compras en esta campaña.', styles['empty']))
+        return
+
+    cols = ['Fecha', 'Tipo', 'Producto', 'Nº MAPA', 'Sust. Activa',
+            'Proveedor', 'Cantidad', 'Ud.', 'Nº Lote', 'Nº Factura']
+    widths = [1.6*cm, 1.8*cm, 3.2*cm, 1.8*cm, 3.2*cm,
+              2.8*cm, 1.4*cm, 1.0*cm, 1.8*cm, 1.8*cm]
+    total = sum(widths)
+    widths = [w * INNER_W / total for w in widths]
+
+    data_rows = []
+    for r in rows:
+        cant = _v(r.get('cantidad_valor'))
+        data_rows.append([
+            _fmt_date(r.get('fecha')),
+            _v(r.get('tipo_producto')),
+            _v(r.get('producto')),
+            _v(r.get('num_registro_mapa')),
+            _v(r.get('sustancia_activa')),
+            _v(r.get('proveedor')),
+            cant,
+            _v(r.get('cantidad_unidad')),
+            _v(r.get('num_lote')),
+            _v(r.get('num_factura')),
+        ])
+
+    story.append(_data_table(cols, data_rows, widths, C_AMBER, styles))
+    story.append(Spacer(1, 4))
+    fito_count = sum(1 for r in rows if r.get('tipo_producto') == 'fitosanitario')
+    story.append(Paragraph(
+        f'Total registros: {len(rows)}  ·  Fitosanitarios: {fito_count}',
+        styles['note']))
+
+
 # ─────────────────────────────────────────────────────────
 # COVER PAGE
 # ─────────────────────────────────────────────────────────
@@ -581,6 +634,7 @@ def _cover_page(ex, campana, styles):
         ('3', 'Abonado / Fertilización',            'Tipo fertilizante, producto, N-P-K, dosis, método'),
         ('4', 'Labores Agrícolas',                  'Siembra, poda, laboreo, horas, maquinaria, operario'),
         ('5', 'Cosecha / Recolección',              'Cultivo, producción, rendimiento, destino, comprador'),
+        ('6', 'Compras de Fitosanitarios',          'Trazabilidad adquisiciones — Nº MAPA, lote, proveedor, factura'),
     ]
     for num, sec_title, sec_desc in sections:
         sec_data = [[
@@ -662,6 +716,10 @@ def export_pdf(user_id, campana='2025/2026'):
 
     # ── Section 5: Cosecha ──
     _section_cosecha(conn, user_id, campana, styles, story)
+    story.append(Spacer(1, 10))
+
+    # ── Section 6: Compras ──
+    _section_compras(conn, user_id, campana, styles, story)
 
     # ── Firma / cierre ──
     story.append(Spacer(1, 20))
