@@ -374,6 +374,7 @@ def init_db():
         ('campana', 'TEXT'), ('updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
         ('deleted_at', 'TEXT'),
         ('n_aplicado', 'REAL'), ('p2o5_aplicado', 'REAL'), ('k2o_aplicado', 'REAL'),
+        ('densidad_g_ml', 'REAL'),
     ]:
         _add_col(c, 'fertilizacion', col, typ)
 
