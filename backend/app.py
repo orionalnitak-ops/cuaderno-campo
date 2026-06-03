@@ -734,10 +734,21 @@ def manage_cultivo(cid):
 # ─────────────────────────────────────────────
 # VALIDADORES RD 1311/2012
 # ─────────────────────────────────────────────
+def _calc_fecha_recoleccion(fecha_aplicacion_str, plazo_dias):
+    """Calcula fecha mínima de recolección. Siempre calculada en backend, nunca confiamos en el cliente."""
+    try:
+        fecha = datetime.date.fromisoformat(str(fecha_aplicacion_str))
+        plazo = int(plazo_dias or 0)
+        return (fecha + datetime.timedelta(days=plazo)).isoformat()
+    except (ValueError, TypeError):
+        return None
+
+
 def _validate_tratamiento(data):
     """Devuelve mensaje de error si faltan campos obligatorios (Anexo III S3)."""
     required = {
         'fecha_aplicacion':    'Fecha de aplicación',
+        'parcela_id':          'Parcela SIGPAC (Anexo III S3)',
         'producto_comercial':  'Producto comercial',
         'num_registro_mapa':   'Nº Registro MAPA',
         'sustancia_activa':    'Sustancia activa',
@@ -889,6 +900,18 @@ def manage_tratamientos():
         conn.close()
         return jsonify({"error": err}), 400
 
+    # Verificar que el aplicador seleccionado tiene ROPO registrado (RD 1311/2012)
+    if data.get('aplicador_id'):
+        aplicador = one(conn, "SELECT num_ropo FROM aplicadores WHERE id=? AND user_id=?",
+                        (data['aplicador_id'], uid))
+        if not aplicador or not (aplicador.get('num_ropo') or '').strip():
+            conn.close()
+            return jsonify({"error": (
+                "El aplicador seleccionado no tiene número ROPO registrado. "
+                "El ROPO es obligatorio según el RD 1311/2012 Anexo III S3. "
+                "Edita el aplicador y añade su número de carnet ROPO."
+            )}), 400
+
     c = conn.cursor()
     c.execute('''
         INSERT INTO tratamientos (
@@ -903,7 +926,8 @@ def manage_tratamientos():
         data.get('producto_comercial'), data.get('num_registro_mapa'), data.get('sustancia_activa'),
         data.get('plaga_objetivo'), data.get('dosis_valor') or None, data.get('dosis_unidad', 'L/ha'),
         data.get('volumen_caldo') or None, data.get('equipo_id') or None, data.get('condiciones_meteo'),
-        data.get('plazo_seguridad_dias') or None, data.get('fecha_recoleccion_minima'),
+        data.get('plazo_seguridad_dias') or None,
+        _calc_fecha_recoleccion(data.get('fecha_aplicacion'), data.get('plazo_seguridad_dias')),
         data.get('eficacia'), data.get('aplicador_id') or None, data.get('notas'),
         data.get('campana', '2025/2026'),
     ))
@@ -929,6 +953,18 @@ def manage_tratamiento(tid):
     if err:
         conn.close()
         return jsonify({"error": err}), 400
+    if data.get('aplicador_id'):
+        aplicador = one(conn, "SELECT num_ropo FROM aplicadores WHERE id=? AND user_id=?",
+                        (data['aplicador_id'], uid))
+        if not aplicador or not (aplicador.get('num_ropo') or '').strip():
+            conn.close()
+            return jsonify({"error": (
+                "El aplicador seleccionado no tiene número ROPO registrado. "
+                "Edita el aplicador y añade su número de carnet ROPO antes de guardar."
+            )}), 400
+    # Calcular siempre en backend, nunca confiar en el cliente
+    data['fecha_recoleccion_minima'] = _calc_fecha_recoleccion(
+        data.get('fecha_aplicacion'), data.get('plazo_seguridad_dias'))
     fields = ['parcela_id','parcela_etiqueta','fecha_aplicacion','producto_comercial',
               'num_registro_mapa','sustancia_activa','plaga_objetivo','dosis_valor','dosis_unidad',
               'volumen_caldo','equipo_id','condiciones_meteo','plazo_seguridad_dias',
@@ -1193,6 +1229,23 @@ def manage_cosecha():
         rows = dicts(conn, "SELECT * FROM cosecha WHERE user_id=? ORDER BY fecha_inicio DESC", (uid,))
         conn.close(); return jsonify(rows)
     data = request.json or {}
+
+    # Bloquear cosecha si hay tratamientos con plazo de seguridad no vencido en la misma parcela
+    if data.get('parcela_id') and data.get('fecha_inicio'):
+        plazo_activos = dicts(conn, """
+            SELECT producto_comercial, fecha_recoleccion_minima
+            FROM tratamientos
+            WHERE parcela_id=? AND user_id=? AND deleted_at IS NULL
+              AND fecha_recoleccion_minima > ?
+        """, (data['parcela_id'], uid, data['fecha_inicio']))
+        if plazo_activos:
+            nombres = ', '.join(p['producto_comercial'] for p in plazo_activos)
+            conn.close()
+            return jsonify({"error": (
+                f"No se puede registrar la cosecha: plazo de seguridad no vencido para: {nombres}. "
+                "Espera hasta que pasen los plazos indicados en los tratamientos."
+            )}), 400
+
     prod = data.get('produccion_total_valor') or 0
     sup  = data.get('superficie_cosechada_ha') or 0
     rend = round(float(prod) / float(sup), 2) if sup and float(sup) > 0 else None
@@ -1865,15 +1918,36 @@ def parse_guardar():
     nota = f"NLP: {texto}" if texto else ''
 
     if accion == 'tratamiento':
-        conn.execute(
-            "INSERT INTO tratamientos (user_id, parcela_id, parcela_etiqueta, fecha_aplicacion, producto_comercial, notas, campana) VALUES (?,?,?,?,?,?,?)",
-            (uid, parcela_id, etiqueta, fecha, producto, nota, campana)
-        )
+        # Los tratamientos fitosanitarios requieren campos obligatorios del RD 1311/2012 (ROPO,
+        # nº MAPA, sustancia activa, dosis, plazo de seguridad) que el texto libre no puede capturar.
+        # Redirigir al formulario completo para evitar registros ilegalmente incompletos.
+        conn.close()
+        return jsonify({
+            "ok": False,
+            "requiere_formulario": True,
+            "error": (
+                "Los tratamientos fitosanitarios requieren datos obligatorios (Nº MAPA, sustancia "
+                "activa, dosis, ROPO del aplicador, plazo de seguridad) que no se pueden capturar "
+                "de texto libre. Usa el formulario completo para registrar este tratamiento."
+            ),
+            "producto": producto,
+            "parcela_id": parcela_id,
+            "fecha": fecha,
+        }), 422
     elif accion == 'fertilizacion':
-        conn.execute(
-            "INSERT INTO fertilizacion (user_id, parcela_id, parcela_etiqueta, fecha_aplicacion, producto, notas, campana) VALUES (?,?,?,?,?,?,?)",
-            (uid, parcela_id, etiqueta, fecha, producto, nota, campana)
-        )
+        # Igual que tratamientos: tipo de fertilizante, dosis y parcela son obligatorios por ley.
+        conn.close()
+        return jsonify({
+            "ok": False,
+            "requiere_formulario": True,
+            "error": (
+                "Las fertilizaciones requieren datos obligatorios (tipo de fertilizante, dosis, "
+                "parcela) según el RD 1311/2012 Anexo III S4. Usa el formulario completo."
+            ),
+            "producto": producto,
+            "parcela_id": parcela_id,
+            "fecha": fecha,
+        }), 422
     else:
         # palabra_clave viene del frontend; si no, re-extraer del texto
         if not palabra_clave:
@@ -2118,9 +2192,31 @@ def backup_import():
     if 'file' not in request.files:
         return jsonify({"error": "Sin archivo"}), 400
     f = request.files['file']
+
+    # Verificar magic bytes de SQLite antes de tocar nada
+    header = f.read(16)
+    if not header.startswith(b'SQLite format 3'):
+        return jsonify({"error": "El archivo no es una base de datos SQLite válida"}), 400
+    f.seek(0)
+
     db_path = os.path.join(os.path.dirname(__file__), 'cuaderno.db')
-    f.save(db_path)
-    return jsonify({"status": "ok"})
+    tmp_path = db_path + '.import_tmp'
+    backup_path = db_path + '.bak'
+
+    f.save(tmp_path)
+    try:
+        # Doble verificación: intentar abrir el fichero temporal como SQLite
+        import sqlite3 as _sq
+        _sq.connect(tmp_path).close()
+    except Exception as e:
+        os.remove(tmp_path)
+        return jsonify({"error": f"Base de datos inválida: {e}"}), 400
+
+    # Backup del archivo actual antes de sobreescribir
+    import shutil
+    shutil.copy2(db_path, backup_path)
+    os.replace(tmp_path, db_path)
+    return jsonify({"status": "ok", "backup_saved": backup_path})
 
 
 # ─────────────────────────────────────────────
