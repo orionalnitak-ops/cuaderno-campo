@@ -410,7 +410,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
             { icon: '🗺️', label: 'Parcelas',                  m: 'parcelas' },
             { icon: '🚜', label: 'Labor agrícola',             m: 'labor' },
             { icon: '🌿', label: 'Tratamiento fitosanitario',  m: 'tratamiento' },
-            { icon: '🌱', label: 'Abono / Fertilización',      m: 'fertilizacion' },
+            { icon: '🌱', label: 'Fertilización',               m: 'fertilizacion' },
             { icon: '📦', label: 'Cosecha',                    m: 'cosecha' },
             { icon: '🛒', label: 'Compras',                    m: 'compra' },
         ];
