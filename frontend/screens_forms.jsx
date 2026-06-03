@@ -377,7 +377,11 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                             onConfirm={v => set('condiciones_meteo', v)} />
                     </FieldGroup>
                     <FieldGroup label="Fecha mínima de cosecha">
-                        <input type="date" className="input-field" value={f.fecha_recoleccion_minima} onChange={e => set('fecha_recoleccion_minima', e.target.value)} style={{ borderColor: plazoAlert ? '#ef4444' : undefined }} />
+                        <input type="date" className="input-field" value={f.fecha_recoleccion_minima} readOnly
+                            style={{ borderColor: plazoAlert ? '#ef4444' : undefined, background: 'var(--surface-container-low)', color: 'var(--on-surface-variant)', cursor: 'not-allowed' }} />
+                        <div style={{ fontSize: '0.72rem', color: 'var(--on-surface-variant)', marginTop: 3 }}>
+                            Calculada automáticamente desde el plazo de seguridad
+                        </div>
                     </FieldGroup>
                     <FieldGroup label="Eficacia observada">
                         <select className="input-field" value={f.eficacia} onChange={e => set('eficacia', e.target.value)}>

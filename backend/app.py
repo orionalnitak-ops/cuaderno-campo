@@ -304,7 +304,6 @@ def account_export_data():
         "labores":         dicts(conn, "SELECT * FROM labores WHERE user_id=?", (uid,)),
         "cosecha":         dicts(conn, "SELECT * FROM cosecha WHERE user_id=?", (uid,)),
         "compras":         dicts(conn, "SELECT * FROM compras WHERE user_id=? AND deleted_at IS NULL", (uid,)),
-        "ventas":          dicts(conn, "SELECT * FROM ventas WHERE user_id=? AND deleted_at IS NULL", (uid,)),
         "cultivos_campana":dicts(conn, """SELECT cc.* FROM cultivos_campana cc
                                           JOIN parcelas p ON cc.parcela_id=p.id
                                           WHERE p.user_id=?""", (uid,)),
@@ -326,7 +325,7 @@ def account_delete():
     """GDPR Art. 17 — derecho de supresión. Borra todos los datos del usuario y desactiva la cuenta."""
     uid = current_user.id
     conn = get_db()
-    tables_soft = ['tratamientos', 'fertilizacion', 'abonado', 'compras', 'ventas']
+    tables_soft = ['tratamientos', 'fertilizacion', 'abonado', 'compras']
     for t in tables_soft:
         conn.execute(f"UPDATE {t} SET deleted_at=datetime('now') WHERE user_id=? AND deleted_at IS NULL", (uid,))
     for t in ['labores', 'riego', 'cosecha', 'cultivos_campana', 'aplicadores', 'equipos']:
@@ -1482,6 +1481,9 @@ def manage_cosecha_one(cid):
         row = one(conn, "SELECT * FROM cosecha WHERE id=? AND user_id=?", (cid, uid))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
+    prod = data.get('produccion_total_valor') or 0
+    sup  = data.get('superficie_cosechada_ha') or 0
+    data['rendimiento_kg_ha'] = round(float(prod) / float(sup), 2) if sup and float(sup) > 0 else None
     fields = ['parcela_id','parcela_etiqueta','fecha_inicio','fecha_fin','cultivo',
               'variedad','superficie_cosechada_ha','produccion_total_valor','produccion_total_unidad',
               'rendimiento_kg_ha','destino','comprador','precio_unidad','notas','campana']
@@ -2015,6 +2017,27 @@ def extraer_dosis(texto):
             return {'valor': valor, 'unidad': unidad, 'texto_original': m.group(0)}
     return {'valor': None, 'unidad': None, 'texto_original': None}
 
+def extraer_tipo_riego(texto):
+    tnorm = _norm(texto)
+    if any(k in tnorm for k in ['goteo', 'gota a gota', 'exudacion']):
+        return 'Goteo'
+    if any(k in tnorm for k in ['aspersion', 'aspersor', 'rociador', 'lluvia']):
+        return 'Aspersión'
+    if any(k in tnorm for k in ['pivot', 'pivote']):
+        return 'Pivot'
+    if any(k in tnorm for k in ['gravedad', 'inundacion', 'inundado', 'manta', 'surcos']):
+        return 'Gravedad'
+    return None
+
+def extraer_cantidad_riego(texto):
+    m = _re.search(r'(\d+[.,]?\d*)\s*hora', texto, _re.IGNORECASE)
+    if m:
+        return {'horas_riego': float(m.group(1).replace(',', '.')), 'volumen_m3': None}
+    m = _re.search(r'(\d+[.,]?\d*)\s*(m3|m³|metro|metros cubicos)', texto, _re.IGNORECASE)
+    if m:
+        return {'horas_riego': None, 'volumen_m3': float(m.group(1).replace(',', '.'))}
+    return {'horas_riego': None, 'volumen_m3': None}
+
 def extraer_fecha(texto):
     """Extrae fecha del texto en lenguaje natural. Devuelve ISO string o hoy."""
     import datetime
@@ -2083,6 +2106,9 @@ def parse_texto_libre():
     parcela_id = parcela_data['id'] if parcela_data else None
     fecha = extraer_fecha(texto)
 
+    es_riego = accion_data['tipo'] == 'riego'
+    cantidad_riego = extraer_cantidad_riego(texto) if es_riego else {'horas_riego': None, 'volumen_m3': None}
+
     return jsonify({
         "status": "success",
         "texto_original": texto,
@@ -2099,6 +2125,11 @@ def parse_texto_libre():
             "producto": {"nombre": producto_data['nombre'], "confianza": producto_data['confianza']},
             "dosis": {"valor": dosis_data['valor'], "unidad": dosis_data['unidad']},
             "fecha": fecha,
+            "riego": {
+                "tipo_riego": extraer_tipo_riego(texto) if es_riego else None,
+                "horas_riego": cantidad_riego['horas_riego'],
+                "volumen_m3": cantidad_riego['volumen_m3'],
+            },
         },
         "requiere_confirmacion": not parcela_data and not nombre_candidato,
     })
@@ -2167,6 +2198,24 @@ def parse_guardar():
             "parcela_id": parcela_id,
             "fecha": fecha,
         }), 422
+    elif accion == 'riego':
+        tipo_riego = (data.get('tipo_riego') or '').strip() or 'Goteo'
+        horas_riego = data.get('horas_riego') or None
+        volumen_m3 = data.get('volumen_m3') or None
+        if not horas_riego and not volumen_m3:
+            horas_riego = 1.0
+        conn.execute(
+            "INSERT INTO riego (user_id, parcela_id, parcela_etiqueta, fecha, tipo_riego, horas_riego, volumen_m3, fuente_agua, notas, campana) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (uid, parcela_id, etiqueta, fecha, tipo_riego,
+             float(horas_riego) if horas_riego else None,
+             float(volumen_m3) if volumen_m3 else None,
+             None, nota, campana)
+        )
+    elif accion == 'cosecha':
+        conn.execute(
+            "INSERT INTO cosecha (user_id, parcela_id, parcela_etiqueta, fecha_inicio, cultivo, produccion_total_unidad, notas, campana) VALUES (?,?,?,?,?,?,?,?)",
+            (uid, parcela_id, etiqueta, fecha, producto or None, 'kg', nota, campana)
+        )
     else:
         # palabra_clave viene del frontend; si no, re-extraer del texto
         if not palabra_clave:
