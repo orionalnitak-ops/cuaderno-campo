@@ -356,15 +356,25 @@ def _section_fertilizacion(conn, user_id, campana, styles, story):
         story.append(Paragraph('Sin registros de abonado en esta campaña.', styles['empty']))
         return
 
-    cols = ['Fecha', 'Parcela', 'Tipo Fertilizante', 'Producto',
-            'Riqueza N-P-K', 'Dosis', 'Unidad', 'Método', 'Notas']
-    widths = [1.8*cm, 2.5*cm, 3.0*cm, 2.8*cm, 2.2*cm,
-              1.4*cm, 1.4*cm, 2.0*cm, 2.4*cm]
+    cols = ['Fecha', 'Parcela', 'Tipo', 'Producto',
+            'Riqueza NPK', 'Dosis', 'Ud.', 'N kg/ha', 'P kg/ha', 'K kg/ha', 'Método']
+    widths = [1.6*cm, 2.2*cm, 2.4*cm, 2.6*cm,
+              1.8*cm, 1.3*cm, 1.0*cm, 1.4*cm, 1.4*cm, 1.4*cm, 1.8*cm]
     total = sum(widths)
     widths = [w * INNER_W / total for w in widths]
 
     data_rows = []
+    total_n = total_p = total_k = 0.0
     for r in rows:
+        n = r.get('n_aplicado')
+        p = r.get('p2o5_aplicado')
+        k = r.get('k2o_aplicado')
+        try:
+            total_n += float(n or 0)
+            total_p += float(p or 0)
+            total_k += float(k or 0)
+        except (ValueError, TypeError):
+            pass
         data_rows.append([
             _fmt_date(r.get('fecha_aplicacion')),
             _v(r.get('nombre_finca') or r.get('parcela_etiqueta')),
@@ -373,13 +383,18 @@ def _section_fertilizacion(conn, user_id, campana, styles, story):
             _v(r.get('riqueza_npk')),
             _v(r.get('dosis_valor')),
             _v(r.get('dosis_unidad')),
+            _v(f"{float(n):.2f}" if n is not None else '—'),
+            _v(f"{float(p):.2f}" if p is not None else '—'),
+            _v(f"{float(k):.2f}" if k is not None else '—'),
             _v(r.get('metodo_aplicacion')),
-            _v(r.get('notas')),
         ])
 
     story.append(_data_table(cols, data_rows, widths, C_VIOLET, styles))
     story.append(Spacer(1, 4))
-    story.append(Paragraph(f'Total registros: {len(rows)}', styles['note']))
+    story.append(Paragraph(
+        f'Total registros: {len(rows)}  ·  '
+        f'N total: {total_n:.2f} kg/ha  ·  P total: {total_p:.2f} kg/ha  ·  K total: {total_k:.2f} kg/ha',
+        styles['note']))
 
 
 def _section_labores(conn, user_id, campana, styles, story):
@@ -489,6 +504,61 @@ def _section_cosecha(conn, user_id, campana, styles, story):
     story.append(Spacer(1, 4))
     story.append(Paragraph(
         f'Total registros: {len(rows)}  ·  Producción total campaña: {total_prod:.2f}',
+        styles['note']))
+
+
+def _section_plan_abonado(conn, user_id, campana, styles, story):
+    import sqlite3
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("""
+        SELECT a.*, p.nombre_finca FROM abonado a
+        LEFT JOIN parcelas p ON a.parcela_id = p.id
+        WHERE a.user_id=? AND a.campana=? AND a.deleted_at IS NULL
+        ORDER BY a.fecha_preparacion ASC
+    """, (user_id, campana))
+    rows = [dict(r) for r in c.fetchall()]
+
+    story.append(PageBreak())
+    story.append(_section_banner(
+        'Plan de Abonado',
+        'Programa de fertilización por parcela — RD 934/2025 (obligatorio desde 1 sept 2026)',
+        '🌿', C_AMBER, styles))
+    story.append(Spacer(1, 4))
+
+    if not rows:
+        story.append(Paragraph('Sin planes de abonado en esta campaña.', styles['empty']))
+        return
+
+    cols = ['Fecha', 'Parcela', 'Cultivo', 'Cult. Anterior',
+            'Rend. Esp. (kg/ha)', 'Datos Suelo',
+            'N nec.', 'P nec.', 'K nec.', 'Abono Rec.', 'Dosis Rec.']
+    widths = [1.6*cm, 2.2*cm, 2.0*cm, 2.0*cm,
+              2.0*cm, 3.0*cm,
+              1.2*cm, 1.2*cm, 1.2*cm, 2.8*cm, 1.8*cm]
+    total = sum(widths)
+    widths = [w * INNER_W / total for w in widths]
+
+    data_rows = []
+    for r in rows:
+        data_rows.append([
+            _fmt_date(r.get('fecha_preparacion')),
+            _v(r.get('nombre_finca') or r.get('parcela_etiqueta')),
+            _v(r.get('cultivo')),
+            _v(r.get('cultivo_anterior')),
+            _v(r.get('rendimiento_esperado_kg_ha')),
+            _v(r.get('datos_suelo')),
+            _v(r.get('n_necesario_kg_ha')),
+            _v(r.get('p_necesario_kg_ha')),
+            _v(r.get('k_necesario_kg_ha')),
+            _v(r.get('abono_recomendado')),
+            _v(r.get('dosis_recomendada_kg_ha')),
+        ])
+
+    story.append(_data_table(cols, data_rows, widths, C_AMBER, styles))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(
+        f'Total planes: {len(rows)}  ·  Obligatorio desde 1 sept 2026 (RD 934/2025)',
         styles['note']))
 
 
@@ -634,7 +704,8 @@ def _cover_page(ex, campana, styles):
         ('3', 'Abonado / Fertilización',            'Tipo fertilizante, producto, N-P-K, dosis, método'),
         ('4', 'Labores Agrícolas',                  'Siembra, poda, laboreo, horas, maquinaria, operario'),
         ('5', 'Cosecha / Recolección',              'Cultivo, producción, rendimiento, destino, comprador'),
-        ('6', 'Compras de Fitosanitarios',          'Trazabilidad adquisiciones — Nº MAPA, lote, proveedor, factura'),
+        ('6', 'Plan de Abonado',                    'Programa fertilización por parcela — RD 934/2025 (obligatorio sept 2026)'),
+        ('7', 'Compras de Fitosanitarios',          'Trazabilidad adquisiciones — Nº MAPA, lote, proveedor, factura'),
     ]
     for num, sec_title, sec_desc in sections:
         sec_data = [[
@@ -718,7 +789,11 @@ def export_pdf(user_id, campana='2025/2026'):
     _section_cosecha(conn, user_id, campana, styles, story)
     story.append(Spacer(1, 10))
 
-    # ── Section 6: Compras ──
+    # ── Section 6: Plan Abonado ──
+    _section_plan_abonado(conn, user_id, campana, styles, story)
+    story.append(Spacer(1, 10))
+
+    # ── Section 7: Compras ──
     _section_compras(conn, user_id, campana, styles, story)
 
     # ── Firma / cierre ──

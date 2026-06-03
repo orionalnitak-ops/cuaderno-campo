@@ -619,9 +619,22 @@ def manage_parcela(pid):
         return jsonify(row or {})
 
     if request.method == 'DELETE':
+        orphan_counts = {}
+        for table, label in [('tratamientos', 'tratamientos'), ('fertilizacion', 'fertilizaciones'),
+                              ('cosecha', 'cosechas'), ('labores', 'labores'), ('riego', 'riegos')]:
+            try:
+                row = one(conn, f"SELECT COUNT(*) as n FROM {table} WHERE parcela_id=? AND user_id=?", (pid, uid))
+                if row and row['n']:
+                    orphan_counts[label] = row['n']
+            except Exception:
+                pass
         conn.execute("UPDATE parcelas SET activa=0 WHERE id=? AND user_id=?", (pid, uid))
         conn.commit(); conn.close()
-        return jsonify({"status": "ok"})
+        resp = {"status": "ok"}
+        if orphan_counts:
+            detalle = ', '.join(f"{n} {k}" for k, n in orphan_counts.items())
+            resp["warning"] = f"La parcela tenía registros asociados: {detalle}. Siguen en el historial pero sin parcela activa."
+        return jsonify(resp)
 
     data = request.json or {}
 
@@ -678,11 +691,19 @@ def manage_cultivos():
     data = request.json or {}
     # Verificar que la parcela pertenece al usuario
     parcela_id = data.get('parcela_id')
-    if parcela_id:
-        owner = one(conn, "SELECT id FROM parcelas WHERE id=? AND user_id=?", (parcela_id, uid))
-        if not owner:
-            conn.close()
-            return jsonify({"error": "Parcela no encontrada"}), 404
+    if not parcela_id:
+        conn.close()
+        return jsonify({"error": "Parcela es obligatoria"}), 400
+    owner = one(conn, "SELECT id FROM parcelas WHERE id=? AND user_id=?", (parcela_id, uid))
+    if not owner:
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 404
+    if not data.get('cultivo'):
+        conn.close()
+        return jsonify({"error": "El cultivo es obligatorio"}), 400
+    if not data.get('cultivo_iacs_cod'):
+        conn.close()
+        return jsonify({"error": "El código IACS del cultivo es obligatorio para la interoperabilidad con SIEX (obligatorio desde ene 2027)"}), 400
     c = conn.cursor()
     try:
         c.execute('''
@@ -766,6 +787,7 @@ def _validate_tratamiento(data):
         'plaga_objetivo':      'Plaga / enfermedad objetivo',
         'dosis_valor':         'Dosis',
         'aplicador_id':        'Aplicador (obligatorio por ROPO)',
+        'equipo_aplicacion':   'Equipo de aplicación (Anexo III S3)',
         'plazo_seguridad_dias':'Plazo de seguridad (días)',
     }
     missing = [label for field, label in required.items() if not data.get(field) and data.get(field) != 0]
@@ -790,6 +812,18 @@ def _validate_tratamiento(data):
     mapa = str(data.get('num_registro_mapa', '')).strip()
     if not re.fullmatch(r'\d{4,6}(/\d+)?', mapa):
         return "El Nº de Registro MAPA debe ser numérico (ej: 12345 o 12345/2)"
+    return None
+
+
+def _validate_campana(campana):
+    """Valida que la campaña tenga formato YYYY/YYYY con años consecutivos."""
+    if not campana:
+        return None
+    if not re.fullmatch(r'\d{4}/\d{4}', str(campana)):
+        return "El campo campaña debe tener formato YYYY/YYYY (ej: 2025/2026)"
+    y1, y2 = int(str(campana)[:4]), int(str(campana)[5:])
+    if y2 != y1 + 1:
+        return "La campaña debe ser de años consecutivos (ej: 2025/2026)"
     return None
 
 
@@ -847,20 +881,42 @@ def _validate_fertilizacion(data):
 
 
 def _calc_npk(riqueza_npk, dosis_valor):
-    """Parsea 'N-P-K' y devuelve (n, p, k) en kg/ha, o (None, None, None) si no parseable."""
+    """Parsea riqueza N-P-K y devuelve (n, p, k) en kg/ha.
+    Soporta: '15-15-15', '27-0-0', '46%N', '34,5%N', '18%N 46%P2O5 0%K2O'.
+    Devuelve (None, None, None) si no es parseable."""
     if not riqueza_npk or not dosis_valor:
         return None, None, None
-    m = re.search(r'(\d+\.?\d*)[^\d]+(\d+\.?\d*)[^\d]+(\d+\.?\d*)', str(riqueza_npk))
-    if not m:
-        return None, None, None
     try:
-        dosis = float(dosis_valor)
-        n = round(float(m.group(1)) / 100 * dosis, 2)
-        p = round(float(m.group(2)) / 100 * dosis, 2)
-        k = round(float(m.group(3)) / 100 * dosis, 2)
-        return n, p, k
+        dosis = float(str(dosis_valor).replace(',', '.'))
+        if dosis <= 0:
+            return None, None, None
     except (ValueError, TypeError):
         return None, None, None
+    s = str(riqueza_npk).replace(',', '.').upper()
+    # Formato triple N-P-K (ej: "15-15-15", "27-0-0", "15 15 15")
+    m3 = re.search(r'(\d+\.?\d*)[^\d]+(\d+\.?\d*)[^\d]+(\d+\.?\d*)', s)
+    if m3:
+        try:
+            return (round(float(m3.group(1)) / 100 * dosis, 2),
+                    round(float(m3.group(2)) / 100 * dosis, 2),
+                    round(float(m3.group(3)) / 100 * dosis, 2))
+        except (ValueError, TypeError):
+            pass
+    # Formato con letra: "46%N", "34.5%N 0%P 0%K", "18%N46%P2O5"
+    def _pct(letter):
+        m = re.search(r'(\d+\.?\d*)\s*%?\s*' + letter + r'(?:[^A-Z]|$)', s)
+        if m:
+            try:
+                return round(float(m.group(1)) / 100 * dosis, 2)
+            except (ValueError, TypeError):
+                pass
+        return None
+    n = _pct('N')
+    p = _pct('P')
+    k = _pct('K')
+    if any(v is not None for v in (n, p, k)):
+        return (n or 0.0, p or 0.0, k or 0.0)
+    return None, None, None
 
 
 def _validate_riego(data):
@@ -892,6 +948,7 @@ def _validate_abonado(data):
         'cultivo_anterior':         'Cultivo anterior',
         'rendimiento_esperado_kg_ha': 'Rendimiento esperado',
         'fecha_preparacion':        'Fecha de preparación',
+        'datos_suelo':              'Datos de análisis de suelo (RD 934/2025)',
         'n_necesario_kg_ha':        'N necesario',
         'p_necesario_kg_ha':        'P necesario',
         'k_necesario_kg_ha':        'K necesario',
@@ -920,7 +977,7 @@ def manage_tratamientos():
         return jsonify(rows)
 
     data = request.json or {}
-    err = _validate_tratamiento(data)
+    err = _validate_tratamiento(data) or _validate_campana(data.get('campana'))
     if err:
         conn.close()
         return jsonify({"error": err}), 400
@@ -1014,7 +1071,7 @@ def manage_fertilizacion():
         conn.close(); return jsonify(rows)
 
     data = request.json or {}
-    err = _validate_fertilizacion(data)
+    err = _validate_fertilizacion(data) or _validate_campana(data.get('campana'))
     if err:
         conn.close()
         return jsonify({"error": err}), 400
@@ -1255,6 +1312,29 @@ def manage_cosecha():
         conn.close(); return jsonify(rows)
     data = request.json or {}
 
+    # Validar fechas de cosecha
+    fi = data.get('fecha_inicio')
+    ff = data.get('fecha_fin')
+    if not fi:
+        conn.close()
+        return jsonify({"error": "La fecha de inicio es obligatoria"}), 400
+    try:
+        d_ini = datetime.date.fromisoformat(str(fi))
+        if d_ini > datetime.date.today():
+            conn.close()
+            return jsonify({"error": "La fecha de inicio de cosecha no puede ser futura"}), 400
+        if ff:
+            d_fin = datetime.date.fromisoformat(str(ff))
+            if d_fin > datetime.date.today():
+                conn.close()
+                return jsonify({"error": "La fecha de fin de cosecha no puede ser futura"}), 400
+            if d_fin < d_ini:
+                conn.close()
+                return jsonify({"error": "La fecha de fin no puede ser anterior a la de inicio"}), 400
+    except (ValueError, TypeError):
+        conn.close()
+        return jsonify({"error": "Formato de fecha inválido (use YYYY-MM-DD)"}), 400
+
     # Bloquear cosecha si hay tratamientos con plazo de seguridad no vencido en la misma parcela
     if data.get('parcela_id') and data.get('fecha_inicio'):
         plazo_activos = dicts(conn, """
@@ -1402,7 +1482,7 @@ def manage_compras():
         conn.close(); return jsonify(rows)
 
     data = request.json or {}
-    err = _validate_compra(data)
+    err = _validate_compra(data) or _validate_campana(data.get('campana'))
     if err:
         conn.close()
         return jsonify({"error": err}), 400
@@ -1629,6 +1709,7 @@ def sigpac_datos():
 
 @app.route('/api/sigpac/debug')
 @login_required
+@admin_required
 def sigpac_debug():
     """Prueba todas las variantes de la API SIGPAC y devuelve respuestas crudas."""
     prov = request.args.get('provincia', '13')
