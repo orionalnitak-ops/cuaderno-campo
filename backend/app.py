@@ -433,19 +433,27 @@ def admin_user(uid):
 def admin_delete_permanent(uid):
     """Borra completamente un usuario y todos sus datos."""
     conn = get_db()
-    row = conn.execute("SELECT nombre FROM users WHERE id=?", (uid,)).fetchone()
-    if not row:
-        conn.close()
-        return jsonify({"error": "Usuario no encontrado"}), 404
-    nombre = row[0]
-    for t in ['tratamientos','fertilizacion','labores','compras','cultivos_campana','parcelas','explotacion']:
-        try:
+    try:
+        row = conn.execute("SELECT nombre FROM users WHERE id=?", (uid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Usuario no encontrado"}), 404
+        nombre = row[0]
+        # cultivos_campana no tiene user_id, va por parcela_id
+        conn.execute("DELETE FROM cultivos_campana WHERE parcela_id IN (SELECT id FROM parcelas WHERE user_id=?)", (uid,))
+        # resto de tablas con user_id directo, en orden de dependencia
+        for t in ['riego','abonado','cosecha','tratamientos','fertilizacion',
+                  'labores','compras','equipos','aplicadores','parcelas','explotacion']:
             conn.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))
-        except Exception:
-            pass
-    conn.execute("DELETE FROM users WHERE id=?", (uid,))
-    conn.commit(); conn.close()
-    return jsonify({"ok": True, "usuario": nombre})
+        conn.execute("DELETE FROM users WHERE id=?", (uid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "usuario": nombre})
+    except Exception as e:
+        try: conn.rollback()
+        except: pass
+        conn.close()
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route('/api/admin/switch-user/<int:target_id>', methods=['POST'])
