@@ -59,23 +59,18 @@ function App() {
             .catch(() => setAuthState('guest'));
     }, []);
 
-    // Load campaign on auth + detectar onboarding
+    // Load campaign on auth + detectar si falta rellenar datos de explotación
     useEffect(() => {
         if (authState !== 'authenticated') return;
-        // Admins no necesitan onboarding
         if (currentUser?.role === 'admin') return;
 
-        const onboardingKey = `onboarding_done_${currentUser?.id}`;
-        if (localStorage.getItem(onboardingKey)) return;
-
-        Promise.all([
-            fetch('/api/explotacion', { credentials: 'include' }).then(r => r.ok ? r.json() : {}),
-            fetch('/api/parcelas', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
-        ]).then(([expl, parcelas]) => {
-            if (expl && expl.campana_activa) setCampana(expl.campana_activa);
-            const needsOnboarding = !expl?.titular && (!Array.isArray(parcelas) || parcelas.length === 0);
-            if (needsOnboarding) setShowOnboarding(true);
-        }).catch(() => {});
+        fetch('/api/explotacion', { credentials: 'include' })
+            .then(r => r.ok ? r.json() : {})
+            .then(expl => {
+                if (expl?.campana_activa) setCampana(expl.campana_activa);
+                if (!expl?.titular) setShowOnboarding(true);
+            })
+            .catch(() => {});
     }, [authState]);
 
     // PWA install prompt
@@ -183,8 +178,8 @@ function App() {
         return (
             <ScreenOnboarding
                 currentUser={currentUser}
-                onComplete={() => {
-                    localStorage.setItem(`onboarding_done_${currentUser?.id}`, '1');
+                onComplete={(campanaActiva) => {
+                    if (campanaActiva) setCampana(campanaActiva);
                     setShowOnboarding(false);
                 }}
             />

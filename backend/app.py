@@ -212,8 +212,8 @@ def auth_register():
             (email, pw_hash, nombre, 'agricultor', 'trial', trial_ends.strftime('%Y-%m-%d %H:%M:%S'))
         )
         new_id = c.lastrowid
-        c.execute("INSERT INTO explotacion (user_id, titular, campana_activa) VALUES (?,?,?)",
-                  (new_id, nombre, '2025/2026'))
+        c.execute("INSERT INTO explotacion (user_id, campana_activa) VALUES (?,?)",
+                  (new_id, '2025/2026'))
         conn.commit()
     except Exception as e:
         conn.close()
