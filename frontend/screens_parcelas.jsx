@@ -166,9 +166,30 @@ function ScreenParcelas({ campana, showToast }) {
         if (!selected.poligono || !selected.parcela_num) return;
         setSigpacSyncing(true);
         try {
+            // Resolver códigos si faltan (parcelas importadas o editadas sin cascading)
+            let provCod = selected.provincia_cod || '';
+            let munCod  = selected.municipio_cod || '';
+
+            if (!provCod && selected.provincia_nombre) {
+                const r = await fetch('/api/sigpac/provincias', { credentials: 'include' });
+                const d = await r.json();
+                const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+                const found = (d.features || []).find(f => norm(f.properties?.nombre) === norm(selected.provincia_nombre));
+                provCod = found ? String(found.properties.codigo) : '';
+            }
+            if (!munCod && provCod && selected.municipio_nombre) {
+                const r = await fetch(`/api/sigpac/municipios?provincia_cod=${provCod}`, { credentials: 'include' });
+                const lista = await r.json();
+                const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+                const found = (lista || []).find(m => norm(m.nombre) === norm(selected.municipio_nombre));
+                munCod = found ? String(found.codigo) : '';
+            }
+
+            if (!provCod || !munCod) { showToast('⚠️ No se encontró el código de provincia/municipio'); return; }
+
             const params = new URLSearchParams({
-                provincia: selected.provincia_cod || '',
-                municipio: selected.municipio_cod || '',
+                provincia: provCod,
+                municipio: munCod,
                 poligono:  selected.poligono,
                 parcela:   selected.parcela_num,
                 recinto:   selected.recinto || '1',
@@ -178,6 +199,8 @@ function ScreenParcelas({ campana, showToast }) {
             if (d.error) { showToast('⚠️ SIGPAC no devolvió datos'); return; }
             const body = {
                 ...selected,
+                provincia_cod: provCod,
+                municipio_cod: munCod,
                 superficie_ha: d.superficie_ha != null ? d.superficie_ha : selected.superficie_ha,
                 uso_sigpac:    d.uso_sigpac    || selected.uso_sigpac,
             };
