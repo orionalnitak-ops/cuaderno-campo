@@ -8,6 +8,7 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
     const [saving, setSaving]     = useState(false);
     const [formError, setFormError] = useState('');
     const [confirmDel, setConfirmDel] = useState(null); // user id a desactivar
+    const [confirmReset, setConfirmReset] = useState(null); // user id a resetear cuaderno
     const [pdfCampana, setPdfCampana] = useState('2025/2026');
 
     const CAMPANAS = ['2023/2024', '2024/2025', '2025/2026', '2026/2027'];
@@ -80,6 +81,19 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
             credentials: 'include',
         });
         showToast('Usuario reactivado');
+        loadUsers();
+    };
+
+    const handleResetCuaderno = async (uid, nombre) => {
+        try {
+            const res = await fetch(`/api/admin/users/${uid}/reset-cuaderno`, {
+                method: 'POST', credentials: 'include',
+            });
+            const d = await res.json();
+            if (d.ok) showToast(`✅ Cuaderno de ${nombre} borrado`);
+            else showToast('Error al borrar el cuaderno');
+        } catch { showToast('Error de conexión'); }
+        setConfirmReset(null);
         loadUsers();
     };
 
@@ -296,6 +310,25 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
                                     >
                                         📄 PDF
                                     </button>
+                                )}
+                                {u.active && u.role !== 'admin' && (
+                                    confirmReset === u.id ? (
+                                        <>
+                                            <button className="btn-ghost" style={{ flex:1, minWidth:100, fontSize:'0.82rem', minHeight:40, padding:'10px 14px', color:'#b45309', borderColor:'rgba(180,83,9,0.4)', fontWeight:700 }}
+                                                onClick={() => handleResetCuaderno(u.id, u.nombre)}>
+                                                ⚠️ Sí, borrar todo
+                                            </button>
+                                            <button className="btn-ghost" style={{ fontSize:'0.82rem', minHeight:40, padding:'10px 14px' }}
+                                                onClick={() => setConfirmReset(null)}>
+                                                Cancelar
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <button className="btn-ghost" style={{ fontSize:'0.82rem', minHeight:40, padding:'10px 14px', color:'#b45309', borderColor:'rgba(180,83,9,0.3)' }}
+                                            onClick={() => setConfirmReset(u.id)}>
+                                            🗑 Vaciar cuaderno
+                                        </button>
+                                    )
                                 )}
                                 {u.active ? (
                                     confirmDel === u.id ? (
