@@ -589,9 +589,11 @@
       padding: 20px 16px;
       width: 100%;
       max-width: 640px;
-      max-height: 88vh;
+      max-height: calc(100vh - var(--nav-h) - 20px);
       overflow-y: auto;
       overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
       animation: slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
 
