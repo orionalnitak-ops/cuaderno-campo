@@ -1883,6 +1883,63 @@ def sigpac_datos():
     return jsonify(resultado)
 
 
+@app.route('/api/sigpac/recintos-detalle')
+@login_required
+def sigpac_recintos_detalle():
+    """Devuelve superficie y uso SIGPAC para CADA recinto de un pol/par."""
+    prov = _sigpac_param(request.args.get('provincia'), '')
+    mun  = _sigpac_param(request.args.get('municipio'), '')
+    pol  = _sigpac_param(request.args.get('poligono'), '')
+    par  = _sigpac_param(request.args.get('parcela'), '')
+    if not all([prov, mun, pol, par]):
+        return jsonify({"error": "Parámetros inválidos"}), 400
+
+    recintos_data = _sigpac_get(f"{SIGPAC_BASE}/recintos/{prov}/{mun}/0/0/{pol}/{par}")
+    nums = sorted({
+        int(f['properties']['nombre'])
+        for f in recintos_data.get('features', [])
+        if f.get('properties', {}).get('nombre') is not None
+    })
+    if not nums:
+        return jsonify([])
+
+    INTER = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/intersection"
+    resultado = []
+    for rec_num in nums:
+        item = {'num': rec_num, 'superficie_ha': None, 'uso_sigpac': ''}
+        try:
+            inter = _sigpac_get(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},{rec_num}")
+            pi = inter.get('parcelaInfo') or {}
+            dn = pi.get('dn_surface')
+            if dn:
+                item['superficie_ha'] = round(float(dn) / 10000, 4)
+            ref_cat = pi.get('referencia_cat', '')
+            if ref_cat:
+                try:
+                    import xml.etree.ElementTree as ET
+                    cat_r = req_lib.get(
+                        'https://ovc.catastro.meh.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx/Consulta_DNPRC',
+                        params={'Provincia': '', 'Municipio': '', 'RC': ref_cat},
+                        timeout=8
+                    )
+                    ns = {'c': 'http://www.catastro.meh.es/'}
+                    root = ET.fromstring(cat_r.text)
+                    ccc = root.find('.//c:ccc', ns)
+                    dcc = root.find('.//c:dcc', ns)
+                    uso = _catastro_a_uso_sigpac(
+                        ccc.text if ccc is not None else '',
+                        dcc.text if dcc is not None else ''
+                    )
+                    item['uso_sigpac'] = uso
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        resultado.append(item)
+
+    return jsonify(resultado)
+
+
 @app.route('/api/sigpac/debug')
 @login_required
 @admin_required
