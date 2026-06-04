@@ -481,7 +481,7 @@ function App() {
             {/* ── Module Selector Overlay ── */}
             {showModules && (
                 <div className="overlay" onClick={() => setShowModules(false)}>
-                    <div className="module-sheet" style={{ paddingBottom: 0, overflowX: 'hidden' }} onClick={e => e.stopPropagation()}>
+                    <div className="module-sheet" style={{ paddingBottom: 0 }} onClick={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6, padding: '4px 0 0' }}>
                             <div>
                                 <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.35rem', margin: '0 0 2px', color: 'var(--on-background)', letterSpacing: '-0.02em' }}>
