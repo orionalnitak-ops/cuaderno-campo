@@ -2420,6 +2420,7 @@ def _importar_parcelas_wb(wb, uid):
         return None
 
     ci_nombre    = _col(['nombre','finca','parcela nom'])
+    ci_comunidad = _col(['comunidad','ccaa','autonoma','autonomia'])
     ci_provincia = _col(['provincia','prov'])
     ci_municipio = _col(['municipio','muni'])
     ci_poligono  = _col(['poligon','polig'])
@@ -2457,11 +2458,12 @@ def _importar_parcelas_wb(wb, uid):
     for row in ws.iter_rows(min_row=2, values_only=True):
         if not any(row): continue
         nombre    = str(row[ci_nombre]    or '').strip()
+        comunidad = str(row[ci_comunidad] or '').strip() if ci_comunidad is not None else ''
         prov_nom  = str(row[ci_provincia] or '').strip()
         mun_nom   = str(row[ci_municipio] or '').strip()
         poligono  = str(row[ci_poligono]  or '').strip()
         parcela   = str(row[ci_parcela]   or '').strip()
-        recinto   = str(row[ci_recinto]   or '').strip() if ci_recinto is not None else '1'
+        recinto   = str(row[ci_recinto]   or '').strip() if ci_recinto is not None else ''
 
         if not nombre or not poligono or not parcela or not prov_nom or not mun_nom:
             errores.append(f"Fila incompleta: '{nombre or '?'}'")
@@ -2485,11 +2487,11 @@ def _importar_parcelas_wb(wb, uid):
                 pass
 
         cur.execute('''INSERT INTO parcelas
-            (user_id, nombre_finca, poligono, parcela_num, recinto,
+            (user_id, nombre_finca, comunidad, poligono, parcela_num, recinto,
              provincia_cod, provincia_nombre, municipio_cod, municipio_nombre,
              superficie_ha, uso_sigpac, activa)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,1)''',
-            (uid, nombre, poligono, parcela, recinto or '1',
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)''',
+            (uid, nombre, comunidad or None, poligono, parcela, recinto or None,
              prov_cod, prov_nom, mun_cod, mun_nom, sup_ha, uso_sigpac))
         n_ok += 1
 

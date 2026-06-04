@@ -546,33 +546,36 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 <div style={{ background: '#fefce8', border: '1.5px solid #fde68a', borderRadius: 'var(--radius-lg)', padding: '14px 16px', marginBottom: 16 }}>
                     <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#78350f', marginBottom: 8 }}>📋 ¿Cómo preparar tu hoja de cálculo?</div>
                     <p style={{ margin: '0 0 10px', fontSize: '0.82rem', color: '#92400e', lineHeight: 1.6 }}>
-                        Necesitas <strong>5 columnas</strong> en la primera fila de tu hoja:
+                        Necesitas estas columnas en la primera fila (los nombres exactos no importan, la app las detecta automáticamente):
                     </p>
-                    <div style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: 8, overflow: 'hidden', marginBottom: 10 }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                    <div style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: 8, overflow: 'auto', marginBottom: 10 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.79rem', minWidth: 480 }}>
                             <thead>
                                 <tr style={{ background: '#fde68a' }}>
-                                    {['Nombre', 'Provincia', 'Municipio', 'Polígono', 'Parcela'].map(h => (
-                                        <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: '#78350f', fontWeight: 700 }}>{h}</th>
+                                    {['Nombre', 'Comunidad', 'Provincia', 'Municipio', 'Polígono', 'Parcela', 'Recinto'].map(h => (
+                                        <th key={h} style={{ padding: '7px 8px', textAlign: 'left', color: '#78350f', fontWeight: 700, whiteSpace: 'nowrap' }}>{h}</th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
-                                    {['El Río', 'Ciudad Real', 'Tomelloso', '12', '45'].map((v,i) => (
-                                        <td key={i} style={{ padding: '7px 10px', color: '#92400e', borderTop: '1px solid #fde68a' }}>{v}</td>
+                                    {['El Río', 'Castilla-La Mancha', 'Ciudad Real', 'Tomelloso', '12', '45', '1'].map((v,i) => (
+                                        <td key={i} style={{ padding: '7px 8px', color: '#92400e', borderTop: '1px solid #fde68a', whiteSpace: 'nowrap' }}>{v}</td>
                                     ))}
                                 </tr>
                                 <tr style={{ background: '#fffbeb' }}>
-                                    {['La Loma', 'Ciudad Real', 'Tomelloso', '12', '46'].map((v,i) => (
-                                        <td key={i} style={{ padding: '7px 10px', color: '#92400e', borderTop: '1px solid #fde68a' }}>{v}</td>
+                                    {['Sixto', 'Castilla-La Mancha', 'Ciudad Real', 'Sta. Cruz Mudela', '50', '62', '4'].map((v,i) => (
+                                        <td key={i} style={{ padding: '7px 8px', color: '#92400e', borderTop: '1px solid #fde68a', whiteSpace: 'nowrap' }}>{v}</td>
                                     ))}
                                 </tr>
                             </tbody>
                         </table>
                     </div>
+                    <p style={{ margin: '0 0 6px', fontSize: '0.78rem', color: '#78350f', lineHeight: 1.5 }}>
+                        ✅ <strong>Comunidad</strong> y <strong>Recinto</strong> son opcionales — si no los pones la app usa valores por defecto.
+                    </p>
                     <p style={{ margin: 0, fontSize: '0.78rem', color: '#78350f', lineHeight: 1.5 }}>
-                        ✅ El resto (superficie, uso del suelo…) lo busca la app automáticamente en el SIGPAC.
+                        ✅ Superficie y uso del suelo los busca la app automáticamente en el SIGPAC.
                     </p>
                 </div>
 
