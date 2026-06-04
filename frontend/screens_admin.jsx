@@ -9,6 +9,7 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
     const [formError, setFormError] = useState('');
     const [confirmDel, setConfirmDel] = useState(null); // user id a desactivar
     const [confirmReset, setConfirmReset] = useState(null); // user id a resetear cuaderno
+    const [confirmPurge, setConfirmPurge] = useState(null); // user id a borrar permanentemente
     const [pdfCampana, setPdfCampana] = useState('2025/2026');
 
     const CAMPANAS = ['2023/2024', '2024/2025', '2025/2026', '2026/2027'];
@@ -81,6 +82,19 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
             credentials: 'include',
         });
         showToast('Usuario reactivado');
+        loadUsers();
+    };
+
+    const handlePurgeUser = async (uid, nombre) => {
+        try {
+            const res = await fetch(`/api/admin/users/${uid}/delete-permanent`, {
+                method: 'DELETE', credentials: 'include',
+            });
+            const d = await res.json();
+            if (d.ok) showToast(`🗑 Cuenta de ${nombre} eliminada`);
+            else showToast('Error al eliminar la cuenta');
+        } catch { showToast('Error de conexión'); }
+        setConfirmPurge(null);
         loadUsers();
     };
 
@@ -353,6 +367,25 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
                                         onClick={() => handleReactivate(u.id)}>
                                         ✓ Reactivar
                                     </button>
+                                )}
+                                {u.role !== 'admin' && (
+                                    confirmPurge === u.id ? (
+                                        <>
+                                            <button className="btn-ghost" style={{ flex:1, minWidth:120, fontSize:'0.82rem', minHeight:40, padding:'10px 14px', color:'#dc2626', borderColor:'rgba(220,38,38,0.4)', fontWeight:700 }}
+                                                onClick={() => handlePurgeUser(u.id, u.nombre)}>
+                                                ☠️ Eliminar cuenta
+                                            </button>
+                                            <button className="btn-ghost" style={{ fontSize:'0.82rem', minHeight:40, padding:'10px 14px' }}
+                                                onClick={() => setConfirmPurge(null)}>
+                                                Cancelar
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <button className="btn-ghost" style={{ fontSize:'0.82rem', minHeight:40, padding:'10px 14px', color:'#dc2626', borderColor:'rgba(220,38,38,0.25)' }}
+                                            onClick={() => setConfirmPurge(u.id)}>
+                                            ☠️ Borrar cuenta
+                                        </button>
+                                    )
                                 )}
                             </div>
                         )}
