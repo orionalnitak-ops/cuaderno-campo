@@ -208,21 +208,18 @@ function ScreenParcelas({ campana, showToast }) {
         return { provCod, munCod };
     };
 
-    // Obtiene los números de recinto disponibles en SIGPAC para un pol/par.
-    const _getRecintosNums = async (provCod, munCod, pol, par) => {
+    // Obtiene detalle de cada recinto (num, superficie_ha, uso_sigpac) para un pol/par.
+    // Usa el endpoint /api/sigpac/recintos-detalle que llama a intersección + Catastro por recinto.
+    const _getRecintosDetalle = async (provCod, munCod, pol, par) => {
         try {
             const r = await fetch(
-                `/api/sigpac/recintos?provincia=${provCod}&municipio=${munCod}&poligono=${pol}&parcela=${par}&agregado=0&zona=0`,
+                `/api/sigpac/recintos-detalle?provincia=${provCod}&municipio=${munCod}&poligono=${pol}&parcela=${par}`,
                 { credentials: 'include' }
             );
             const d = await r.json();
-            const nums = (d.features || [])
-                .map(f => f.properties?.nombre)
-                .filter(n => n != null)
-                .map(Number)
-                .sort((a, b) => a - b);
-            return nums.length > 0 ? nums : [1];
-        } catch { return [1]; }
+            if (Array.isArray(d) && d.length > 0) return d;
+        } catch { /* fallback below */ }
+        return [{ num: 1, superficie_ha: null, uso_sigpac: '' }];
     };
 
     // Llama a /api/sigpac/datos para un recinto concreto y guarda el resultado en BD.
@@ -311,12 +308,12 @@ function ScreenParcelas({ campana, showToast }) {
         try {
             const { provCod, munCod } = await _resolveProvMun(selected);
             if (!provCod || !munCod) { showToast('⚠️ No se encontró el código de provincia/municipio'); return; }
-            const nums = await _getRecintosNums(provCod, munCod, selected.poligono, selected.parcela_num);
-            if (nums.length > 1) {
-                setRecintosPicker({ mode:'detail', provCod, munCod, poligono: selected.poligono, parcela: selected.parcela_num, nums });
+            const recintos = await _getRecintosDetalle(provCod, munCod, selected.poligono, selected.parcela_num);
+            if (recintos.length > 1) {
+                setRecintosPicker({ mode:'detail', provCod, munCod, poligono: selected.poligono, parcela: selected.parcela_num, recintos });
                 return;
             }
-            const body = await _guardarDatosSigpac(selected, provCod, munCod, nums[0] || 1);
+            const body = await _guardarDatosSigpac(selected, provCod, munCod, recintos[0].num || 1);
             if (!body) { showToast('⚠️ SIGPAC no devolvió datos'); return; }
             setSelected(body);
             fetchParcelas();
@@ -460,13 +457,13 @@ function ScreenParcelas({ campana, showToast }) {
         setSigpacState('loading');
         try {
             // Detectar recintos automáticamente
-            const nums = await _getRecintosNums(form.provincia_cod, form.municipio_cod, form.poligono, form.parcela_num);
-            if (nums.length > 1) {
-                setRecintosPicker({ mode:'form', provCod: form.provincia_cod, munCod: form.municipio_cod, poligono: form.poligono, parcela: form.parcela_num, nums });
+            const recintos = await _getRecintosDetalle(form.provincia_cod, form.municipio_cod, form.poligono, form.parcela_num);
+            if (recintos.length > 1) {
+                setRecintosPicker({ mode:'form', provCod: form.provincia_cod, munCod: form.municipio_cod, poligono: form.poligono, parcela: form.parcela_num, recintos });
                 setSigpacState('idle');
                 return;
             }
-            const rec = String(nums[0] || form.recinto || '1');
+            const rec = String(recintos[0]?.num || form.recinto || '1');
             const res = await fetch(
                 `/api/sigpac/datos?provincia=${form.provincia_cod}&municipio=${form.municipio_cod}&poligono=${form.poligono}&parcela=${form.parcela_num}&recinto=${rec}`,
                 { credentials: 'include' }
@@ -1130,42 +1127,74 @@ function ScreenParcelas({ campana, showToast }) {
             )}
 
             {/* Picker de recintos — aparece cuando SIGPAC detecta más de uno */}
-            {recintosPicker && (
-                <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:9999,
-                    display:'flex', alignItems:'flex-end', justifyContent:'center' }}
-                    onClick={() => setRecintosPicker(null)}>
-                    <div style={{ background:'#fff', borderRadius:'20px 20px 0 0', padding:'28px 20px 36px',
-                        width:'100%', maxWidth:480 }}
-                        onClick={e => e.stopPropagation()}>
-                        <div style={{ textAlign:'center', marginBottom:20 }}>
-                            <div style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', color:'#1a2e1a' }}>
-                                Pol {recintosPicker.poligono} / Par {recintosPicker.parcela}
+            {recintosPicker && (() => {
+                const recs = recintosPicker.recintos || [];
+                // Comprueba si los datos de superficie son distintos entre recintos (subparcelas catastrales distintas)
+                const sups = recs.map(r => r.superficie_ha).filter(s => s != null);
+                const supIndividual = sups.length === recs.length && new Set(sups).size > 1;
+                const supTotal = sups.length > 0 ? sups[0] : null; // todos iguales → es la parcela total
+                const fmtSup = s => s != null ? (s >= 1 ? `${s.toFixed(4)} ha` : `${Math.round(s * 10000)} m²`) : null;
+                return (
+                    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:9999,
+                        display:'flex', alignItems:'flex-end', justifyContent:'center' }}
+                        onClick={() => setRecintosPicker(null)}>
+                        <div style={{ background:'#fff', borderRadius:'20px 20px 0 0', padding:'28px 20px 36px',
+                            width:'100%', maxWidth:480 }}
+                            onClick={e => e.stopPropagation()}>
+                            <div style={{ textAlign:'center', marginBottom:20 }}>
+                                <div style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', color:'#1a2e1a' }}>
+                                    Pol {recintosPicker.poligono} / Par {recintosPicker.parcela}
+                                </div>
+                                <div style={{ color:'#6b7280', fontSize:'0.83rem', marginTop:4 }}>
+                                    {recs.length} recintos — elige el que corresponde a esta parcela
+                                </div>
+                                {!supIndividual && supTotal && (
+                                    <div style={{ color:'#9ca3af', fontSize:'0.75rem', marginTop:4 }}>
+                                        Parcela catastral: {fmtSup(supTotal)} en total
+                                    </div>
+                                )}
                             </div>
-                            <div style={{ color:'#6b7280', fontSize:'0.83rem', marginTop:6 }}>
-                                SIGPAC encontró {recintosPicker.nums.length} recintos — elige el que corresponde a esta parcela
+                            <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:16 }}>
+                                {recs.map(rec => (
+                                    <button key={rec.num} onClick={() => onPickRecinto(rec.num)} style={{
+                                        background:'#fff', border:'2px solid #00694c', color:'#00694c',
+                                        borderRadius:12, padding:'14px 20px', fontSize:'1rem',
+                                        fontWeight:700, cursor:'pointer', textAlign:'left',
+                                        display:'flex', justifyContent:'space-between', alignItems:'center',
+                                    }}>
+                                        <span style={{ fontSize:'1.1rem', fontWeight:800 }}>Recinto {rec.num}</span>
+                                        <span style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2 }}>
+                                            {supIndividual && rec.superficie_ha != null && (
+                                                <span style={{ fontSize:'0.9rem', fontWeight:700, color:'#1a2e1a' }}>
+                                                    {fmtSup(rec.superficie_ha)}
+                                                </span>
+                                            )}
+                                            {rec.uso_sigpac && (
+                                                <span style={{ fontSize:'0.75rem', color:'#6b7280', fontWeight:500 }}>
+                                                    {rec.uso_sigpac.split('-').slice(1).join('-').trim() || rec.uso_sigpac}
+                                                </span>
+                                            )}
+                                        </span>
+                                    </button>
+                                ))}
                             </div>
+                            {!supIndividual && (
+                                <div style={{ fontSize:'0.72rem', color:'#9ca3af', textAlign:'center', marginBottom:12, lineHeight:1.4 }}>
+                                    La API SIGPAC 2026 no devuelve superficie individual por recinto.
+                                    Consulta tu ficha SIGPAC para identificar el recinto correcto.
+                                </div>
+                            )}
+                            <button onClick={() => setRecintosPicker(null)} style={{
+                                width:'100%', padding:'13px', background:'#f3f4f6',
+                                border:'none', borderRadius:10, color:'#6b7280',
+                                fontWeight:600, cursor:'pointer', fontSize:'0.9rem',
+                            }}>
+                                Cancelar
+                            </button>
                         </div>
-                        <div style={{ display:'flex', flexWrap:'wrap', gap:10, justifyContent:'center', marginBottom:16 }}>
-                            {recintosPicker.nums.map(n => (
-                                <button key={n} onClick={() => onPickRecinto(n)} style={{
-                                    background:'#00694c', color:'#fff', border:'none',
-                                    borderRadius:12, padding:'16px 28px', fontSize:'1.05rem',
-                                    fontWeight:800, cursor:'pointer', minWidth:90,
-                                }}>
-                                    Rec {n}
-                                </button>
-                            ))}
-                        </div>
-                        <button onClick={() => setRecintosPicker(null)} style={{
-                            width:'100%', padding:'13px', background:'#f3f4f6',
-                            border:'none', borderRadius:10, color:'#6b7280',
-                            fontWeight:600, cursor:'pointer', fontSize:'0.9rem',
-                        }}>
-                            Cancelar
-                        </button>
                     </div>
-                </div>
-            )}
+                );
+            })()}
         </div>
     );
 }
