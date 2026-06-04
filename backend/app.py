@@ -441,6 +441,32 @@ def admin_switch_back():
     session.pop('impersonate_id', None)
     return jsonify({"status": "ok"})
 
+@app.route('/api/admin/users/<int:uid>/reset-cuaderno', methods=['POST'])
+@login_required
+@admin_required
+def admin_reset_cuaderno(uid):
+    """Borra todos los datos agrícolas del usuario (parcelas, tratamientos, etc.) conservando cuenta y explotación."""
+    conn = get_db()
+    row = conn.execute("SELECT id, nombre FROM users WHERE id=?", (uid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "Usuario no encontrado"}), 404
+    tables = [
+        'tratamientos', 'fertilizacion', 'labores', 'compras',
+        'cultivos_campana', 'parcelas',
+    ]
+    deleted = {}
+    for t in tables:
+        try:
+            n = conn.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,)).rowcount
+            deleted[t] = n
+        except Exception as e:
+            deleted[t] = f'error: {e}'
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "usuario": row[1], "eliminado": deleted})
+
+
 @app.route('/api/admin/users/<int:uid>/export/pdf')
 @login_required
 @admin_required
