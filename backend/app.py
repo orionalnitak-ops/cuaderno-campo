@@ -474,26 +474,26 @@ def admin_switch_back():
 @login_required
 @admin_required
 def admin_reset_cuaderno(uid):
-    """Borra todos los datos agrícolas del usuario (parcelas, tratamientos, etc.) conservando cuenta y explotación."""
+    """Borra todos los datos agrícolas del usuario conservando cuenta y explotación."""
     conn = get_db()
-    row = conn.execute("SELECT id, nombre FROM users WHERE id=?", (uid,)).fetchone()
-    if not row:
+    try:
+        row = conn.execute("SELECT nombre FROM users WHERE id=?", (uid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Usuario no encontrado"}), 404
+        nombre = row[0]
+        conn.execute("DELETE FROM cultivos_campana WHERE parcela_id IN (SELECT id FROM parcelas WHERE user_id=?)", (uid,))
+        for t in ['riego','abonado','cosecha','tratamientos','fertilizacion',
+                  'labores','compras','equipos','aplicadores','parcelas']:
+            conn.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))
+        conn.commit()
         conn.close()
-        return jsonify({"error": "Usuario no encontrado"}), 404
-    tables = [
-        'tratamientos', 'fertilizacion', 'labores', 'compras',
-        'cultivos_campana', 'parcelas',
-    ]
-    deleted = {}
-    for t in tables:
-        try:
-            n = conn.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,)).rowcount
-            deleted[t] = n
-        except Exception as e:
-            deleted[t] = f'error: {e}'
-    conn.commit()
-    conn.close()
-    return jsonify({"ok": True, "usuario": row[1], "eliminado": deleted})
+        return jsonify({"ok": True, "usuario": nombre})
+    except Exception as e:
+        try: conn.rollback()
+        except: pass
+        conn.close()
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route('/api/admin/users/<int:uid>/export/pdf')
