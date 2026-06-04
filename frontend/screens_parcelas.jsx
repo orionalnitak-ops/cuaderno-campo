@@ -178,18 +178,15 @@ function ScreenParcelas({ campana, showToast }) {
     };
     const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
 
-    // Resuelve prov/mun codes y devuelve datos SIGPAC para una parcela.
-    // munCache = Map<provCod, lista_municipios> para no repetir la llamada entre parcelas.
-    const _fetchSigpacParaUna = async (p, munCache = new Map()) => {
+    // Resuelve provincia_cod y municipio_cod para una parcela.
+    const _resolveProvMun = async (p, munCache = new Map()) => {
         let provCod = p.provincia_cod || '';
         let munCod  = p.municipio_cod  || '';
-
         if (!provCod && p.provincia_nombre) {
             const key = norm(p.provincia_nombre);
             const cod = PROV_CODIGOS[key];
-            if (cod) {
-                provCod = String(cod);
-            } else {
+            if (cod) { provCod = String(cod); }
+            else {
                 try {
                     const r = await fetch('/api/sigpac/provincias', { credentials: 'include' });
                     const d = await r.json();
@@ -208,9 +205,54 @@ function ScreenParcelas({ campana, showToast }) {
             const found = munCache.get(provCod).find(m => norm(m.nombre) === munNorm);
             munCod = found ? String(found.codigo) : '';
         }
+        return { provCod, munCod };
+    };
 
+    // Obtiene los números de recinto disponibles en SIGPAC para un pol/par.
+    const _getRecintosNums = async (provCod, munCod, pol, par) => {
+        try {
+            const r = await fetch(
+                `/api/sigpac/recintos?provincia=${provCod}&municipio=${munCod}&poligono=${pol}&parcela=${par}&agregado=0&zona=0`,
+                { credentials: 'include' }
+            );
+            const d = await r.json();
+            const nums = (d.features || [])
+                .map(f => f.properties?.nombre)
+                .filter(n => n != null)
+                .map(Number)
+                .sort((a, b) => a - b);
+            return nums.length > 0 ? nums : [1];
+        } catch { return [1]; }
+    };
+
+    // Llama a /api/sigpac/datos para un recinto concreto y guarda el resultado en BD.
+    const _guardarDatosSigpac = async (parcelaObj, provCod, munCod, recNum) => {
+        const params = new URLSearchParams({
+            provincia: provCod, municipio: munCod,
+            poligono: parcelaObj.poligono, parcela: parcelaObj.parcela_num, recinto: String(recNum),
+        });
+        const res = await fetch(`/api/sigpac/datos?${params}`, { credentials: 'include' });
+        const d = await res.json();
+        if (d.error) return null;
+        const body = {
+            ...parcelaObj,
+            provincia_cod: provCod,
+            municipio_cod: munCod,
+            recinto: String(recNum),
+            superficie_ha: d.superficie_ha != null ? d.superficie_ha : parcelaObj.superficie_ha,
+            uso_sigpac: d.uso_sigpac || parcelaObj.uso_sigpac,
+        };
+        await fetch(`/api/parcelas/${parcelaObj.id}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body), credentials: 'include',
+        });
+        return body;
+    };
+
+    // Resuelve prov/mun y devuelve datos SIGPAC. Usado por "Actualizar todo".
+    const _fetchSigpacParaUna = async (p, munCache = new Map()) => {
+        const { provCod, munCod } = await _resolveProvMun(p, munCache);
         if (!provCod || !munCod) return { error: 'sin_codigos' };
-
         const params = new URLSearchParams({
             provincia: provCod, municipio: munCod,
             poligono: p.poligono, parcela: p.parcela_num, recinto: p.recinto || '1',
@@ -223,24 +265,59 @@ function ScreenParcelas({ campana, showToast }) {
 
     const [syncingAll, setSyncingAll] = useState(false);
     const [syncProgress, setSyncProgress] = useState('');
+    const [recintosPicker, setRecintosPicker] = useState(null);
+    // null | { mode:'detail'|'form', provCod, munCod, poligono, parcela, nums:[1,3,4] }
+
+    // Handler: usuario elige recinto del picker
+    const onPickRecinto = async (recNum) => {
+        const ctx = recintosPicker;
+        setRecintosPicker(null);
+        if (ctx.mode === 'detail') {
+            setSigpacSyncing(true);
+            try {
+                const body = await _guardarDatosSigpac(selected, ctx.provCod, ctx.munCod, recNum);
+                if (!body) { showToast('SIGPAC no devolvió datos para ese recinto'); return; }
+                setSelected(body);
+                fetchParcelas();
+                showToast('✅ Datos SIGPAC actualizados');
+            } catch { showToast('Error al consultar SIGPAC'); }
+            finally { setSigpacSyncing(false); }
+        } else {
+            setSigpacState('loading');
+            try {
+                const rec = String(recNum);
+                const res = await fetch(
+                    `/api/sigpac/datos?provincia=${ctx.provCod}&municipio=${ctx.munCod}&poligono=${ctx.poligono}&parcela=${ctx.parcela}&recinto=${rec}`,
+                    { credentials: 'include' }
+                );
+                const d = await res.json();
+                const sup = d.superficie_ha ? String(d.superficie_ha) : '';
+                const uso = d.uso_sigpac || '';
+                if (sup || uso) {
+                    setForm(f => ({ ...f, recinto: rec, superficie_ha: sup || f.superficie_ha, uso_sigpac: uso || f.uso_sigpac }));
+                    setSigpacState('ok');
+                    showToast(`✅ SIGPAC: ${[sup && `${sup} ha`, uso].filter(Boolean).join(' · ')}`);
+                } else {
+                    setSigpacState('error');
+                    showToast('Sin datos para ese recinto');
+                }
+            } catch { setSigpacState('error'); showToast('Error al consultar SIGPAC'); }
+        }
+    };
 
     const syncSigpac = async () => {
         if (!selected.poligono || !selected.parcela_num) return;
         setSigpacSyncing(true);
         try {
-            const result = await _fetchSigpacParaUna(selected);
-            if (result.error) { showToast('⚠️ No se encontró el código de provincia/municipio'); return; }
-            const body = {
-                ...selected,
-                provincia_cod: result.provCod,
-                municipio_cod: result.munCod,
-                superficie_ha: result.superficie_ha != null ? result.superficie_ha : selected.superficie_ha,
-                uso_sigpac:    result.uso_sigpac || selected.uso_sigpac,
-            };
-            await fetch(`/api/parcelas/${selected.id}`, {
-                method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body), credentials: 'include',
-            });
+            const { provCod, munCod } = await _resolveProvMun(selected);
+            if (!provCod || !munCod) { showToast('⚠️ No se encontró el código de provincia/municipio'); return; }
+            const nums = await _getRecintosNums(provCod, munCod, selected.poligono, selected.parcela_num);
+            if (nums.length > 1) {
+                setRecintosPicker({ mode:'detail', provCod, munCod, poligono: selected.poligono, parcela: selected.parcela_num, nums });
+                return;
+            }
+            const body = await _guardarDatosSigpac(selected, provCod, munCod, nums[0] || 1);
+            if (!body) { showToast('⚠️ SIGPAC no devolvió datos'); return; }
             setSelected(body);
             fetchParcelas();
             showToast('✅ Datos SIGPAC actualizados');
@@ -382,34 +459,26 @@ function ScreenParcelas({ campana, showToast }) {
         }
         setSigpacState('loading');
         try {
-            const rec = form.recinto || '1';
+            // Detectar recintos automáticamente
+            const nums = await _getRecintosNums(form.provincia_cod, form.municipio_cod, form.poligono, form.parcela_num);
+            if (nums.length > 1) {
+                setRecintosPicker({ mode:'form', provCod: form.provincia_cod, munCod: form.municipio_cod, poligono: form.poligono, parcela: form.parcela_num, nums });
+                setSigpacState('idle');
+                return;
+            }
+            const rec = String(nums[0] || form.recinto || '1');
             const res = await fetch(
                 `/api/sigpac/datos?provincia=${form.provincia_cod}&municipio=${form.municipio_cod}&poligono=${form.poligono}&parcela=${form.parcela_num}&recinto=${rec}`,
                 { credentials: 'include' }
             );
             const d = await res.json();
-            if (d.error) {
-                setSigpacState('error');
-                showToast(`Error SIGPAC: ${d.error}`);
-                return;
-            }
+            if (d.error) { setSigpacState('error'); showToast(`Error SIGPAC: ${d.error}`); return; }
             const sup = d.superficie_ha ? String(d.superficie_ha) : '';
             const uso = d.uso_sigpac || '';
             if (sup || uso) {
-                setForm(f => ({
-                    ...f,
-                    superficie_ha: sup || f.superficie_ha,
-                    uso_sigpac: uso || f.uso_sigpac,
-                }));
-                const partes = [];
-                if (sup) partes.push(`${sup} ha`);
-                if (uso) partes.push(uso);
+                setForm(f => ({ ...f, recinto: rec, superficie_ha: sup || f.superficie_ha, uso_sigpac: uso || f.uso_sigpac }));
                 setSigpacState('ok');
-                showToast(`✅ SIGPAC: ${partes.join(' · ')}`);
-            } else if (d.num_recintos > 0) {
-                const detClaves = Object.keys(d._detail || {}).slice(0, 6).join(', ');
-                setSigpacState('error');
-                showToast(`SIGPAC: ${d.num_recintos} rec. dn_pk=${d._detail?.dn_pk ?? d.dn_pk ?? '?'} det=[${detClaves || 'vacío'}]`);
+                showToast(`✅ SIGPAC: ${[sup && `${sup} ha`, uso].filter(Boolean).join(' · ')}`);
             } else {
                 setSigpacState('error');
                 showToast(`Sin datos SIGPAC. prov=${form.provincia_cod} mun=${form.municipio_cod} pol=${form.poligono} par=${form.parcela_num}`);
@@ -1056,6 +1125,44 @@ function ScreenParcelas({ campana, showToast }) {
                                 </button>
                             </div>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Picker de recintos — aparece cuando SIGPAC detecta más de uno */}
+            {recintosPicker && (
+                <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:9999,
+                    display:'flex', alignItems:'flex-end', justifyContent:'center' }}
+                    onClick={() => setRecintosPicker(null)}>
+                    <div style={{ background:'#fff', borderRadius:'20px 20px 0 0', padding:'28px 20px 36px',
+                        width:'100%', maxWidth:480 }}
+                        onClick={e => e.stopPropagation()}>
+                        <div style={{ textAlign:'center', marginBottom:20 }}>
+                            <div style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', color:'#1a2e1a' }}>
+                                Pol {recintosPicker.poligono} / Par {recintosPicker.parcela}
+                            </div>
+                            <div style={{ color:'#6b7280', fontSize:'0.83rem', marginTop:6 }}>
+                                SIGPAC encontró {recintosPicker.nums.length} recintos — elige el que corresponde a esta parcela
+                            </div>
+                        </div>
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:10, justifyContent:'center', marginBottom:16 }}>
+                            {recintosPicker.nums.map(n => (
+                                <button key={n} onClick={() => onPickRecinto(n)} style={{
+                                    background:'#00694c', color:'#fff', border:'none',
+                                    borderRadius:12, padding:'16px 28px', fontSize:'1.05rem',
+                                    fontWeight:800, cursor:'pointer', minWidth:90,
+                                }}>
+                                    Rec {n}
+                                </button>
+                            ))}
+                        </div>
+                        <button onClick={() => setRecintosPicker(null)} style={{
+                            width:'100%', padding:'13px', background:'#f3f4f6',
+                            border:'none', borderRadius:10, color:'#6b7280',
+                            fontWeight:600, cursor:'pointer', fontSize:'0.9rem',
+                        }}>
+                            Cancelar
+                        </button>
                     </div>
                 </div>
             )}
