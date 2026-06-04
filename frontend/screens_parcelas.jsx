@@ -120,6 +120,7 @@ function ScreenParcelas({ campana, showToast }) {
     const [form, setForm]   = useState(EMPTY_FORM);
     const [editId, setEditId] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [sigpacSyncing, setSigpacSyncing] = useState(false);
 
     // SIGPAC search (edit form)
     const [provincias, setProvincias]     = useState([]);
@@ -159,6 +160,36 @@ function ScreenParcelas({ campana, showToast }) {
             setSelected(p => ({ ...p, ...body }));
         } catch { showToast('Error al guardar'); }
         finally { setWizSaving(false); }
+    };
+
+    const syncSigpac = async () => {
+        if (!selected.poligono || !selected.parcela_num) return;
+        setSigpacSyncing(true);
+        try {
+            const params = new URLSearchParams({
+                provincia: selected.provincia_cod || '',
+                municipio: selected.municipio_cod || '',
+                poligono:  selected.poligono,
+                parcela:   selected.parcela_num,
+                recinto:   selected.recinto || '1',
+            });
+            const res = await fetch(`/api/sigpac/datos?${params}`, { credentials: 'include' });
+            const d = await res.json();
+            if (d.error) { showToast('⚠️ SIGPAC no devolvió datos'); return; }
+            const body = {
+                ...selected,
+                superficie_ha: d.superficie_ha != null ? d.superficie_ha : selected.superficie_ha,
+                uso_sigpac:    d.uso_sigpac    || selected.uso_sigpac,
+            };
+            await fetch(`/api/parcelas/${selected.id}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body), credentials: 'include',
+            });
+            setSelected(body);
+            fetchParcelas();
+            showToast('✅ Datos SIGPAC actualizados');
+        } catch { showToast('Error al consultar SIGPAC'); }
+        finally { setSigpacSyncing(false); }
     };
 
     const wizNext = async () => {
@@ -499,6 +530,17 @@ function ScreenParcelas({ campana, showToast }) {
                                         </div>
                                     ))}
                                 </div>
+                                {selected.poligono && selected.parcela_num && (!selected.superficie_ha || !selected.uso_sigpac) && (
+                                    <div style={{ background:'#f0fdf4', border:'1px solid #86efac', borderRadius:10, padding:'14px', marginBottom:12, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                                        <div>
+                                            <div style={{ fontWeight:700, fontSize:'0.85rem', color:'#166534' }}>Superficie o uso sin datos</div>
+                                            <div style={{ fontSize:'0.75rem', color:'#15803d', marginTop:2 }}>Consultando SIGPAC automáticamente</div>
+                                        </div>
+                                        <button onClick={syncSigpac} disabled={sigpacSyncing} style={{ background:'#16a34a', border:'none', borderRadius:8, padding:'8px 12px', color:'#fff', cursor: sigpacSyncing ? 'default' : 'pointer', fontWeight:700, fontSize:'0.78rem', opacity: sigpacSyncing ? 0.6 : 1 }}>
+                                            {sigpacSyncing ? '…' : '🔄 Actualizar'}
+                                        </button>
+                                    </div>
+                                )}
                                 {!selected.poligono && (
                                     <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'14px', marginBottom:12, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                                         <div>
