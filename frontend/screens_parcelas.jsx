@@ -359,18 +359,41 @@ function ScreenParcelas({ campana, showToast }) {
         setShowForm(true); setSigpacState('idle');
         setProvincias([]); setMunicipios([]); setPoligonos([]); setParcelasSig([]);
     };
-    const openEdit = (p) => {
+    const openEdit = async (p) => {
+        const norm = s => (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+
+        // Resolver provincia_cod desde nombre si falta
+        let provCod = p.provincia_cod || '';
+        if (!provCod && p.provincia_nombre) {
+            const found = PROVINCIAS_ES.find(pr => norm(pr.nombre) === norm(p.provincia_nombre));
+            if (found) provCod = found.cod;
+        }
+
+        // Resolver municipio_cod desde nombre si falta
+        let munCod = p.municipio_cod || '';
+        let munList = [];
+        if (provCod) {
+            try {
+                const r = await fetch(`/api/sigpac/municipios?provincia_cod=${provCod}`, { credentials: 'include' });
+                munList = await r.json();
+                setMunicipios(Array.isArray(munList) ? munList : []);
+                if (!munCod && p.municipio_nombre) {
+                    const found = (munList||[]).find(m => norm(m.nombre) === norm(p.municipio_nombre));
+                    if (found) munCod = String(found.codigo);
+                }
+            } catch {}
+        }
+
         setForm({
             nombre_finca: p.nombre_finca||'', comunidad: p.comunidad||'07-Castilla-La Mancha',
-            provincia_cod: p.provincia_cod||'', provincia_nombre: p.provincia_nombre||'',
-            municipio_cod: p.municipio_cod||'', municipio_nombre: p.municipio_nombre||'',
+            provincia_cod: provCod, provincia_nombre: p.provincia_nombre||'',
+            municipio_cod: munCod, municipio_nombre: p.municipio_nombre||'',
             poligono: p.poligono||'', parcela_num: p.parcela_num||'', recinto: p.recinto||'',
             superficie_ha: p.superficie_ha||'', uso_sigpac: p.uso_sigpac||'',
             sistema_explotacion: p.sistema_explotacion||'Secano',
             masa_agua_cercana: !!p.masa_agua_cercana, notas: p.notas||'',
         });
-        setMunicipios([]); setPoligonos([]); setParcelasSig([]);
-        if (p.provincia_cod) loadMunicipios(p.provincia_cod);
+        setPoligonos([]); setParcelasSig([]);
         setEditId(p.id); setShowForm(true); setSigpacState('idle');
     };
 
