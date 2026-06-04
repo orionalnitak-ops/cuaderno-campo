@@ -1,7 +1,7 @@
 import io
 import datetime
 from flask import send_file
-from db import get_db, rows_to_list, is_pac_eligible
+from db import get_db, is_pac_eligible
 
 try:
     from openpyxl import Workbook
