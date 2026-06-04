@@ -1766,15 +1766,28 @@ def sigpac_recintos():
 
 # Mapa de código cultivo Catastro → uso SIGPAC
 _CATASTRO_A_SIGPAC = {
-    'O-': 'OV-OLIVAR',  'OL': 'OV-OLIVAR',
-    'VI': 'VI-VIÑEDO',  'V-': 'VI-VIÑEDO',
-    'TA': 'TA-TIERRA ARABLE', 'TH': 'TA-TIERRA ARABLE',
+    # Labor/cereal
+    'C-': 'TA-TIERRA ARABLE', 'CR': 'TA-TIERRA ARABLE', 'CM': 'TA-TIERRA ARABLE',
+    'TA': 'TA-TIERRA ARABLE',
+    # Huerta
+    'TH': 'TH-HUERTA', 'HR': 'TH-HUERTA', 'HS': 'TH-HUERTA',
+    # Olivar
+    'O-': 'OV-OLIVAR', 'OL': 'OV-OLIVAR', 'OR': 'OV-OLIVAR',
+    # Viñedo
+    'VI': 'VI-VIÑEDO', 'V-': 'VI-VIÑEDO', 'VR': 'VI-VIÑEDO',
+    # Cítricos
     'CF': 'CF-CITRICOS', 'CI': 'CI-CITRICOS-INVER',
-    'CS': 'CS-CULTIVOS SIN ESPECIF',
+    # Frutales
     'FF': 'FL-FRUTOS SECOS', 'FL': 'FL-FRUTOS SECOS',
-    'FY': 'FY-FRUTALES',
+    'AL': 'FL-FRUTOS SECOS', 'AM': 'FL-FRUTOS SECOS',
+    'FY': 'FY-FRUTALES', 'FR': 'FY-FRUTALES', 'FS': 'FY-FRUTALES',
+    # Cultivos sin especificar
+    'CS': 'CS-CULTIVOS SIN ESPECIF',
+    # Pastos
     'PA': 'PA-PASTO', 'PR': 'PR-PASTO ARBUSTIVO', 'PS': 'PS-PASTIZAL',
-    'CA': 'CA-VIALES', 'IM': 'IM-IMPRODUCTIVO',
+    'MT': 'PR-PASTO ARBUSTIVO',
+    # Improductivo/otros
+    'CA': 'CA-VIALES', 'IM': 'IM-IMPRODUCTIVO', 'FO': 'IM-IMPRODUCTIVO',
     'ZU': 'ZU-ZONA URBANA', 'AG': 'AG-CORRIENTE AGUA',
 }
 
@@ -1784,14 +1797,20 @@ def _catastro_a_uso_sigpac(ccc, dcc=''):
         for k, v in _CATASTRO_A_SIGPAC.items():
             if ccc.upper().startswith(k):
                 return v
-    # Fallback por descripción
-    dcc_n = (dcc or '').upper()
-    if 'OLIVO' in dcc_n: return 'OV-OLIVAR'
-    if 'VIÑA' in dcc_n or 'VID' in dcc_n: return 'VI-VIÑEDO'
-    if 'CEREAL' in dcc_n or 'TRIGO' in dcc_n or 'CEBADA' in dcc_n: return 'TA-TIERRA ARABLE'
-    if 'ALMENDRO' in dcc_n or 'FRUTO SECO' in dcc_n: return 'FL-FRUTOS SECOS'
+    # Fallback por descripción (Catastro puede devolver texto con encoding roto)
+    try:
+        dcc_n = (dcc or '').encode('latin-1').decode('utf-8', errors='ignore').upper()
+    except Exception:
+        dcc_n = (dcc or '').upper()
+    if 'OLIVO' in dcc_n or 'OLIVAR' in dcc_n: return 'OV-OLIVAR'
+    if 'VI' in dcc_n and ('VINED' in dcc_n or 'VIÑA' in dcc_n or 'VID' in dcc_n): return 'VI-VIÑEDO'
+    if 'LABOR' in dcc_n or 'LABRAD' in dcc_n or 'CEREAL' in dcc_n or 'TRIGO' in dcc_n or 'CEBADA' in dcc_n: return 'TA-TIERRA ARABLE'
+    if 'ALMENDRO' in dcc_n or 'FRUTO SECO' in dcc_n or 'ALMOND' in dcc_n: return 'FL-FRUTOS SECOS'
     if 'CITRICO' in dcc_n or 'NARANJO' in dcc_n: return 'CF-CITRICOS'
-    if 'PASTIZAL' in dcc_n or 'PASTO' in dcc_n: return 'PA-PASTO'
+    if 'PASTIZAL' in dcc_n: return 'PS-PASTIZAL'
+    if 'PASTO' in dcc_n or 'PRADO' in dcc_n: return 'PA-PASTO'
+    if 'HUERTA' in dcc_n: return 'TH-HUERTA'
+    if 'FORESTAL' in dcc_n or 'MONTE' in dcc_n: return 'IM-IMPRODUCTIVO'
     return ''
 
 _USO_LABELS = {
