@@ -162,26 +162,54 @@ function ScreenParcelas({ campana, showToast }) {
         finally { setWizSaving(false); }
     };
 
+    // Códigos de provincia españoles (estáticos, no dependen de la API SIGPAC)
+    const PROV_CODIGOS = {
+        'alava':1,'albacete':2,'alicante':3,'almeria':4,'avila':5,'badajoz':6,
+        'illes balears':7,'balears':7,'barcelona':8,'burgos':9,'caceres':10,
+        'cadiz':11,'castellon':12,'ciudad real':13,'cordoba':14,'la coruna':15,
+        'coruna':15,'cuenca':16,'girona':17,'granada':18,'guadalajara':19,
+        'gipuzkoa':20,'huelva':21,'huesca':22,'jaen':23,'leon':24,'lleida':25,
+        'la rioja':26,'rioja':26,'lugo':27,'madrid':28,'malaga':29,'murcia':30,
+        'navarra':31,'ourense':32,'asturias':33,'palencia':34,'las palmas':35,
+        'palmas':35,'pontevedra':36,'salamanca':37,'santa cruz de tenerife':38,
+        'tenerife':38,'cantabria':39,'segovia':40,'sevilla':41,'soria':42,
+        'tarragona':43,'teruel':44,'toledo':45,'valencia':46,'valladolid':47,
+        'vizcaya':48,'bizkaia':48,'zamora':49,'zaragoza':50,'ceuta':51,'melilla':52,
+    };
+
     const syncSigpac = async () => {
         if (!selected.poligono || !selected.parcela_num) return;
         setSigpacSyncing(true);
         try {
+            const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+
             // Resolver códigos si faltan (parcelas importadas o editadas sin cascading)
             let provCod = selected.provincia_cod || '';
             let munCod  = selected.municipio_cod || '';
 
             if (!provCod && selected.provincia_nombre) {
-                const r = await fetch('/api/sigpac/provincias', { credentials: 'include' });
-                const d = await r.json();
-                const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
-                const found = (d.features || []).find(f => norm(f.properties?.nombre) === norm(selected.provincia_nombre));
-                provCod = found ? String(found.properties.codigo) : '';
+                // Primero intentar tabla hardcodeada (la API SIGPAC de provincias falla con campaña 2026)
+                const key = norm(selected.provincia_nombre);
+                const cod = PROV_CODIGOS[key];
+                if (cod) {
+                    provCod = String(cod);
+                } else {
+                    // Fallback a la API
+                    try {
+                        const r = await fetch('/api/sigpac/provincias', { credentials: 'include' });
+                        const d = await r.json();
+                        const found = (d.features || []).find(f => norm(f.properties?.nombre) === key);
+                        provCod = found ? String(found.properties.codigo) : '';
+                    } catch { /* provCod stays empty */ }
+                }
             }
             if (!munCod && provCod && selected.municipio_nombre) {
                 const r = await fetch(`/api/sigpac/municipios?provincia_cod=${provCod}`, { credentials: 'include' });
                 const lista = await r.json();
-                const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
-                const found = (lista || []).find(m => norm(m.nombre) === norm(selected.municipio_nombre));
+                const munNorm = norm(selected.municipio_nombre);
+                const found = Array.isArray(lista)
+                    ? lista.find(m => norm(m.nombre) === munNorm)
+                    : null;
                 munCod = found ? String(found.codigo) : '';
             }
 
