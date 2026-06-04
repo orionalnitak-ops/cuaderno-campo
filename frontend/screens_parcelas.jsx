@@ -176,61 +176,66 @@ function ScreenParcelas({ campana, showToast }) {
         'tarragona':43,'teruel':44,'toledo':45,'valencia':46,'valladolid':47,
         'vizcaya':48,'bizkaia':48,'zamora':49,'zaragoza':50,'ceuta':51,'melilla':52,
     };
+    const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+
+    // Resuelve prov/mun codes y devuelve datos SIGPAC para una parcela.
+    // munCache = Map<provCod, lista_municipios> para no repetir la llamada entre parcelas.
+    const _fetchSigpacParaUna = async (p, munCache = new Map()) => {
+        let provCod = p.provincia_cod || '';
+        let munCod  = p.municipio_cod  || '';
+
+        if (!provCod && p.provincia_nombre) {
+            const key = norm(p.provincia_nombre);
+            const cod = PROV_CODIGOS[key];
+            if (cod) {
+                provCod = String(cod);
+            } else {
+                try {
+                    const r = await fetch('/api/sigpac/provincias', { credentials: 'include' });
+                    const d = await r.json();
+                    const found = (d.features || []).find(f => norm(f.properties?.nombre) === key);
+                    provCod = found ? String(found.properties.codigo) : '';
+                } catch { /* provCod stays empty */ }
+            }
+        }
+        if (!munCod && provCod && p.municipio_nombre) {
+            if (!munCache.has(provCod)) {
+                const r = await fetch(`/api/sigpac/municipios?provincia_cod=${provCod}`, { credentials: 'include' });
+                const lista = await r.json();
+                munCache.set(provCod, Array.isArray(lista) ? lista : []);
+            }
+            const munNorm = norm(p.municipio_nombre);
+            const found = munCache.get(provCod).find(m => norm(m.nombre) === munNorm);
+            munCod = found ? String(found.codigo) : '';
+        }
+
+        if (!provCod || !munCod) return { error: 'sin_codigos' };
+
+        const params = new URLSearchParams({
+            provincia: provCod, municipio: munCod,
+            poligono: p.poligono, parcela: p.parcela_num, recinto: p.recinto || '1',
+        });
+        const res = await fetch(`/api/sigpac/datos?${params}`, { credentials: 'include' });
+        const d = await res.json();
+        if (d.error) return { error: d.error };
+        return { ok: true, provCod, munCod, superficie_ha: d.superficie_ha, uso_sigpac: d.uso_sigpac };
+    };
+
+    const [syncingAll, setSyncingAll] = useState(false);
+    const [syncProgress, setSyncProgress] = useState('');
 
     const syncSigpac = async () => {
         if (!selected.poligono || !selected.parcela_num) return;
         setSigpacSyncing(true);
         try {
-            const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
-
-            // Resolver códigos si faltan (parcelas importadas o editadas sin cascading)
-            let provCod = selected.provincia_cod || '';
-            let munCod  = selected.municipio_cod || '';
-
-            if (!provCod && selected.provincia_nombre) {
-                // Primero intentar tabla hardcodeada (la API SIGPAC de provincias falla con campaña 2026)
-                const key = norm(selected.provincia_nombre);
-                const cod = PROV_CODIGOS[key];
-                if (cod) {
-                    provCod = String(cod);
-                } else {
-                    // Fallback a la API
-                    try {
-                        const r = await fetch('/api/sigpac/provincias', { credentials: 'include' });
-                        const d = await r.json();
-                        const found = (d.features || []).find(f => norm(f.properties?.nombre) === key);
-                        provCod = found ? String(found.properties.codigo) : '';
-                    } catch { /* provCod stays empty */ }
-                }
-            }
-            if (!munCod && provCod && selected.municipio_nombre) {
-                const r = await fetch(`/api/sigpac/municipios?provincia_cod=${provCod}`, { credentials: 'include' });
-                const lista = await r.json();
-                const munNorm = norm(selected.municipio_nombre);
-                const found = Array.isArray(lista)
-                    ? lista.find(m => norm(m.nombre) === munNorm)
-                    : null;
-                munCod = found ? String(found.codigo) : '';
-            }
-
-            if (!provCod || !munCod) { showToast('⚠️ No se encontró el código de provincia/municipio'); return; }
-
-            const params = new URLSearchParams({
-                provincia: provCod,
-                municipio: munCod,
-                poligono:  selected.poligono,
-                parcela:   selected.parcela_num,
-                recinto:   selected.recinto || '1',
-            });
-            const res = await fetch(`/api/sigpac/datos?${params}`, { credentials: 'include' });
-            const d = await res.json();
-            if (d.error) { showToast('⚠️ SIGPAC no devolvió datos'); return; }
+            const result = await _fetchSigpacParaUna(selected);
+            if (result.error) { showToast('⚠️ No se encontró el código de provincia/municipio'); return; }
             const body = {
                 ...selected,
-                provincia_cod: provCod,
-                municipio_cod: munCod,
-                superficie_ha: d.superficie_ha != null ? d.superficie_ha : selected.superficie_ha,
-                uso_sigpac:    d.uso_sigpac    || selected.uso_sigpac,
+                provincia_cod: result.provCod,
+                municipio_cod: result.munCod,
+                superficie_ha: result.superficie_ha != null ? result.superficie_ha : selected.superficie_ha,
+                uso_sigpac:    result.uso_sigpac || selected.uso_sigpac,
             };
             await fetch(`/api/parcelas/${selected.id}`, {
                 method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -241,6 +246,39 @@ function ScreenParcelas({ campana, showToast }) {
             showToast('✅ Datos SIGPAC actualizados');
         } catch { showToast('Error al consultar SIGPAC'); }
         finally { setSigpacSyncing(false); }
+    };
+
+    const syncAll = async () => {
+        const candidatas = parcelas.filter(p => p.poligono && p.parcela_num);
+        if (!candidatas.length) { showToast('No hay parcelas con polígono asignado'); return; }
+        setSyncingAll(true);
+        const munCache = new Map();
+        let ok = 0, skip = 0;
+        for (let i = 0; i < candidatas.length; i++) {
+            const p = candidatas[i];
+            setSyncProgress(`${i + 1}/${candidatas.length}`);
+            try {
+                const result = await _fetchSigpacParaUna(p, munCache);
+                if (result.error) { skip++; continue; }
+                const body = {
+                    ...p,
+                    provincia_cod: result.provCod,
+                    municipio_cod: result.munCod,
+                    superficie_ha: result.superficie_ha != null ? result.superficie_ha : p.superficie_ha,
+                    uso_sigpac:    result.uso_sigpac || p.uso_sigpac,
+                };
+                await fetch(`/api/parcelas/${p.id}`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body), credentials: 'include',
+                });
+                if (selected && selected.id === p.id) setSelected(body);
+                ok++;
+            } catch { skip++; }
+        }
+        setSyncingAll(false);
+        setSyncProgress('');
+        fetchParcelas();
+        showToast(skip ? `SIGPAC: ${ok} actualizadas, ${skip} sin datos` : `✅ ${ok} parcelas actualizadas`);
     };
 
     const wizNext = async () => {
@@ -507,9 +545,22 @@ function ScreenParcelas({ campana, showToast }) {
                                 {loading ? '…' : `${parcelas.length} parcela(s) visibles`}
                             </p>
                         </div>
-                        <button className="btn-primary" style={{ padding:'10px 14px', fontSize:'0.82rem' }} onClick={openNew}>
-                            + Nueva
-                        </button>
+                        <div style={{ display:'flex', gap:8 }}>
+                            {parcelas.length > 0 && (
+                                <button
+                                    onClick={syncAll}
+                                    disabled={syncingAll}
+                                    style={{ padding:'10px 12px', fontSize:'0.78rem', fontWeight:700,
+                                        background: syncingAll ? '#6b7280' : '#1e3a5f',
+                                        color:'#fff', border:'none', borderRadius:10, cursor: syncingAll ? 'default' : 'pointer' }}
+                                >
+                                    {syncingAll ? `⏳ ${syncProgress}` : '⟳ SIGPAC'}
+                                </button>
+                            )}
+                            <button className="btn-primary" style={{ padding:'10px 14px', fontSize:'0.82rem' }} onClick={openNew}>
+                                + Nueva
+                            </button>
+                        </div>
                     </div>
                 </div>
 
