@@ -427,6 +427,27 @@ def admin_user(uid):
     conn.close()
     return jsonify({"status": "ok"})
 
+@app.route('/api/admin/users/<int:uid>/delete-permanent', methods=['DELETE'])
+@login_required
+@admin_required
+def admin_delete_permanent(uid):
+    """Borra completamente un usuario y todos sus datos."""
+    conn = get_db()
+    row = conn.execute("SELECT nombre FROM users WHERE id=?", (uid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "Usuario no encontrado"}), 404
+    nombre = row[0]
+    for t in ['tratamientos','fertilizacion','labores','compras','cultivos_campana','parcelas','explotacion']:
+        try:
+            conn.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))
+        except Exception:
+            pass
+    conn.execute("DELETE FROM users WHERE id=?", (uid,))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "usuario": nombre})
+
+
 @app.route('/api/admin/switch-user/<int:target_id>', methods=['POST'])
 @login_required
 @admin_required
