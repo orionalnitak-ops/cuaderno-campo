@@ -575,7 +575,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                         ✅ <strong>Comunidad</strong> y <strong>Recinto</strong> son opcionales — si no los pones la app usa valores por defecto.
                     </p>
                     <p style={{ margin: 0, fontSize: '0.78rem', color: '#78350f', lineHeight: 1.5 }}>
-                        ✅ Superficie y uso del suelo los busca la app automáticamente en el SIGPAC.
+                        ✅ Superficie y uso del suelo: una vez importadas, pulsa <strong>⟳ SIGPAC</strong> en Mis Parcelas para consultarlos.
                     </p>
                 </div>
 
