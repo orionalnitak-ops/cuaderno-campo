@@ -189,7 +189,7 @@ function App() {
     // ── Active form ──
     if (activeForm) {
         return (
-            <div style={{ minHeight: '100vh', height: '100%', background: '#f8f9fb', overflowY: 'auto' }}>
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: '#f8f9fb', overflowY: 'auto', zIndex: 10 }}>
                 <ScreenForms
                     modulo={activeForm.modulo}
                     record={activeForm.record}
