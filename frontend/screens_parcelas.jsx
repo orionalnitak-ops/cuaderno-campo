@@ -738,6 +738,14 @@ function ScreenParcelas({ campana, showToast }) {
                                         );
                                     })}
                                 </div>
+                                {selected.superficie_ha && (
+                                    <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:10, padding:'10px 12px', marginBottom:12, display:'flex', gap:8, alignItems:'flex-start' }}>
+                                        <span style={{ fontSize:'0.9rem', flexShrink:0 }}>ℹ️</span>
+                                        <div style={{ fontSize:'0.75rem', color:'#1e40af', lineHeight:1.5 }}>
+                                            Si esta parcela tiene varios recintos, la superficie mostrada es la <strong>suma total de la parcela catastral</strong>. SIGPAC no devuelve la superficie desglosada por recinto.
+                                        </div>
+                                    </div>
+                                )}
                                 {selected.poligono && selected.parcela_num && (!selected.superficie_ha || !selected.uso_sigpac) && (
                                     <div style={{ background:'#f0fdf4', border:'1px solid #86efac', borderRadius:10, padding:'14px', marginBottom:12, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                                         <div>
