@@ -265,6 +265,34 @@ def export_excel(user_id, campana='2025/2026'):
         _alt_row(ws7, ri)
     _auto_width(ws7, c_cols)
 
+    # ══════════════════════════════════════════
+    # HOJA 8 — COMPRAS / VENTAS (solo si hay datos)
+    # Obligatorio por RD 1311/2012 Anexo III Sección 5 cuando hay trazabilidad comercial
+    # ══════════════════════════════════════════
+    compras = dicts_from_db(conn, """
+        SELECT * FROM compras
+        WHERE user_id=? AND campana=? AND deleted_at IS NULL
+        ORDER BY fecha ASC
+    """, (user_id, campana))
+    if compras:
+        ws8 = wb.create_sheet("COMPRAS / VENTAS")
+        cmp_cols = ["ID", "Fecha", "Tipo Producto", "Producto", "Nº Reg. MAPA",
+                    "Sustancia Activa", "Proveedor", "Cantidad", "Unidad",
+                    "Nº Lote", "Nº Factura", "Precio Total (€)", "Notas", "Campaña"]
+        _header_row(ws8, cmp_cols, AMBER_FILL)
+        for ri, r in enumerate(compras, 2):
+            row_data = [
+                r.get('id'), r.get('fecha'), r.get('tipo_producto'), r.get('producto'),
+                r.get('num_registro_mapa'), r.get('sustancia_activa'), r.get('proveedor'),
+                r.get('cantidad_valor'), r.get('cantidad_unidad'),
+                r.get('num_lote'), r.get('num_factura'), r.get('precio_total'),
+                r.get('notas'), r.get('campana'),
+            ]
+            for ci, val in enumerate(row_data, 1):
+                ws8.cell(row=ri, column=ci, value=val)
+            _alt_row(ws8, ri)
+        _auto_width(ws8, cmp_cols)
+
     conn.close()
 
     # ── Save to BytesIO and send ──
