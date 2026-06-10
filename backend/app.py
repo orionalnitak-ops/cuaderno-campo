@@ -1,11 +1,14 @@
 import io
 import json
+import logging
 import os
 import re
 import bcrypt
 import requests as req_lib
 import datetime
 from functools import wraps
+
+logger = logging.getLogger(__name__)
 from flask import Flask, jsonify, request, send_file, session
 from flask_cors import CORS
 from flask_limiter import Limiter
@@ -27,13 +30,22 @@ if not _secret_key:
     _secret_key = 'cuaderno_campo_DEV_ONLY_not_for_production'
 app.secret_key = _secret_key
 
+_is_prod = os.environ.get('FLASK_ENV') == 'production' or bool(os.environ.get('DATABASE_URL'))
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE']   = _is_prod  # solo HTTPS en producción
+
 # CORS: en producción restringir a los orígenes del dominio real vía ALLOWED_ORIGINS
 _allowed_origins = os.environ.get('ALLOWED_ORIGINS', 'http://127.0.0.1:5000,http://localhost:5000').split(',')
 CORS(app, origins=_allowed_origins, supports_credentials=True)
 
-# Rate limiting: máx 10 intentos de login por IP por minuto
+# Rate limiting — usa Redis si está disponible (compartido entre workers), si no memory por worker
+_limiter_storage = os.environ.get('REDIS_URL', 'memory://')
 limiter = Limiter(get_remote_address, app=app, default_limits=[],
-                  storage_uri="memory://")
+                  storage_uri=_limiter_storage)
+
+# Límite de tamaño de upload: 4 MB (xlsx de parcelas no supera 1 MB en la práctica)
+app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024
 
 # ─────────────────────────────────────────────
 # FLASK-LOGIN SETUP
@@ -113,6 +125,16 @@ def requires_active_plan(f):
             return jsonify({"error": "subscription_required", "plan": current_user.plan_label()}), 403
         return f(*args, **kwargs)
     return decorated
+
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Frame-Options']        = 'DENY'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Referrer-Policy']        = 'strict-origin-when-cross-origin'
+    if _is_prod:
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
+
 
 _PLAN_EXEMPT_PREFIXES = ('/api/auth/', '/api/admin/', '/api/stripe/')
 
@@ -327,7 +349,7 @@ def account_delete():
     conn = get_db()
     tables_soft = ['tratamientos', 'fertilizacion', 'abonado', 'compras']
     for t in tables_soft:
-        conn.execute(f"UPDATE {t} SET deleted_at=datetime('now') WHERE user_id=? AND deleted_at IS NULL", (uid,))
+        conn.execute(f"UPDATE {t} SET deleted_at=CURRENT_TIMESTAMP WHERE user_id=? AND deleted_at IS NULL", (uid,))
     for t in ['labores', 'riego', 'cosecha', 'cultivos_campana', 'aplicadores', 'equipos']:
         try:
             conn.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))
@@ -1173,7 +1195,7 @@ def manage_tratamiento(tid):
     conn = get_db()
     if request.method == 'DELETE':
         conn.execute(
-            "UPDATE tratamientos SET deleted_at=datetime('now') WHERE id=? AND user_id=?",
+            "UPDATE tratamientos SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
             (tid, uid))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
@@ -1252,7 +1274,7 @@ def manage_fertilizacion_one(fid):
     conn = get_db()
     if request.method == 'DELETE':
         conn.execute(
-            "UPDATE fertilizacion SET deleted_at=datetime('now') WHERE id=? AND user_id=?",
+            "UPDATE fertilizacion SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
             (fid, uid))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
@@ -1318,7 +1340,7 @@ def manage_riego_one(rid):
     conn = get_db()
     if request.method == 'DELETE':
         conn.execute(
-            "UPDATE riego SET deleted_at=datetime('now') WHERE id=? AND user_id=?",
+            "UPDATE riego SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
             (rid, uid))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
@@ -1384,7 +1406,7 @@ def manage_abonado_one(aid):
     conn = get_db()
     if request.method == 'DELETE':
         conn.execute(
-            "UPDATE abonado SET deleted_at=datetime('now') WHERE id=? AND user_id=?",
+            "UPDATE abonado SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
             (aid, uid))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
@@ -1667,7 +1689,7 @@ def manage_compra(cid):
     conn = get_db()
     if request.method == 'DELETE':
         conn.execute(
-            "UPDATE compras SET deleted_at=datetime('now') WHERE id=? AND user_id=?",
+            "UPDATE compras SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
             (cid, uid))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
@@ -1699,7 +1721,8 @@ def _sigpac_get(url, timeout=10):
         r.raise_for_status()
         return r.json()
     except Exception as e:
-        return {"error": str(e)}
+        logger.error("_sigpac_get %s: %s", url, e)
+        return {"error": "Error al contactar con el servicio SIGPAC"}
 
 def _sigpac_list(url):
     import re
@@ -1724,11 +1747,13 @@ def _sigpac_param(val, default=''):
 
 @app.route('/api/sigpac/provincias')
 @login_required
+@limiter.limit("30 per minute")
 def sigpac_provincias():
     return jsonify(_sigpac_get(f"{SIGPAC_BASE}/provincias"))
 
 @app.route('/api/sigpac/municipios')
 @login_required
+@limiter.limit("30 per minute")
 def sigpac_municipios():
     prov = _sigpac_param(request.args.get('provincia_cod'), '13')
     if not prov: return jsonify({"error": "Parámetro provincia inválido"}), 400
@@ -1736,6 +1761,7 @@ def sigpac_municipios():
 
 @app.route('/api/sigpac/poligonos')
 @login_required
+@limiter.limit("30 per minute")
 def sigpac_poligonos():
     prov = _sigpac_param(request.args.get('provincia_cod'), '13')
     mun  = _sigpac_param(request.args.get('municipio_cod'), '131')
@@ -1744,6 +1770,7 @@ def sigpac_poligonos():
 
 @app.route('/api/sigpac/parcelas')
 @login_required
+@limiter.limit("30 per minute")
 def sigpac_parcelas():
     prov = _sigpac_param(request.args.get('provincia_cod'), '13')
     mun  = _sigpac_param(request.args.get('municipio_cod'), '131')
@@ -1753,6 +1780,7 @@ def sigpac_parcelas():
 
 @app.route('/api/sigpac/recintos')
 @login_required
+@limiter.limit("120 per minute")
 def sigpac_recintos():
     prov = _sigpac_param(request.args.get('provincia'), '13')
     mun  = _sigpac_param(request.args.get('municipio'), '131')
@@ -1824,6 +1852,7 @@ _USO_LABELS = {
 
 @app.route('/api/sigpac/datos')
 @login_required
+@limiter.limit("120 per minute")
 def sigpac_datos():
     """Obtiene superficie y uso SIGPAC via endpoint de intersección."""
     prov = _sigpac_param(request.args.get('provincia'), '')
@@ -1878,13 +1907,15 @@ def sigpac_datos():
                 pass  # Catastro es opcional
 
     except Exception as e:
-        resultado['error'] = str(e)
+        logger.error("sigpac/datos prov=%s mun=%s pol=%s par=%s: %s", prov, mun, pol, par, e)
+        resultado['error'] = 'No se pudieron obtener los datos SIGPAC'
 
     return jsonify(resultado)
 
 
 @app.route('/api/sigpac/recintos-detalle')
 @login_required
+@limiter.limit("120 per minute")
 def sigpac_recintos_detalle():
     """Devuelve superficie y uso SIGPAC para CADA recinto de un pol/par."""
     prov = _sigpac_param(request.args.get('provincia'), '')
@@ -2513,13 +2544,15 @@ def route_import_excel():
     except ImportError:
         return jsonify({'ok': False, 'error': 'openpyxl no instalado'}), 500
     except Exception as e:
-        return jsonify({'ok': False, 'error': f'Error al leer el archivo: {e}'}), 400
+        logger.error("import/excel load_workbook: %s", e)
+        return jsonify({'ok': False, 'error': 'El archivo no es un Excel válido'}), 400
 
     uid = get_uid()
     try:
         n_ok, n_err, errores = _importar_parcelas_wb(wb, uid)
     except Exception as e:
-        return jsonify({'ok': False, 'error': f'Error interno al importar: {e}'}), 500
+        logger.error("import/excel _importar_parcelas_wb uid=%s: %s", uid, e)
+        return jsonify({'ok': False, 'error': 'Error interno al importar. Revisa el formato del archivo.'}), 500
     msg = f"{n_ok} parcelas importadas"
     if n_err: msg += f", {n_err} filas con error"
     return jsonify({'ok': True, 'total': n_ok, 'resumen': msg, 'errores': errores})
@@ -2542,18 +2575,21 @@ def route_import_gsheet():
         with urllib.request.urlopen(req, timeout=15) as resp:
             content = resp.read()
     except Exception as e:
-        return jsonify({'ok': False, 'error': f'No se pudo descargar la hoja. ¿Está compartida públicamente? ({e})'}), 400
+        logger.error("import/gsheet download sheet_id=%s: %s", sheet_id, e)
+        return jsonify({'ok': False, 'error': 'No se pudo descargar la hoja. ¿Está compartida públicamente?'}), 400
     try:
         from openpyxl import load_workbook
         wb = load_workbook(io.BytesIO(content), data_only=True)
     except Exception as e:
-        return jsonify({'ok': False, 'error': f'Error al leer el archivo: {e}'}), 400
+        logger.error("import/gsheet load_workbook: %s", e)
+        return jsonify({'ok': False, 'error': 'El archivo descargado no es un Excel válido'}), 400
 
     uid = get_uid()
     try:
         n_ok, n_err, errores = _importar_parcelas_wb(wb, uid)
     except Exception as e:
-        return jsonify({'ok': False, 'error': f'Error interno al importar: {e}'}), 500
+        logger.error("import/gsheet _importar_parcelas_wb uid=%s: %s", uid, e)
+        return jsonify({'ok': False, 'error': 'Error interno al importar. Revisa el formato del archivo.'}), 500
     msg = f"{n_ok} parcelas importadas"
     if n_err: msg += f", {n_err} filas con error"
     return jsonify({'ok': True, 'total': n_ok, 'resumen': msg, 'errores': errores})
