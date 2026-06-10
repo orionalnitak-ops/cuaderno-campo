@@ -98,6 +98,22 @@ function App() {
         return () => window.removeEventListener('beforeinstallprompt', handler);
     }, []);
 
+    // En desktop (>=1024px) el CSS fija overflow:hidden en html/body para que el topbar
+    // quede fijo. Al abrir un formulario necesitamos restaurar el scroll normal.
+    useEffect(() => {
+        if (activeForm) {
+            document.documentElement.style.overflow = 'auto';
+            document.body.style.overflow = 'auto';
+        } else {
+            document.documentElement.style.overflow = '';
+            document.body.style.overflow = '';
+        }
+        return () => {
+            document.documentElement.style.overflow = '';
+            document.body.style.overflow = '';
+        };
+    }, [activeForm]);
+
     const handleLogin = useCallback((userData) => {
         setCurrentUser(userData);
         setAuthState('authenticated');
@@ -189,7 +205,7 @@ function App() {
     // ── Active form ──
     if (activeForm) {
         return (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: '#f8f9fb', overflowY: 'auto', zIndex: 10 }}>
+            <div style={{ minHeight: '100vh', background: '#f8f9fb' }}>
                 <ScreenForms
                     modulo={activeForm.modulo}
                     record={activeForm.record}
