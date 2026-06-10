@@ -705,27 +705,44 @@ function ScreenParcelas({ campana, showToast }) {
                             <div>
                                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
                                     {[
-                                        ['Polígono', selected.poligono],
-                                        ['Parcela', selected.parcela_num],
-                                        ['Recinto', selected.recinto],
-                                        ['Superficie', `${selected.superficie_ha} ha`],
-                                        ['Uso SIGPAC', selected.uso_sigpac],
-                                        ['Sistema explot.', selected.sistema_explotacion],
-                                        ['Masa agua <50m', selected.masa_agua_cercana ? 'Sí ⚠️' : 'No'],
-                                        ['Municipio', selected.municipio_nombre],
-                                        ['Provincia', selected.provincia_nombre],
-                                    ].map(([k,v]) => (
-                                        <div key={k} style={{ background:'#f8f9fb', borderRadius:10, padding:'12px' }}>
-                                            <div style={{ fontSize:'0.65rem', fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:4 }}>{k}</div>
-                                            <div style={{ fontWeight:700, color:'#111827', fontSize:'0.9rem' }}>{v||'—'}</div>
-                                        </div>
-                                    ))}
+                                        ['Polígono', selected.poligono, false],
+                                        ['Parcela', selected.parcela_num, false],
+                                        ['Recinto', selected.recinto, false],
+                                        ['Superficie', selected.superficie_ha ? `${selected.superficie_ha} ha` : '', true],
+                                        ['Uso SIGPAC', selected.uso_sigpac, true],
+                                        ['Sistema explot.', selected.sistema_explotacion, false],
+                                        ['Masa agua <50m', selected.masa_agua_cercana ? 'Sí ⚠️' : 'No', false],
+                                        ['Municipio', selected.municipio_nombre, false],
+                                        ['Provincia', selected.provincia_nombre, false],
+                                    ].map(([k, v, editable]) => {
+                                        const needsInput = editable && !v;
+                                        return (
+                                            <div key={k}
+                                                onClick={needsInput ? () => openEdit(selected) : undefined}
+                                                style={{
+                                                    background: needsInput ? '#fffbeb' : '#f8f9fb',
+                                                    borderRadius: 10, padding: '12px',
+                                                    border: needsInput ? '1.5px dashed #f59e0b' : '1.5px solid transparent',
+                                                    cursor: needsInput ? 'pointer' : 'default',
+                                                }}>
+                                                <div style={{ fontSize:'0.65rem', fontWeight:700, color: needsInput ? '#92400e' : '#6b7280', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:4 }}>{k}</div>
+                                                {needsInput ? (
+                                                    <div>
+                                                        <div style={{ fontWeight:700, color:'#d97706', fontSize:'0.9rem' }}>Sin dato</div>
+                                                        <div style={{ fontSize:'0.68rem', color:'#b45309', marginTop:2 }}>Toca para añadir →</div>
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ fontWeight:700, color:'#111827', fontSize:'0.9rem' }}>{v || '—'}</div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                                 {selected.poligono && selected.parcela_num && (!selected.superficie_ha || !selected.uso_sigpac) && (
                                     <div style={{ background:'#f0fdf4', border:'1px solid #86efac', borderRadius:10, padding:'14px', marginBottom:12, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                                         <div>
                                             <div style={{ fontWeight:700, fontSize:'0.85rem', color:'#166534' }}>Superficie o uso sin datos</div>
-                                            <div style={{ fontSize:'0.75rem', color:'#15803d', marginTop:2 }}>Consultando SIGPAC automáticamente</div>
+                                            <div style={{ fontSize:'0.75rem', color:'#15803d', marginTop:2 }}>Introdúcelos manualmente o actualiza desde SIGPAC</div>
                                         </div>
                                         <button onClick={syncSigpac} disabled={sigpacSyncing} style={{ background:'#16a34a', border:'none', borderRadius:8, padding:'8px 12px', color:'#fff', cursor: sigpacSyncing ? 'default' : 'pointer', fontWeight:700, fontSize:'0.78rem', opacity: sigpacSyncing ? 0.6 : 1 }}>
                                             {sigpacSyncing ? '…' : '🔄 Actualizar'}
