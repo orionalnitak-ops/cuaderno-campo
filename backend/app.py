@@ -2601,9 +2601,6 @@ def route_import_gsheet():
 @login_required
 @requires_active_plan
 def route_export_excel():
-    import sys, importlib
-    if 'exports' in sys.modules:
-        importlib.reload(sys.modules['exports'])
     from exports import export_excel
     uid = get_uid()
     campana = request.args.get('campana', '2025/2026')
@@ -2611,9 +2608,8 @@ def route_export_excel():
         return export_excel(uid, campana)
     except Exception as e:
         import traceback
-        tb = traceback.format_exc()
-        logger.error("export_excel uid=%s campana=%s error: %s\n%s", uid, campana, e, tb)
-        return jsonify({"ok": False, "error": str(e), "type": type(e).__name__, "trace": tb}), 500
+        logger.error("export_excel uid=%s campana=%s error: %s\n%s", uid, campana, e, traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e), "type": type(e).__name__}), 500
 
 @app.route('/api/export/pdf')
 @login_required
