@@ -268,7 +268,7 @@ def export_excel(user_id, campana='2025/2026'):
         ORDER BY fecha ASC
     """, (user_id, campana))
     if compras:
-        ws8 = wb.create_sheet("COMPRAS / VENTAS")
+        ws8 = wb.create_sheet("COMPRAS-VENTAS")
         cmp_cols = ["ID", "Fecha", "Tipo Producto", "Producto", "Nº Reg. MAPA",
                     "Sustancia Activa", "Proveedor", "Cantidad", "Unidad",
                     "Nº Lote", "Nº Factura", "Precio Total (€)", "Notas", "Campaña"]
