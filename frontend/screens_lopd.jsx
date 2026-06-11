@@ -12,6 +12,7 @@ function ScreenLopd({ onAccept }) {
             alignItems: 'center',
             justifyContent: 'center',
             padding: '24px 20px',
+            overflowY: 'auto',
         }}>
             <div style={{
                 background: 'var(--surface-container-lowest)',
