@@ -40,7 +40,18 @@ _allowed_origins = os.environ.get('ALLOWED_ORIGINS', 'http://127.0.0.1:5000,http
 CORS(app, origins=_allowed_origins, supports_credentials=True)
 
 # Rate limiting — usa Redis si está disponible (compartido entre workers), si no memory por worker
-_limiter_storage = os.environ.get('REDIS_URL', 'memory://')
+def _probe_redis(url):
+    try:
+        import redis as _r
+        _r.from_url(url, socket_connect_timeout=2).ping()
+        return True
+    except Exception:
+        return False
+
+_redis_url = os.environ.get('REDIS_URL')
+_limiter_storage = _redis_url if (_redis_url and _probe_redis(_redis_url)) else 'memory://'
+if _redis_url and _limiter_storage == 'memory://':
+    app.logger.warning("REDIS_URL configurada pero Redis no responde — rate limiting en memoria por worker")
 limiter = Limiter(get_remote_address, app=app, default_limits=[],
                   storage_uri=_limiter_storage)
 
@@ -157,6 +168,15 @@ def guard_active_plan():
 # ─────────────────────────────────────────────
 # DB HELPERS  (dicts / one imported from db.py)
 # ─────────────────────────────────────────────
+
+def _to_real(v):
+    """Parsea float desde input de usuario, aceptando coma decimal (locale español)."""
+    if v is None or v == '':
+        return None
+    try:
+        return float(str(v).replace(',', '.'))
+    except (ValueError, TypeError):
+        return None
 
 
 # ─────────────────────────────────────────────
@@ -729,7 +749,7 @@ def manage_parcelas():
 
     def _to_float(v):
         if v is None or v == '': return None
-        try: return float(v)
+        try: return float(str(v).replace(',', '.'))
         except (ValueError, TypeError): return None
 
     sup = _to_float(data.get('superficie_ha'))
@@ -791,7 +811,7 @@ def manage_parcela(pid):
 
     def _to_float(v):
         if v is None or v == '': return None
-        try: return float(v)
+        try: return float(str(v).replace(',', '.'))
         except (ValueError, TypeError): return None
 
     sup_put = _to_float(data.get('superficie_ha'))
@@ -865,7 +885,7 @@ def manage_cultivos():
         ''', (parcela_id, data.get('campana'), data.get('cultivo'),
               data.get('cultivo_iacs_cod'),
               data.get('variedad'), data.get('fecha_siembra'),
-              data.get('fecha_recoleccion_prevista'), data.get('superficie_cultivada_ha'),
+              data.get('fecha_recoleccion_prevista'), _to_real(data.get('superficie_cultivada_ha')),
               data.get('notas')))
         new_id = c.lastrowid
     except Exception:
@@ -876,7 +896,7 @@ def manage_cultivos():
             WHERE parcela_id=? AND campana=?
         ''', (data.get('cultivo'), data.get('cultivo_iacs_cod'),
               data.get('variedad'), data.get('fecha_siembra'),
-              data.get('fecha_recoleccion_prevista'), data.get('superficie_cultivada_ha'),
+              data.get('fecha_recoleccion_prevista'), _to_real(data.get('superficie_cultivada_ha')),
               data.get('notas'), parcela_id, data.get('campana')))
         new_id = None
     conn.commit(); conn.close()
@@ -956,7 +976,7 @@ def _validate_tratamiento(data):
     except (ValueError, TypeError):
         return "El plazo de seguridad debe ser un número entero"
     try:
-        if float(data['dosis_valor']) <= 0:
+        if float(str(data['dosis_valor']).replace(',', '.')) <= 0:
             return "La dosis debe ser mayor que cero"
     except (ValueError, TypeError):
         return "La dosis debe ser un número válido"
@@ -1024,7 +1044,7 @@ def _validate_fertilizacion(data):
     except (ValueError, TypeError):
         return "Fecha de aplicación con formato inválido (use YYYY-MM-DD)"
     try:
-        if float(data['dosis_valor']) <= 0:
+        if float(str(data['dosis_valor']).replace(',', '.')) <= 0:
             return "La dosis debe ser mayor que cero"
     except (ValueError, TypeError):
         return "La dosis debe ser un número válido"
@@ -1177,8 +1197,8 @@ def manage_tratamientos():
     ''', (
         uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha_aplicacion'),
         data.get('producto_comercial'), data.get('num_registro_mapa'), data.get('sustancia_activa'),
-        data.get('plaga_objetivo'), data.get('dosis_valor') or None, data.get('dosis_unidad', 'L/ha'),
-        data.get('volumen_caldo') or None, data.get('equipo_id') or None, data.get('condiciones_meteo'),
+        data.get('plaga_objetivo'), _to_real(data.get('dosis_valor')), data.get('dosis_unidad', 'L/ha'),
+        _to_real(data.get('volumen_caldo')), data.get('equipo_id') or None, data.get('condiciones_meteo'),
         data.get('plazo_seguridad_dias') or None,
         _calc_fecha_recoleccion(data.get('fecha_aplicacion'), data.get('plazo_seguridad_dias')),
         data.get('eficacia'), data.get('aplicador_id') or None, data.get('notas'),
@@ -1223,9 +1243,10 @@ def manage_tratamiento(tid):
               'volumen_caldo','equipo_id','condiciones_meteo','plazo_seguridad_dias',
               'fecha_recoleccion_minima','eficacia','aplicador_id','notas','campana']
     sets = ', '.join(f"{f}=?" for f in fields)
-    _numeric_t = {'dosis_valor', 'volumen_caldo', 'equipo_id', 'plazo_seguridad_dias', 'aplicador_id'}
+    _real_t = {'dosis_valor', 'volumen_caldo'}
+    _int_t  = {'equipo_id', 'plazo_seguridad_dias', 'aplicador_id'}
     conn.execute(f"UPDATE tratamientos SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
-                 [data.get(f) or None if f in _numeric_t else data.get(f) for f in fields] + [tid, uid])
+                 [_to_real(data.get(f)) if f in _real_t else (data.get(f) or None if f in _int_t else data.get(f)) for f in fields] + [tid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
@@ -1259,8 +1280,8 @@ def manage_fertilizacion():
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha_aplicacion'),
           data.get('tipo_fertilizante'), data.get('producto'), data.get('riqueza_npk'),
-          data.get('dosis_valor') or None, data.get('dosis_unidad', 'kg/ha'),
-          data.get('densidad_g_ml') or None,
+          _to_real(data.get('dosis_valor')), data.get('dosis_unidad', 'kg/ha'),
+          _to_real(data.get('densidad_g_ml')),
           data.get('metodo_aplicacion'), data.get('notas'), data.get('campana', '2025/2026'),
           n_ap, p_ap, k_ap))
     conn.commit(); new_id = c.lastrowid; conn.close()
@@ -1292,9 +1313,9 @@ def manage_fertilizacion_one(fid):
               'metodo_aplicacion','notas','campana',
               'n_aplicado','p2o5_aplicado','k2o_aplicado']
     sets = ', '.join(f"{f}=?" for f in fields)
-    _numeric_f = {'dosis_valor', 'densidad_g_ml'}
+    _real_f = {'dosis_valor', 'densidad_g_ml'}
     npk_map = {'n_aplicado': n_ap, 'p2o5_aplicado': p_ap, 'k2o_aplicado': k_ap}
-    values = [data.get(f) or None if f in _numeric_f else npk_map.get(f, data.get(f)) for f in fields]
+    values = [_to_real(data.get(f)) if f in _real_f else npk_map.get(f, data.get(f)) for f in fields]
     conn.execute(f"UPDATE fertilizacion SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
                  values + [fid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
@@ -1326,8 +1347,8 @@ def manage_riego():
             tipo_riego, volumen_m3, horas_riego, fuente_agua, notas, campana
         ) VALUES (?,?,?,?,?,?,?,?,?,?)
     ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha'),
-          data.get('tipo_riego'), data.get('volumen_m3') or None,
-          data.get('horas_riego') or None, data.get('fuente_agua'), data.get('notas'),
+          data.get('tipo_riego'), _to_real(data.get('volumen_m3')),
+          _to_real(data.get('horas_riego')), data.get('fuente_agua'), data.get('notas'),
           data.get('campana', '2025/2026')))
     conn.commit(); new_id = c.lastrowid; conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
@@ -1355,7 +1376,7 @@ def manage_riego_one(rid):
               'horas_riego','fuente_agua','notas','campana']
     sets = ', '.join(f"{f}=?" for f in fields)
     numeric = {'volumen_m3', 'horas_riego'}
-    values = [data.get(f) or None if f in numeric else data.get(f) for f in fields]
+    values = [_to_real(data.get(f)) if f in numeric else data.get(f) for f in fields]
     conn.execute(f"UPDATE riego SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
                  values + [rid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
@@ -1449,7 +1470,7 @@ def manage_labores():
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha'),
           data.get('tipo_labor'), data.get('descripcion'), data.get('producto'), data.get('maquinaria'),
-          data.get('horas_trabajadas') or None, data.get('operario'), data.get('notas'),
+          _to_real(data.get('horas_trabajadas')), data.get('operario'), data.get('notas'),
           data.get('campana', '2025/2026')))
     conn.commit(); new_id = c.lastrowid; conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
@@ -1471,7 +1492,7 @@ def manage_labor(lid):
               'producto','maquinaria','horas_trabajadas','operario','notas','campana']
     sets = ', '.join(f"{f}=?" for f in fields)
     conn.execute(f"UPDATE labores SET {sets} WHERE id=? AND user_id=?",
-                 [data.get(f) or None if f == 'horas_trabajadas' else data.get(f) for f in fields] + [lid, uid])
+                 [_to_real(data.get(f)) if f == 'horas_trabajadas' else data.get(f) for f in fields] + [lid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
@@ -1527,9 +1548,9 @@ def manage_cosecha():
                 "Espera hasta que pasen los plazos indicados en los tratamientos."
             )}), 400
 
-    prod = data.get('produccion_total_valor') or 0
-    sup  = data.get('superficie_cosechada_ha') or 0
-    rend = round(float(prod) / float(sup), 2) if sup and float(sup) > 0 else None
+    prod = _to_real(data.get('produccion_total_valor')) or 0
+    sup  = _to_real(data.get('superficie_cosechada_ha')) or 0
+    rend = round(prod / sup, 2) if sup > 0 else None
     c = conn.cursor()
     c.execute('''
         INSERT INTO cosecha (user_id, parcela_id, parcela_etiqueta, fecha_inicio, fecha_fin,
@@ -1541,7 +1562,7 @@ def manage_cosecha():
           data.get('fecha_inicio'), data.get('fecha_fin'), data.get('cultivo'),
           data.get('variedad'), sup, prod, data.get('produccion_total_unidad', 'kg'),
           rend, data.get('destino'), data.get('comprador'),
-          data.get('precio_unidad') or None, data.get('notas'), data.get('campana', '2025/2026')))
+          _to_real(data.get('precio_unidad')), data.get('notas'), data.get('campana', '2025/2026')))
     conn.commit(); new_id = c.lastrowid; conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
 
@@ -1558,16 +1579,18 @@ def manage_cosecha_one(cid):
         row = one(conn, "SELECT * FROM cosecha WHERE id=? AND user_id=?", (cid, uid))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
-    prod = data.get('produccion_total_valor') or 0
-    sup  = data.get('superficie_cosechada_ha') or 0
-    data['rendimiento_kg_ha'] = round(float(prod) / float(sup), 2) if sup and float(sup) > 0 else None
+    prod = _to_real(data.get('produccion_total_valor')) or 0
+    sup  = _to_real(data.get('superficie_cosechada_ha')) or 0
+    data['rendimiento_kg_ha'] = round(prod / sup, 2) if sup > 0 else None
+    data['produccion_total_valor'] = prod or None
+    data['superficie_cosechada_ha'] = sup or None
     fields = ['parcela_id','parcela_etiqueta','fecha_inicio','fecha_fin','cultivo',
               'variedad','superficie_cosechada_ha','produccion_total_valor','produccion_total_unidad',
               'rendimiento_kg_ha','destino','comprador','precio_unidad','notas','campana']
-    _numeric_c = {'superficie_cosechada_ha', 'produccion_total_valor', 'rendimiento_kg_ha', 'precio_unidad'}
+    _real_c = {'precio_unidad'}
     sets = ', '.join(f"{f}=?" for f in fields)
     conn.execute(f"UPDATE cosecha SET {sets} WHERE id=? AND user_id=?",
-                 [data.get(f) or None if f in _numeric_c else data.get(f) for f in fields] + [cid, uid])
+                 [_to_real(data.get(f)) if f in _real_c else data.get(f) for f in fields] + [cid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
@@ -1674,9 +1697,9 @@ def manage_compras():
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (uid, data.get('fecha'), data.get('tipo_producto'), data.get('producto'),
           data.get('num_registro_mapa'), data.get('sustancia_activa'),
-          data.get('proveedor'), data.get('cantidad_valor') or None,
+          data.get('proveedor'), _to_real(data.get('cantidad_valor')),
           data.get('cantidad_unidad', 'kg'), data.get('num_lote'),
-          data.get('num_factura'), data.get('precio_total') or None,
+          data.get('num_factura'), _to_real(data.get('precio_total')),
           data.get('campana', '2025/2026'), data.get('notas')))
     conn.commit(); new_id = c.lastrowid; conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
@@ -1704,9 +1727,9 @@ def manage_compra(cid):
               'proveedor','cantidad_valor','cantidad_unidad','num_lote','num_factura',
               'precio_total','campana','notas']
     sets = ', '.join(f"{f}=?" for f in fields)
-    _numeric_co = {'cantidad_valor', 'precio_total'}
+    _real_co = {'cantidad_valor', 'precio_total'}
     conn.execute(f"UPDATE compras SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
-                 [data.get(f) or None if f in _numeric_co else data.get(f) for f in fields] + [cid, uid])
+                 [_to_real(data.get(f)) if f in _real_co else data.get(f) for f in fields] + [cid, uid])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
@@ -2362,15 +2385,15 @@ def parse_guardar():
         }), 422
     elif accion == 'riego':
         tipo_riego = (data.get('tipo_riego') or '').strip() or 'Goteo'
-        horas_riego = data.get('horas_riego') or None
-        volumen_m3 = data.get('volumen_m3') or None
+        horas_riego = _to_real(data.get('horas_riego'))
+        volumen_m3 = _to_real(data.get('volumen_m3'))
         if not horas_riego and not volumen_m3:
             horas_riego = 1.0
         conn.execute(
             "INSERT INTO riego (user_id, parcela_id, parcela_etiqueta, fecha, tipo_riego, horas_riego, volumen_m3, fuente_agua, notas, campana) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (uid, parcela_id, etiqueta, fecha, tipo_riego,
-             float(horas_riego) if horas_riego else None,
-             float(volumen_m3) if volumen_m3 else None,
+             horas_riego,
+             volumen_m3,
              None, nota, campana)
         )
     elif accion == 'cosecha':
