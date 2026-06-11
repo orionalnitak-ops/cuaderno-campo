@@ -162,7 +162,8 @@ function ScreenForms({ modulo, record, campana, onClose }) {
                 {modulo === 'cosecha'       && <FormCosecha       parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
                 {modulo === 'compra'        && <FormCompra                            record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
                 {modulo === 'riego'         && <FormRiego         parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
-                {modulo === 'abonado'       && <FormAbonado       parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
+                {modulo === 'abonado'         && <FormAbonado         parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
+                {modulo === 'cultivo_campana' && <FormCultivoCampana  parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
             </div>
         </div>
     );
@@ -1148,6 +1149,117 @@ function FormAbonado({ parcelas, record, campana, onClose, isEdit }) {
                 <button className="btn-ghost" onClick={() => onClose()} style={{ flex: 1 }}>Cancelar</button>
                 <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 2 }}>
                     {saving ? 'Guardando…' : (isEdit ? 'Guardar cambios' : '📋 Guardar plan')}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ── FormCultivoCampana ──────────────────────────────────────────────────────
+function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
+    const [saving, setSaving] = React.useState(false);
+    const [f, setF] = React.useState({
+        parcela_id:                   record?.parcela_id                   || '',
+        cultivo_iacs_cod:             record?.cultivo_iacs_cod             || '',
+        cultivo:                      record?.cultivo                      || '',
+        variedad:                     record?.variedad                     || '',
+        fecha_siembra:                record?.fecha_siembra                || '',
+        fecha_recoleccion_prevista:   record?.fecha_recoleccion_prevista   || '',
+        superficie_cultivada_ha:      record?.superficie_cultivada_ha      || '',
+        notas:                        record?.notas                        || '',
+        campana,
+    });
+    const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+
+    // Cargar datos existentes cuando se elige parcela
+    React.useEffect(() => {
+        if (!f.parcela_id) return;
+        fetch(`/api/cultivos-campana?parcela_id=${f.parcela_id}&campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json()).then(data => {
+                const existing = Array.isArray(data) ? data[0] : null;
+                if (existing) setF(x => ({ ...x, ...existing, campana }));
+            }).catch(() => {});
+    }, [f.parcela_id]);
+
+    const save = async () => {
+        if (!f.parcela_id) { alert('Selecciona una parcela'); return; }
+        if (!f.cultivo_iacs_cod) { alert('Selecciona el cultivo (código IACS)'); return; }
+        setSaving(true);
+        const res = await fetch('/api/cultivos-campana', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(f),
+            credentials: 'include',
+        });
+        if (!res.ok) {
+            const d = await res.json().catch(() => ({}));
+            alert(d.error || 'Error al guardar');
+            setSaving(false);
+            return;
+        }
+        onClose('✅ Cultivo de campaña guardado');
+    };
+
+    const cultivosPorGrupo = (typeof CULTIVOS_IACS !== 'undefined' ? CULTIVOS_IACS : []).reduce((acc, c) => {
+        (acc[c.grupo] = acc[c.grupo] || []).push(c);
+        return acc;
+    }, {});
+
+    return (
+        <div>
+            <FieldGroup label="Parcela *">
+                <ParcelSelect parcelas={parcelas} value={f.parcela_id} onChange={v => set('parcela_id', v)} />
+            </FieldGroup>
+
+            <FieldGroup label="Cultivo (código IACS) *">
+                <select className="input-field" value={f.cultivo_iacs_cod}
+                    onChange={e => {
+                        const cod = e.target.value;
+                        const entry = (typeof CULTIVOS_IACS !== 'undefined' ? CULTIVOS_IACS : []).find(c => c.cod === cod);
+                        setF(x => ({ ...x, cultivo_iacs_cod: cod, cultivo: entry ? entry.nombre : x.cultivo }));
+                    }}>
+                    <option value="">Seleccionar cultivo…</option>
+                    {Object.entries(cultivosPorGrupo).map(([grupo, items]) => (
+                        <optgroup key={grupo} label={grupo}>
+                            {items.map(c => <option key={c.cod} value={c.cod}>{c.nombre}</option>)}
+                        </optgroup>
+                    ))}
+                </select>
+                {f.cultivo_iacs_cod && (
+                    <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 4 }}>
+                        Código IACS: <strong>{f.cultivo_iacs_cod}</strong>
+                    </div>
+                )}
+            </FieldGroup>
+
+            <div className="responsive-grid cols-2">
+                <FieldGroup label="Variedad">
+                    <input type="text" className="input-field" placeholder="Picual, Tempranillo…"
+                        value={f.variedad} onChange={e => set('variedad', e.target.value)} />
+                </FieldGroup>
+                <FieldGroup label="Superficie cultivada (ha)">
+                    <ZoomInput label="Superficie cultivada (ha)" type="number" inputMode="decimal"
+                        value={f.superficie_cultivada_ha} onConfirm={v => set('superficie_cultivada_ha', v)} />
+                </FieldGroup>
+                <FieldGroup label="Fecha de siembra">
+                    <input type="date" className="input-field" value={f.fecha_siembra}
+                        onChange={e => set('fecha_siembra', e.target.value)} />
+                </FieldGroup>
+                <FieldGroup label="Fecha recolección prevista">
+                    <input type="date" className="input-field" value={f.fecha_recoleccion_prevista}
+                        onChange={e => set('fecha_recoleccion_prevista', e.target.value)} />
+                </FieldGroup>
+            </div>
+
+            <FieldGroup label="Notas">
+                <textarea className="input-field" rows={3} value={f.notas}
+                    onChange={e => set('notas', e.target.value)} />
+            </FieldGroup>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button className="btn-ghost" onClick={() => onClose()} style={{ flex: 1 }}>Cancelar</button>
+                <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 2 }}>
+                    {saving ? 'Guardando…' : '🌾 Guardar cultivo'}
                 </button>
             </div>
         </div>
