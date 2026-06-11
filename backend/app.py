@@ -2604,7 +2604,12 @@ def route_export_excel():
     from exports import export_excel
     uid = get_uid()
     campana = request.args.get('campana', '2025/2026')
-    return export_excel(uid, campana)
+    try:
+        return export_excel(uid, campana)
+    except Exception as e:
+        import traceback
+        logger.error("export_excel uid=%s campana=%s error: %s\n%s", uid, campana, e, traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e), "type": type(e).__name__}), 500
 
 @app.route('/api/export/pdf')
 @login_required
