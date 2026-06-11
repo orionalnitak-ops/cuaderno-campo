@@ -16,7 +16,8 @@ const MODULE_CARDS = [
     { id: 'riego',         icon: '💧', title: 'Riego', desc: 'Aplicación de agua por parcela y campaña.', bg: 'linear-gradient(135deg, #0369a1, #0ea5e9)' },
     { id: 'compra',        icon: '🛒', title: 'Compras', desc: 'Registro de compras de fitosanitarios, fertilizantes y semillas.', bg: 'linear-gradient(135deg, #78350f, #b45309)' },
     { id: 'cosecha',       icon: '📦', title: 'Cosecha', desc: 'Recolección de producto, pesaje y control de lotes.', bg: 'linear-gradient(135deg, #9f1239, #db2777)' },
-    { id: 'abonado', icon: '📋', title: 'Plan de abonado', desc: 'Planificación NPK anual por parcela y cultivo (RD 934/2025).', bg: 'linear-gradient(135deg, #0f766e, #0d9488)' },
+    { id: 'abonado',         icon: '📋', title: 'Plan de abonado',  desc: 'Planificación NPK anual por parcela y cultivo (RD 934/2025).', bg: 'linear-gradient(135deg, #0f766e, #0d9488)' },
+    { id: 'cultivo_campana', icon: '🌾', title: 'Cultivo campaña', desc: 'Registra el cultivo y variedad por parcela para la campaña actual.', bg: 'linear-gradient(135deg, #166534, #16a34a)' },
 ];
 
 function App() {

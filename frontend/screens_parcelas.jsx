@@ -103,10 +103,8 @@ function ScreenParcelas({ campana, showToast }) {
     const [parcelas, setParcelas]   = useState([]);
     const [selected, setSelected]   = useState(null);
     const [showForm, setShowForm]   = useState(false);
-    const [tab, setTab]             = useState('parcela'); // parcela | cultivos
+    const [tab, setTab]             = useState('parcela');
     const [loading, setLoading]     = useState(true);
-    const [cultivo, setCultivo]     = useState({});
-    const [savingCultivo, setSavingCultivo] = useState(false);
 
     // Parcela form state
     const EMPTY_FORM = {
@@ -400,15 +398,6 @@ function ScreenParcelas({ campana, showToast }) {
     };
     useEffect(() => { fetchParcelas(); }, []);
 
-    // Load cultivo when parcel selected
-    useEffect(() => {
-        if (!selected) return;
-        fetch(`/api/cultivos-campana?parcela_id=${selected.id}&campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
-            .then(r => r.json()).then(data => {
-                const arr = Array.isArray(data) ? data : [];
-                setCultivo(arr[0] || { parcela_id: selected.id, campana });
-            });
-    }, [selected, campana]);
 
     // SIGPAC: load provincias on form open
     useEffect(() => {
@@ -568,17 +557,6 @@ function ScreenParcelas({ campana, showToast }) {
         fetchParcelas();
     };
 
-    const saveCultivo = async () => {
-        setSavingCultivo(true);
-        await fetch('/api/cultivos-campana', {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ ...cultivo, parcela_id: selected.id, campana }),
-            credentials: 'include',
-        });
-        showToast('Cultivo de campaña guardado');
-        setSavingCultivo(false);
-    };
-
     // PAC eligibility label
     const pacLabel = (uso) => {
         if (!uso) return null;
@@ -657,6 +635,12 @@ function ScreenParcelas({ campana, showToast }) {
                                 <div style={{ display:'flex', gap:6, marginTop:5, alignItems:'center', flexWrap:'wrap' }}>
                                     {pacLabel(p.uso_sigpac)}
                                     {p.superficie_ha ? <span className="chip chip-grey">{p.superficie_ha} ha</span> : null}
+                                    {p.poligono && !p.uso_sigpac && (
+                                        <span className="chip" style={{ background:'#fef3c7', color:'#92400e', border:'1px solid #fde68a', fontSize:'0.7rem' }}>⚠ Sin uso</span>
+                                    )}
+                                    {p.poligono && !p.superficie_ha && (
+                                        <span className="chip" style={{ background:'#fef3c7', color:'#92400e', border:'1px solid #fde68a', fontSize:'0.7rem' }}>⚠ Sin sup.</span>
+                                    )}
                                 </div>
                             </div>
                             <span style={{ color:'#d1d5db', fontSize:18 }}>›</span>
@@ -687,7 +671,7 @@ function ScreenParcelas({ campana, showToast }) {
                         </div>
                         {/* Tabs */}
                         <div style={{ display:'flex', gap:0, borderTop:'1px solid rgba(255,255,255,0.15)' }}>
-                            {[['parcela','📍 Parcela'],['cultivos','🌱 Cultivo campaña']].map(([id,label]) => (
+                            {[['parcela','📍 Parcela']].map(([id,label]) => (
                                 <button key={id} onClick={() => setTab(id)} style={{
                                     background:'none', border:'none', borderBottom: tab===id ? '2px solid #fff' : '2px solid transparent',
                                     padding:'12px 16px', cursor:'pointer', color: tab===id ? '#fff' : 'rgba(255,255,255,0.6)',
@@ -701,7 +685,7 @@ function ScreenParcelas({ campana, showToast }) {
 
                     {/* Tab content */}
                     <div style={{ padding:'20px 16px', flex:1 }}>
-                        {tab === 'parcela' ? (
+                        {tab === 'parcela' && (
                             <div>
                                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
                                     {[
@@ -773,64 +757,6 @@ function ScreenParcelas({ campana, showToast }) {
                                         📝 {selected.notas}
                                     </div>
                                 )}
-                            </div>
-                        ) : (
-                            <div>
-                                <h2 className="section-title">Cultivo campaña {campana}</h2>
-                                <div className="responsive-grid cols-2" style={{ marginBottom:16 }}>
-                                    <div style={{ gridColumn: '1/-1' }}>
-                                        <label className="field-label">Cultivo (código IACS)</label>
-                                        <select className="input-field"
-                                            value={cultivo.cultivo_iacs_cod || ''}
-                                            onChange={e => {
-                                                const cod = e.target.value;
-                                                const entry = CULTIVOS_IACS.find(c => c.cod === cod);
-                                                setCultivo(c => ({ ...c,
-                                                    cultivo_iacs_cod: cod,
-                                                    cultivo: entry ? entry.nombre : c.cultivo,
-                                                }));
-                                            }}>
-                                            <option value="">Seleccionar cultivo…</option>
-                                            {Object.entries(
-                                                CULTIVOS_IACS.reduce((acc, c) => {
-                                                    (acc[c.grupo] = acc[c.grupo] || []).push(c);
-                                                    return acc;
-                                                }, {})
-                                            ).map(([grupo, items]) => (
-                                                <optgroup key={grupo} label={grupo}>
-                                                    {items.map(c => (
-                                                        <option key={c.cod} value={c.cod}>{c.nombre}</option>
-                                                    ))}
-                                                </optgroup>
-                                            ))}
-                                        </select>
-                                        {cultivo.cultivo_iacs_cod && (
-                                            <div style={{ fontSize:'0.75rem', color:'#6b7280', marginTop:4 }}>
-                                                Código IACS: <strong>{cultivo.cultivo_iacs_cod}</strong>
-                                            </div>
-                                        )}
-                                    </div>
-                                    {[
-                                        ['variedad','Variedad','text','Picual, Tempranillo…'],
-                                        ['fecha_siembra','Fecha de siembra','date',''],
-                                        ['fecha_recoleccion_prevista','Fecha recol. prevista','date',''],
-                                        ['superficie_cultivada_ha','Superficie cultivada (ha)','number',''],
-                                    ].map(([k,l,t,ph]) => (
-                                        <div key={k}>
-                                            <label className="field-label">{l}</label>
-                                            <input type={t} className="input-field" placeholder={ph}
-                                                value={cultivo[k]||''}
-                                                onChange={e => setCultivo(c => ({...c,[k]:e.target.value}))} />
-                                        </div>
-                                    ))}
-                                </div>
-                                <div style={{ marginBottom:16 }}>
-                                    <label className="field-label">Notas</label>
-                                    <textarea className="input-field" rows={3} value={cultivo.notas||''} onChange={e => setCultivo(c => ({...c,notas:e.target.value}))} />
-                                </div>
-                                <button className="btn-primary" onClick={saveCultivo} disabled={savingCultivo}>
-                                    {savingCultivo ? 'Guardando…' : '💾 Guardar cultivo'}
-                                </button>
                             </div>
                         )}
                     </div>
