@@ -52,7 +52,7 @@ function ScreenLogin({ onLogin }) {
     };
 
     return (
-        <div style={{ minHeight: '100vh', background: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ minHeight: '100vh', background: 'var(--surface)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
 
             {/* ── Hero header ── */}
             <div style={{
