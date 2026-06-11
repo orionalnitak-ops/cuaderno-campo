@@ -1,7 +1,7 @@
 import io
 import datetime
 from flask import send_file
-from db import get_db, is_pac_eligible
+from db import get_db, dicts
 
 try:
     from openpyxl import Workbook
@@ -50,14 +50,6 @@ def _alt_row(ws, row_num):
             cell.fill = fill
 
 
-def dicts_from_db(conn, sql, params=()):
-    import sqlite3
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute(sql, params)
-    return [dict(r) for r in c.fetchall()]
-
-
 def export_excel(user_id, campana='2025/2026'):
     if not OPENPYXL:
         return ("openpyxl no instalado. Ejecuta: pip install openpyxl", 500)
@@ -66,7 +58,7 @@ def export_excel(user_id, campana='2025/2026'):
     wb = Workbook()
 
     # ── Explotación data ──
-    explot = dicts_from_db(conn, "SELECT * FROM explotacion WHERE user_id=? LIMIT 1", (user_id,))
+    explot = dicts(conn, "SELECT * FROM explotacion WHERE user_id=? LIMIT 1", (user_id,))
     ex = explot[0] if explot else {}
     titular = ex.get('titular', 'Explotación')
     municipio = ex.get('municipio', '')
@@ -124,7 +116,7 @@ def export_excel(user_id, campana='2025/2026'):
               "Sistema Explotación", "Masa Agua <50m", "Notas"]
     _header_row(ws2, p_cols, GREEN_FILL)
 
-    all_parcelas = dicts_from_db(conn, "SELECT * FROM parcelas WHERE user_id=? AND activa=1 ORDER BY nombre_finca", (user_id,))
+    all_parcelas = dicts(conn, "SELECT * FROM parcelas WHERE user_id=? AND activa=1 ORDER BY nombre_finca", (user_id,))
     for ri, p in enumerate(all_parcelas, 2):
         row_data = [
             p.get('id'), p.get('nombre_finca'), p.get('poligono'),
@@ -145,11 +137,12 @@ def export_excel(user_id, campana='2025/2026'):
     cc_cols = ["ID", "Parcela", "Campaña", "Cultivo", "Variedad",
                "Fecha Siembra", "Fecha Recol. Prevista", "Superficie Cultivada (ha)", "Notas"]
     _header_row(ws3, cc_cols, TEAL_FILL)
-    cultivos = dicts_from_db(conn, """
+    cultivos = dicts(conn, """
         SELECT cc.*, p.nombre_finca FROM cultivos_campana cc
         LEFT JOIN parcelas p ON cc.parcela_id = p.id
+        WHERE p.user_id=?
         ORDER BY cc.campana DESC, p.nombre_finca
-    """)
+    """, (user_id,))
     for ri, r in enumerate(cultivos, 2):
         row_data = [r.get('id'), r.get('nombre_finca'), r.get('campana'),
                     r.get('cultivo'), r.get('variedad'), r.get('fecha_siembra'),
@@ -168,7 +161,7 @@ def export_excel(user_id, campana='2025/2026'):
               "Equipo", "Condic. Meteo.", "Plazo Seg. (días)", "Fecha Mín. Cosecha",
               "Eficacia", "Aplicador", "Notas", "Campaña"]
     _header_row(ws4, t_cols, GREEN_FILL)
-    trats = dicts_from_db(conn, """
+    trats = dicts(conn, """
         SELECT t.*, p.nombre_finca, e.descripcion as equipo_nombre,
                a.nombre as aplicador_nombre
         FROM tratamientos t
@@ -200,7 +193,7 @@ def export_excel(user_id, campana='2025/2026'):
     f_cols = ["ID", "Parcela", "Fecha", "Tipo Fertilizante", "Producto",
               "Riqueza N-P-K", "Dosis", "Unidad", "Método", "Notas", "Campaña"]
     _header_row(ws5, f_cols, AMBER_FILL)
-    fertz = dicts_from_db(conn, """
+    fertz = dicts(conn, """
         SELECT f.*, p.nombre_finca FROM fertilizacion f
         LEFT JOIN parcelas p ON f.parcela_id = p.id
         WHERE f.user_id=? AND f.campana=?
@@ -223,7 +216,7 @@ def export_excel(user_id, campana='2025/2026'):
     l_cols = ["ID", "Parcela", "Fecha", "Tipo Labor", "Descripción",
               "Maquinaria", "Horas", "Operario", "Notas", "Campaña"]
     _header_row(ws6, l_cols, BLUE_FILL)
-    labores = dicts_from_db(conn, """
+    labores = dicts(conn, """
         SELECT l.*, p.nombre_finca FROM labores l
         LEFT JOIN parcelas p ON l.parcela_id = p.id
         WHERE l.user_id=? AND l.campana=?
@@ -247,7 +240,7 @@ def export_excel(user_id, campana='2025/2026'):
               "Variedad", "Sup. Cosechada (ha)", "Producción Total", "Unidad",
               "Rendimiento (kg/ha)", "Destino", "Comprador", "Precio/Unidad", "Notas", "Campaña"]
     _header_row(ws7, c_cols, PINK_FILL)
-    cosechas = dicts_from_db(conn, """
+    cosechas = dicts(conn, """
         SELECT c.*, p.nombre_finca FROM cosecha c
         LEFT JOIN parcelas p ON c.parcela_id = p.id
         WHERE c.user_id=? AND c.campana=?
@@ -269,7 +262,7 @@ def export_excel(user_id, campana='2025/2026'):
     # HOJA 8 — COMPRAS / VENTAS (solo si hay datos)
     # Obligatorio por RD 1311/2012 Anexo III Sección 5 cuando hay trazabilidad comercial
     # ══════════════════════════════════════════
-    compras = dicts_from_db(conn, """
+    compras = dicts(conn, """
         SELECT * FROM compras
         WHERE user_id=? AND campana=? AND deleted_at IS NULL
         ORDER BY fecha ASC
