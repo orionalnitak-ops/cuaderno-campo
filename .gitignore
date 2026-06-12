@@ -5,3 +5,11 @@ __pycache__/
 .env
 *.log
 node_modules/
+# SQLite — datos de usuarios, nunca al repo
+*.db
+*.db-wal
+*.db-shm
+*.db.bak*
+# Frontend build output
+frontend/dist/
+frontend/node_modules/
