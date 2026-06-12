@@ -1,0 +1,13 @@
+{
+  "name": "cuaderno-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "babel src --out-dir dist --presets @babel/preset-react"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.24.0",
+    "@babel/core": "^7.24.0",
+    "@babel/preset-react": "^7.24.0"
+  }
+}
