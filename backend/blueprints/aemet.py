@@ -86,48 +86,44 @@ def _fetch_meteoalarm(provincia, comunidad=''):
     root = ET.fromstring(r.text)
     alertas = []
 
-    for entry in root.findall(f'{{{ATOM_NS}}}entry'):
-        # Cada entry tiene un <content> o un <link> al CAP completo
-        # Intentar parsear CAP embebido primero
-        for alert_el in entry.findall(f'{{{CAP_NS}}}alert'):
-            alertas.extend(_parse_cap_alert(alert_el, provincia))
+    FENOMENOS = {
+        'thunderstorm': 'Tormentas', 'storm': 'Tormenta',
+        'rain': 'Lluvia intensa', 'wind': 'Viento fuerte',
+        'snow': 'Nieve', 'fog': 'Niebla', 'heat': 'Calor extremo',
+        'cold': 'Frío extremo', 'ice': 'Hielo', 'flood': 'Inundaciones',
+        'avalanche': 'Aludes', 'coastal': 'Oleaje',
+    }
 
-        # Si no hay CAP embebido, parsear desde title/summary de METEOALARM
-        if not alertas:
-            title   = entry.findtext(f'{{{ATOM_NS}}}title')   or ''
-            summary = entry.findtext(f'{{{ATOM_NS}}}summary') or ''
+    for entry in root.findall(f'{{{ATOM_NS}}}entry'):
+        # Intentar parsear CAP embebido — seguimiento POR ENTRY (no acumulado)
+        entry_cap = []
+        for alert_el in entry.findall(f'{{{CAP_NS}}}alert'):
+            entry_cap.extend(_parse_cap_alert(alert_el, provincia))
+        alertas.extend(entry_cap)
+
+        # Si este entry no tenía CAP embebido (o ninguno coincidió), parsear título
+        if not entry_cap:
+            title    = entry.findtext(f'{{{ATOM_NS}}}title')   or ''
+            summary  = entry.findtext(f'{{{ATOM_NS}}}summary') or ''
             haystack = title + ' ' + summary
             if (provincia or comunidad) and not _zona_match(haystack, provincia, comunidad):
                 continue
 
-            # Severidad desde el color en el título
             nivel, icono = 'amarillo', '🟡'
-            if 'red' in haystack:
+            h_low = haystack.lower()
+            if 'red' in h_low:
                 nivel, icono = 'rojo', '🔴'
-            elif 'orange' in haystack:
+            elif 'orange' in h_low:
                 nivel, icono = 'naranja', '🟠'
 
-            # Tipo de fenómeno → español
-            FENOMENOS = {
-                'thunderstorm': 'Tormentas', 'storm': 'Tormenta',
-                'rain': 'Lluvia intensa', 'wind': 'Viento fuerte',
-                'snow': 'Nieve', 'fog': 'Niebla', 'heat': 'Calor extremo',
-                'cold': 'Frío extremo', 'ice': 'Hielo', 'flood': 'Inundaciones',
-                'avalanche': 'Aludes', 'coastal': 'Oleaje',
-            }
             fenomeno = 'Fenómeno adverso'
             for en, es in FENOMENOS.items():
-                if en in haystack:
+                if en in h_low:
                     fenomeno = es
                     break
 
-            NIVEL_ES = {'amarillo': 'amarillo', 'naranja': 'naranja', 'rojo': 'rojo'}
-            texto_es = f'Aviso {NIVEL_ES[nivel]}: {fenomeno}'
-
-            # Área: lo que viene después de " - " en el título de METEOALARM
-            area = ''
-            if ' - ' in title:
-                area = title.split(' - ', 1)[-1].strip()
+            texto_es = f'Aviso {nivel}: {fenomeno}'
+            area = title.split(' - ', 1)[-1].strip() if ' - ' in title else ''
 
             if title:
                 alertas.append({
@@ -195,30 +191,41 @@ def aemet_alertas():
 @bp.route('/api/aemet/diagnostico')
 @login_required
 def aemet_diagnostico():
-    """Diagnóstico: muestra respuesta cruda de ambas fuentes."""
+    """Diagnóstico: muestra entries del feed METEOALARM y resultado del filtro."""
     provincia = (request.args.get('provincia') or 'ciudad real').strip().lower()
+    comunidad = (request.args.get('comunidad') or '').strip().lower()
     resultado = {}
+
+    # ── METEOALARM: entries reales + qué coincide ──
     try:
         r = req_lib.get(METEOALARM_ATOM, timeout=12,
                         headers={'User-Agent': 'CuadernoExplotacion/2.0'})
-        resultado['meteoalarm'] = {
-            'status': r.status_code,
-            'primeros_500': r.text[:500] if r.status_code == 200 else r.text[:200],
-        }
+        resultado['meteoalarm_status'] = r.status_code
+        if r.status_code == 200:
+            root = ET.fromstring(r.text)
+            entries = []
+            for entry in root.findall(f'{{{ATOM_NS}}}entry'):
+                title   = entry.findtext(f'{{{ATOM_NS}}}title')   or ''
+                summary = entry.findtext(f'{{{ATOM_NS}}}summary') or ''
+                hay     = title + ' ' + summary
+                coincide = _zona_match(hay, provincia, comunidad)
+                entries.append({
+                    'title':    title,
+                    'summary':  summary[:120],
+                    'coincide': coincide,
+                })
+            resultado['entries_total']     = len(entries)
+            resultado['entries_coinciden'] = [e for e in entries if e['coincide']]
+            resultado['todos_los_titles']  = [e['title'] for e in entries]
     except Exception as e:
-        resultado['meteoalarm'] = {'error': str(e)}
+        resultado['meteoalarm_error'] = str(e)
 
-    api_key = os.environ.get('AEMET_API_KEY', '')
-    if api_key:
-        try:
-            es_jwt = api_key.startswith('eyJ')
-            hdrs   = {'Authorization': f'Bearer {api_key}'} if es_jwt else {'api_key': api_key}
-            params = {} if es_jwt else {'api_key': api_key}
-            r1 = req_lib.get(AEMET_CAP_URL, headers=hdrs, params=params, timeout=10)
-            resultado['aemet_cap'] = {'status': r1.status_code, 'es_jwt': es_jwt}
-        except Exception as e:
-            resultado['aemet_cap'] = {'error': str(e)}
-    else:
-        resultado['aemet_cap'] = {'msg': 'AEMET_API_KEY no configurada'}
+    # ── Resultado final del filtro ──
+    try:
+        alertas, err = _fetch_meteoalarm(provincia, comunidad)
+        resultado['alertas_resultado'] = alertas
+        resultado['alertas_err']       = err
+    except Exception as e:
+        resultado['alertas_exception'] = str(e)
 
     return jsonify(resultado)
