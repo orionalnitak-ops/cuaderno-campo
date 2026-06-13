@@ -206,7 +206,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
         if (explot === null) return;           // aún cargando
         if (!explot?.municipio?.trim()) { setWxState('error'); return; }
         loadWeather(explot.municipio);
-        const id = setInterval(() => loadWeather(explot.municipio), 30 * 60 * 1000);
+        const id = setInterval(() => loadWeather(explot.municipio), 10 * 60 * 1000);
         return () => clearInterval(id);
     }, [explot, loadWeather]);
 
@@ -847,8 +847,15 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                                 <span>{pushCargando ? 'Un momento…' : pushActivo ? 'Alertas activadas — toca para desactivar' : 'Activar alertas AEMET en este dispositivo'}</span>
                             </button>
 
-                            <div style={{ marginTop: 6, fontSize: '0.62rem', fontWeight: 600, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                                📍 {weather.municipio}
+                            <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: '0.62rem', fontWeight: 600, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                    📍 {weather.municipio}
+                                </span>
+                                <button onClick={() => loadWeather(explot?.municipio)} style={{
+                                    background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)',
+                                    fontSize: '0.65rem', cursor: 'pointer', padding: '2px 4px',
+                                    fontFamily: 'var(--font-body)',
+                                }}>↻ actualizar</button>
                             </div>
                         </>
                     ) : (
