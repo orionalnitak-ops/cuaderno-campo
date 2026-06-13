@@ -17,6 +17,7 @@ const CULTIVOS_IACS = [
     { cod: '430',  nombre: 'Cebada',                   grupo: 'Cereales' },
     { cod: '440',  nombre: 'Avena',                    grupo: 'Cereales' },
     { cod: '450',  nombre: 'Centeno',                  grupo: 'Cereales' },
+    { cod: '451',  nombre: 'Triticale',                grupo: 'Cereales' },
     { cod: '454',  nombre: 'Maíz',                     grupo: 'Cereales' },
     { cod: '460',  nombre: 'Sorgo',                    grupo: 'Cereales' },
     { cod: '470',  nombre: 'Arroz',                    grupo: 'Cereales' },
