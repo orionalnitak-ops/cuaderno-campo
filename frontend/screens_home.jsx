@@ -476,9 +476,11 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
             { icon: '🚜', label: 'Labor agrícola',             m: 'labor' },
             { icon: '🌿', label: 'Tratamiento fitosanitario',  m: 'tratamiento' },
             { icon: '🌱', label: 'Fertilización',               m: 'fertilizacion' },
+            { icon: '💧', label: 'Riego',                      m: 'riego' },
             { icon: '🌾', label: 'Cultivo campaña',             m: 'cultivo_campana' },
             { icon: '📦', label: 'Cosecha',                    m: 'cosecha' },
             { icon: '🛒', label: 'Compras',                    m: 'compra' },
+            { icon: '📋', label: 'Plan de abonado',            m: 'abonado' },
         ];
         return (
             <div style={{ padding: '16px' }}>
