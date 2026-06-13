@@ -95,43 +95,61 @@ def _fetch_meteoalarm(provincia, comunidad=''):
     }
 
     for entry in root.findall(f'{{{ATOM_NS}}}entry'):
-        # Intentar parsear CAP embebido — seguimiento POR ENTRY (no acumulado)
+        # 1) CAP embebido dentro de <cap:alert> wrapper (algunos feeds)
         entry_cap = []
         for alert_el in entry.findall(f'{{{CAP_NS}}}alert'):
             entry_cap.extend(_parse_cap_alert(alert_el, provincia))
         alertas.extend(entry_cap)
 
-        # Si este entry no tenía CAP embebido (o ninguno coincidió), parsear título
-        if not entry_cap:
-            title    = entry.findtext(f'{{{ATOM_NS}}}title')   or ''
-            summary  = entry.findtext(f'{{{ATOM_NS}}}summary') or ''
-            haystack = title + ' ' + summary
-            if (provincia or comunidad) and not _zona_match(haystack, provincia, comunidad):
+        if entry_cap:
+            continue  # ya procesado
+
+        # 2) Elementos CAP directamente en <entry> (METEOALARM legacy ATOM)
+        area_desc = entry.findtext(f'{{{CAP_NS}}}areaDesc') or ''
+        if area_desc:
+            if (provincia or comunidad) and not _zona_match(area_desc, provincia, comunidad):
                 continue
+            severity = entry.findtext(f'{{{CAP_NS}}}severity') or 'Minor'
+            nivel, icono = SEVERITY_MAP.get(severity, ('amarillo', '🟡'))
+            event_raw  = (entry.findtext(f'{{{CAP_NS}}}event') or '').lower()
+            fenomeno   = next((es for en, es in FENOMENOS.items() if en in event_raw), 'Fenómeno adverso')
+            expira     = entry.findtext(f'{{{CAP_NS}}}expires') or ''
+            alertas.append({
+                'nivel': nivel, 'icon': icono,
+                'evento': fenomeno, 'area': area_desc,
+                'texto': f'⚠️ {fenomeno} — {area_desc}',
+                'expira': expira, 'fuente': 'AEMET',
+            })
+            continue
 
-            nivel, icono = 'amarillo', '🟡'
-            h_low = haystack.lower()
-            if 'red' in h_low:
-                nivel, icono = 'rojo', '🔴'
-            elif 'orange' in h_low:
-                nivel, icono = 'naranja', '🟠'
+        # 3) Fallback: parsear título si no hay CAP de ningún tipo
+        title    = entry.findtext(f'{{{ATOM_NS}}}title')   or ''
+        summary  = entry.findtext(f'{{{ATOM_NS}}}summary') or ''
+        haystack = title + ' ' + summary
+        if (provincia or comunidad) and not _zona_match(haystack, provincia, comunidad):
+            continue
 
-            fenomeno = 'Fenómeno adverso'
-            for en, es in FENOMENOS.items():
-                if en in h_low:
-                    fenomeno = es
-                    break
+        nivel, icono = 'amarillo', '🟡'
+        h_low = haystack.lower()
+        if 'red' in h_low:
+            nivel, icono = 'rojo', '🔴'
+        elif 'orange' in h_low:
+            nivel, icono = 'naranja', '🟠'
 
-            texto_es = f'Aviso {nivel}: {fenomeno}'
-            area = title.split(' - ', 1)[-1].strip() if ' - ' in title else ''
+        fenomeno = 'Fenómeno adverso'
+        for en, es in FENOMENOS.items():
+            if en in h_low:
+                fenomeno = es
+                break
 
-            if title:
-                alertas.append({
-                    'nivel': nivel, 'icon': icono,
-                    'evento': fenomeno, 'area': area,
-                    'texto': texto_es, 'expira': '',
-                    'fuente': 'AEMET',
-                })
+        area = title.split(' - ', 1)[-1].strip() if ' - ' in title else ''
+        if title:
+            alertas.append({
+                'nivel': nivel, 'icon': icono,
+                'evento': fenomeno, 'area': area,
+                'texto': f'⚠️ {fenomeno} — {area}' if area else f'Aviso {nivel}: {fenomeno}',
+                'expira': '', 'fuente': 'AEMET',
+            })
 
     return alertas, None
 
