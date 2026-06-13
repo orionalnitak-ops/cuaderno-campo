@@ -43,6 +43,7 @@ def _parse_cap_alert(alert_el, provincia):
         severity = info.findtext(f'{{{CAP_NS}}}severity') or 'Minor'
         headline = info.findtext(f'{{{CAP_NS}}}headline') or event
         expires  = info.findtext(f'{{{CAP_NS}}}expires')  or ''
+        onset    = info.findtext(f'{{{CAP_NS}}}onset')    or ''
         nivel, icono = SEVERITY_MAP.get(severity, ('amarillo', '🟡'))
         for area in info.findall(f'{{{CAP_NS}}}area'):
             area_desc = area.findtext(f'{{{CAP_NS}}}areaDesc') or ''
@@ -51,7 +52,7 @@ def _parse_cap_alert(alert_el, provincia):
             results.append({
                 'nivel': nivel, 'icon': icono,
                 'evento': event, 'area': area_desc,
-                'texto': headline, 'expira': expires,
+                'texto': headline, 'inicio': onset, 'expira': expires,
                 'fuente': 'AEMET',
             })
     return results
@@ -125,12 +126,13 @@ def _fetch_meteoalarm(provincia, comunidad=''):
                 nivel, icono = 'amarillo', '🟡'
             event_raw  = (entry.findtext(f'{{{CAP_NS}}}event') or '').lower()
             fenomeno   = next((es for en, es in FENOMENOS.items() if en in event_raw), 'Fenómeno adverso')
-            expira     = entry.findtext(f'{{{CAP_NS}}}expires') or ''
             alertas.append({
                 'nivel': nivel, 'icon': icono,
                 'evento': fenomeno, 'area': area_desc,
                 'texto': f'⚠️ {fenomeno} — {area_desc}',
-                'expira': expira, 'fuente': 'AEMET',
+                'inicio': entry.findtext(f'{{{CAP_NS}}}onset')   or '',
+                'expira': entry.findtext(f'{{{CAP_NS}}}expires') or '',
+                'fuente': 'AEMET',
             })
             continue
 
