@@ -5,6 +5,22 @@ function _urlBase64ToUint8Array(base64Str) {
     return new Uint8Array([...raw].map(c => c.charCodeAt(0)));
 }
 
+function _fmtAlertaPeriodo(inicio, expira) {
+    const fmt = iso => {
+        if (!iso) return null;
+        const d = new Date(iso);
+        const dia  = d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/Madrid' });
+        const hora = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' });
+        return { dia, hora };
+    };
+    const i = fmt(inicio), e = fmt(expira);
+    if (!i && !e) return '';
+    if (i && e && i.dia === e.dia) return `${i.dia} · ${i.hora}–${e.hora}`;
+    if (i && e) return `${i.dia} ${i.hora} – ${e.dia} ${e.hora}`;
+    if (e) return `hasta ${e.dia} ${e.hora}`;
+    return '';
+}
+
 function _wxDiaLabel(fechaStr) {
     const d = new Date(fechaStr + 'T12:00:00');
     const hoy = new Date(); hoy.setHours(12,0,0,0);
@@ -806,6 +822,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                                                         {a.texto}
                                                     </span>
                                                     {a.area && <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{a.area}</div>}
+                                                    {(() => { const p = _fmtAlertaPeriodo(a.inicio, a.expira); return p ? <div style={{ fontSize: '0.63rem', color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>🕐 {p}</div> : null; })()}
                                                 </div>
                                             </div>
                                         ))}
