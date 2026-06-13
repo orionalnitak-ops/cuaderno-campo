@@ -40,6 +40,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     const [wxView, setWxView]           = useState('dias');   // 'dias' | 'horas'
     const [modalOpcion, setModalOpcion] = useState(null);  // null | 'tu' | 'yo'
     const [avisosOpen, setAvisosOpen]   = useState(false);
+    const [alertaZoom, setAlertaZoom]   = useState(null);  // alerta AEMET seleccionada para modal
     const [tuSubView, setTuSubView]     = useState(null);  // null | 'desde_cero'
 
     // ── Estado NLP ──
@@ -755,6 +756,70 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 </div>
             </div>
 
+            {/* ══ MODAL ZOOM ALERTA AEMET ══ */}
+            {alertaZoom && (() => {
+                const a = alertaZoom;
+                const bc = a.nivel==='rojo'?'#f87171':a.nivel==='naranja'?'#fb923c':'#fbbf24';
+                const tc = a.nivel==='rojo'?'#fca5a5':a.nivel==='naranja'?'#fdba74':'#fde68a';
+                const bg = a.nivel==='rojo'?'rgba(120,20,20,0.97)':a.nivel==='naranja'?'rgba(110,50,0,0.97)':'rgba(90,65,0,0.97)';
+                const periodo = _fmtAlertaPeriodo(a.inicio, a.expira);
+                return (
+                    <div onClick={() => setAlertaZoom(null)} style={{
+                        position: 'fixed', inset: 0, zIndex: 9999,
+                        background: 'rgba(0,0,0,0.75)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        padding: '24px 16px',
+                    }}>
+                        <div onClick={e => e.stopPropagation()} style={{
+                            background: bg, border: `2px solid ${bc}`,
+                            borderRadius: 18, padding: '28px 24px 24px',
+                            maxWidth: 420, width: '100%', position: 'relative',
+                            boxShadow: `0 0 40px ${bc}55`,
+                        }}>
+                            {/* X cerrar */}
+                            <button onClick={() => setAlertaZoom(null)} style={{
+                                position: 'absolute', top: 12, right: 12,
+                                background: 'rgba(255,255,255,0.15)', border: 'none',
+                                color: '#fff', borderRadius: '50%',
+                                width: 36, height: 36, fontSize: 20, fontWeight: 900,
+                                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}>✕</button>
+
+                            {/* Badge */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                                <span style={{ fontSize: 42 }}>{a.icon}</span>
+                                <span style={{ fontSize: '0.65rem', fontWeight: 900, background: bc, color: '#111', borderRadius: 6, padding: '3px 10px', letterSpacing: '0.08em' }}>
+                                    ⚡ AEMET OFICIAL
+                                </span>
+                            </div>
+
+                            {/* Texto principal */}
+                            <div style={{ fontSize: '1.25rem', fontWeight: 900, color: tc, lineHeight: 1.3, marginBottom: 12 }}>
+                                {a.texto}
+                            </div>
+
+                            {/* Zona */}
+                            {a.area && (
+                                <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)', marginBottom: 8 }}>
+                                    📍 {a.area}
+                                </div>
+                            )}
+
+                            {/* Período */}
+                            {periodo && (
+                                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'rgba(255,255,255,0.85)', marginBottom: 16 }}>
+                                    🕐 {periodo}
+                                </div>
+                            )}
+
+                            <div style={{ borderTop: `1px solid ${bc}55`, paddingTop: 14, fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', textAlign: 'center' }}>
+                                Toca fuera o ✕ para cerrar
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
             {/* ══ WIDGET METEOROLOGÍA ══ */}
             <div style={{ background: 'linear-gradient(170deg, #0f2d1e 0%, #1a4731 45%, #1D9E75 100%)', color: '#fff' }}>
               {/* Wrapper centrado para desktop */}
@@ -803,13 +868,14 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                                 return (
                                     <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
 
-                                        {/* ── Alertas oficiales AEMET — destacadas ── */}
+                                        {/* ── Alertas oficiales AEMET — destacadas, clicables ── */}
                                         {aemetOfs.map((a, i) => (
-                                            <div key={`aemet${i}`} style={{
+                                            <div key={`aemet${i}`} onClick={() => setAlertaZoom(a)} style={{
                                                 background: `rgba(${a.nivel==='rojo'?'180,30,30':a.nivel==='naranja'?'160,70,0':'130,90,0'},0.45)`,
                                                 border: `1.5px solid ${borderColor(a)}`,
                                                 borderRadius: 10, padding: '8px 12px',
                                                 display: 'flex', alignItems: 'flex-start', gap: 10,
+                                                cursor: 'pointer',
                                             }}>
                                                 <span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{a.icon}</span>
                                                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -817,6 +883,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                                                         <span style={{ fontSize: '0.6rem', fontWeight: 900, background: borderColor(a), color: '#111', borderRadius: 4, padding: '1px 6px', letterSpacing: '0.07em', flexShrink: 0 }}>
                                                             ⚡ AEMET OFICIAL
                                                         </span>
+                                                        <span style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.4)' }}>toca para ampliar</span>
                                                     </div>
                                                     <span style={{ fontSize: '0.82rem', fontWeight: 700, color: textColor(a), lineHeight: 1.35 }}>
                                                         {a.texto}
