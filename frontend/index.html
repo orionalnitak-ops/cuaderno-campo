@@ -286,6 +286,16 @@
     .tab-icon { font-size: 22px; line-height: 1; }
     .tab-label { font-size: 0.62rem; font-weight: 600; letter-spacing: 0.02em; }
 
+    /* ── INICIO — siempre más prominente ── */
+    .nav-tab--home { color: rgba(255,255,255,0.75); }
+    .nav-tab--home .tab-icon { font-size: 26px; }
+    .nav-tab--home.active {
+      color: #fff;
+      background: rgba(29,158,117,0.22);
+      border-radius: var(--radius-full);
+      padding: 5px 14px;
+    }
+
     /* ── COMMANDER FAB — oversized, breaks top plane ── */
     .fab-center {
       width: 60px;
