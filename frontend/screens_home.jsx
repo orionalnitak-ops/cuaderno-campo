@@ -23,6 +23,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     const [wxState, setWxState]         = useState('idle');   // idle|loading|ok|error
     const [wxView, setWxView]           = useState('dias');   // 'dias' | 'horas'
     const [modalOpcion, setModalOpcion] = useState(null);  // null | 'tu' | 'yo'
+    const [avisosOpen, setAvisosOpen]   = useState(false);
     const [tuSubView, setTuSubView]     = useState(null);  // null | 'desde_cero'
 
     // ── Estado NLP ──
@@ -811,15 +812,40 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                                             </div>
                                         ))}
 
-                                        {/* ── Avisos agrícolas ── */}
-                                        {avisos.map((a, i) => (
-                                            <div key={`v${i}`} style={{ background: 'rgba(0,0,0,0.25)', borderLeft: '4px solid #60a5fa', borderRadius: '0 8px 8px 0', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
-                                                <span style={{ fontSize: 16 }}>{a.icon}</span>
-                                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#bfdbfe', flex: 1 }}>
-                                                    {a.texto}
-                                                </span>
+                                        {/* ── Avisos agrícolas — acordeón ── */}
+                                        {avisos.length > 0 && (
+                                            <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(96,165,250,0.25)' }}>
+                                                <button onClick={() => setAvisosOpen(v => !v)} style={{
+                                                    width: '100%', background: 'rgba(30,58,100,0.55)',
+                                                    border: 'none', cursor: 'pointer',
+                                                    display: 'flex', alignItems: 'center', gap: 8,
+                                                    padding: '7px 10px', color: '#bfdbfe',
+                                                }}>
+                                                    <span style={{ fontSize: 15 }}>📋</span>
+                                                    <span style={{ flex: 1, textAlign: 'left', fontSize: '0.75rem', fontWeight: 700 }}>
+                                                        Avisos de campo — próximos días
+                                                    </span>
+                                                    <span style={{ fontSize: '0.65rem', background: 'rgba(96,165,250,0.35)', color: '#93c5fd', borderRadius: 10, padding: '1px 7px', fontWeight: 800 }}>
+                                                        {avisos.length}
+                                                    </span>
+                                                    <span style={{ fontSize: 12, opacity: 0.7, marginLeft: 2 }}>
+                                                        {avisosOpen ? '▲' : '▼'}
+                                                    </span>
+                                                </button>
+                                                {avisosOpen && (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '5px 0 4px' }}>
+                                                        {avisos.map((a, i) => (
+                                                            <div key={`v${i}`} style={{ background: 'rgba(0,0,0,0.25)', borderLeft: '4px solid #60a5fa', borderRadius: '0 6px 6px 0', margin: '0 6px', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
+                                                                <span style={{ fontSize: 16 }}>{a.icon}</span>
+                                                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#bfdbfe', flex: 1 }}>
+                                                                    {a.texto}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
-                                        ))}
+                                        )}
 
                                         {!hayAlgo && (
                                             <div style={{ background: 'rgba(0,0,0,0.20)', borderLeft: '4px solid #4ade80', borderRadius: '0 8px 8px 0', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
