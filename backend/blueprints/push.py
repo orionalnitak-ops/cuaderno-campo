@@ -10,7 +10,7 @@ import os
 from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
 
-from db import get_db
+from db import get_db, one, dicts
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('push', __name__)
@@ -31,50 +31,61 @@ def vapid_public_key():
 @bp.route('/api/push/subscribe', methods=['POST'])
 @login_required
 def push_subscribe():
-    data     = request.get_json() or {}
-    endpoint = data.get('endpoint', '').strip()
-    keys     = data.get('keys', {})
+    data      = request.get_json() or {}
+    endpoint  = data.get('endpoint', '').strip()
+    keys      = data.get('keys', {})
     provincia = (data.get('provincia') or '').strip().lower()
     if not endpoint or not keys.get('p256dh') or not keys.get('auth'):
         return jsonify({'ok': False, 'error': 'Suscripción incompleta'}), 400
-    with get_db() as (conn, c):
-        c.execute(
-            '''INSERT OR REPLACE INTO push_subscriptions (user_id, endpoint, keys_json, provincia)
-               VALUES (?, ?, ?, ?)''',
+    conn = get_db()
+    try:
+        conn.execute(
+            '''INSERT INTO push_subscriptions (user_id, endpoint, keys_json, provincia)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT (endpoint) DO UPDATE SET
+                   user_id   = EXCLUDED.user_id,
+                   keys_json = EXCLUDED.keys_json,
+                   provincia = EXCLUDED.provincia''',
             (current_user.id, endpoint, json.dumps(keys), provincia)
         )
         conn.commit()
+    finally:
+        conn.close()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/push/unsubscribe', methods=['DELETE'])
 @login_required
 def push_unsubscribe():
-    with get_db() as (conn, c):
-        c.execute('DELETE FROM push_subscriptions WHERE user_id = ?', (current_user.id,))
+    conn = get_db()
+    try:
+        conn.execute('DELETE FROM push_subscriptions WHERE user_id = ?', (current_user.id,))
         conn.commit()
+    finally:
+        conn.close()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/push/status')
 @login_required
 def push_status():
-    with get_db() as (_, c):
-        row = c.execute(
-            'SELECT id FROM push_subscriptions WHERE user_id = ? LIMIT 1',
-            (current_user.id,)
-        ).fetchone()
+    conn = get_db()
+    try:
+        row = one(conn, 'SELECT id FROM push_subscriptions WHERE user_id = ? LIMIT 1',
+                  (current_user.id,))
+    finally:
+        conn.close()
     return jsonify({'ok': True, 'activo': row is not None})
 
 
-def _send_push(sub_row, payload: dict) -> bool:
+def _send_push(sub: dict, payload: dict) -> bool:
     """Envía push a una suscripción. Devuelve False si la suscripción es inválida (410/404)."""
     from pywebpush import webpush, WebPushException
     try:
         webpush(
             subscription_info={
-                'endpoint': sub_row['endpoint'],
-                'keys': json.loads(sub_row['keys_json']),
+                'endpoint': sub['endpoint'],
+                'keys': json.loads(sub['keys_json']),
             },
             data=json.dumps(payload, ensure_ascii=False),
             vapid_private_key=VAPID_PRIVATE_KEY,
@@ -88,7 +99,7 @@ def _send_push(sub_row, payload: dict) -> bool:
             status = None
         if status in (404, 410):
             return False  # suscripción revocada por el navegador
-        logger.warning('WebPushException endpoint=%s: %s', sub_row['endpoint'][:50], ex)
+        logger.warning('WebPushException endpoint=%s: %s', sub['endpoint'][:50], ex)
         return True  # error temporal — conservar suscripción
     except Exception as ex:
         logger.error('push send error: %s', ex)
@@ -102,7 +113,7 @@ def _alertas_hash(alertas: list) -> str:
 
 def job_check_push_alertas():
     """
-    APScheduler job: comprueba METEOALARM cada 30 min y envía push si cambian alertas.
+    APScheduler job: comprueba METEOALARM cada 30 min y envía push si cambian las alertas.
     Redis SETNX garantiza ejecución única en entornos multi-worker Gunicorn.
     """
     redis_url = os.environ.get('REDIS_URL')
@@ -120,17 +131,18 @@ def job_check_push_alertas():
 
     from blueprints.aemet import _fetch_meteoalarm
 
+    # Obtener provincias únicas con suscriptores
+    conn = get_db()
     try:
-        with get_db() as (_, c):
-            provincias = [
-                r['provincia'] for r in
-                c.execute(
-                    "SELECT DISTINCT provincia FROM push_subscriptions WHERE provincia != ''"
-                ).fetchall()
-            ]
+        provincias = [
+            r['provincia'] for r in
+            dicts(conn, "SELECT DISTINCT provincia FROM push_subscriptions WHERE provincia != ''")
+        ]
     except Exception as e:
         logger.error('push job: no se pudo leer provincias: %s', e)
+        conn.close()
         return
+    conn.close()
 
     for provincia in provincias:
         try:
@@ -139,24 +151,31 @@ def job_check_push_alertas():
                 continue
             nuevo_hash = _alertas_hash(alertas)
 
-            with get_db() as (conn, c):
-                cache = c.execute(
-                    'SELECT alertas_hash FROM push_alertas_cache WHERE provincia = ?',
-                    (provincia,)
-                ).fetchone()
+            conn = get_db()
+            try:
+                cache = one(conn,
+                            'SELECT alertas_hash FROM push_alertas_cache WHERE provincia = ?',
+                            (provincia,))
                 if cache and cache['alertas_hash'] == nuevo_hash:
-                    continue  # sin cambios desde el último chequeo
-                c.execute(
-                    '''INSERT OR REPLACE INTO push_alertas_cache (provincia, alertas_hash, updated_at)
-                       VALUES (?, ?, CURRENT_TIMESTAMP)''',
+                    conn.close()
+                    continue  # sin cambios
+                conn.execute(
+                    '''INSERT INTO push_alertas_cache (provincia, alertas_hash, updated_at)
+                       VALUES (?, ?, CURRENT_TIMESTAMP)
+                       ON CONFLICT (provincia) DO UPDATE SET
+                           alertas_hash = EXCLUDED.alertas_hash,
+                           updated_at   = CURRENT_TIMESTAMP
+                       RETURNING provincia''',
                     (provincia, nuevo_hash)
                 )
                 conn.commit()
+            finally:
+                conn.close()
 
             if not alertas:
                 continue  # alertas desaparecieron — no notificar
 
-            # Determinar nivel máximo para el título
+            # Nivel máximo para el título
             nivel_max = 'amarillo'
             for a in alertas:
                 if a.get('nivel') == 'rojo':
@@ -171,25 +190,27 @@ def job_check_push_alertas():
                 'url':   '/',
             }
 
-            with get_db() as (_, c):
-                subs = c.execute(
-                    'SELECT id, endpoint, keys_json FROM push_subscriptions WHERE provincia = ?',
-                    (provincia,)
-                ).fetchall()
+            conn = get_db()
+            try:
+                subs = dicts(conn,
+                             'SELECT id, endpoint, keys_json FROM push_subscriptions WHERE provincia = ?',
+                             (provincia,))
+            finally:
+                conn.close()
 
-            invalid_ids = []
-            for sub in subs:
-                if not _send_push(sub, payload):
-                    invalid_ids.append(sub['id'])
+            invalid_ids = [s['id'] for s in subs if not _send_push(s, payload)]
 
             if invalid_ids:
-                with get_db() as (conn, c):
-                    placeholders = ','.join('?' * len(invalid_ids))
-                    c.execute(
+                conn = get_db()
+                try:
+                    placeholders = ','.join(['?'] * len(invalid_ids))
+                    conn.execute(
                         f'DELETE FROM push_subscriptions WHERE id IN ({placeholders})',
                         invalid_ids
                     )
                     conn.commit()
+                finally:
+                    conn.close()
 
         except Exception as e:
             logger.error('push job error provincia=%s: %s', provincia, e)
