@@ -21,11 +21,11 @@ def aemet_alertas():
     try:
         r1 = req_lib.get(
             'https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado',
-            headers={'api_key': api_key},
+            params={'api_key': api_key},
             timeout=10
         )
         if r1.status_code != 200:
-            return jsonify({'ok': False, 'alertas': []})
+            return jsonify({'ok': False, 'alertas': [], 'status': r1.status_code, 'detail': r1.text[:300]})
         datos_url = r1.json().get('datos')
         if not datos_url:
             return jsonify({'ok': False, 'alertas': []})
