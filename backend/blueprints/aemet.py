@@ -115,8 +115,14 @@ def _fetch_meteoalarm(provincia, comunidad=''):
         if area_desc:
             if (provincia or comunidad) and not _zona_match(area_desc, provincia, comunidad):
                 continue
-            severity = entry.findtext(f'{{{CAP_NS}}}severity') or 'Minor'
-            nivel, icono = SEVERITY_MAP.get(severity, ('amarillo', '🟡'))
+            # METEOALARM usa severity='Moderate' para alertas amarillas — usar título ATOM
+            t_low = (entry.findtext(f'{{{ATOM_NS}}}title') or '').lower()
+            if 'red' in t_low:
+                nivel, icono = 'rojo', '🔴'
+            elif 'orange' in t_low:
+                nivel, icono = 'naranja', '🟠'
+            else:
+                nivel, icono = 'amarillo', '🟡'
             event_raw  = (entry.findtext(f'{{{CAP_NS}}}event') or '').lower()
             fenomeno   = next((es for en, es in FENOMENOS.items() if en in event_raw), 'Fenómeno adverso')
             expira     = entry.findtext(f'{{{CAP_NS}}}expires') or ''
