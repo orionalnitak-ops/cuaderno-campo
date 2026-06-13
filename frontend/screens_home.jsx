@@ -1,3 +1,10 @@
+function _urlBase64ToUint8Array(base64Str) {
+    const padding = '='.repeat((4 - base64Str.length % 4) % 4);
+    const base64  = (base64Str + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw     = atob(base64);
+    return new Uint8Array([...raw].map(c => c.charCodeAt(0)));
+}
+
 function _wxDiaLabel(fechaStr) {
     const d = new Date(fechaStr + 'T12:00:00');
     const hoy = new Date(); hoy.setHours(12,0,0,0);
@@ -34,6 +41,11 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     const [gsheetActivo, setGsheetActivo]       = useState(false);
     const fileRef = React.useRef(null);
 
+    // ── Push notifications ──
+    const [pushActivo,   setPushActivo]   = useState(false);
+    const [pushCargando, setPushCargando] = useState(false);
+    const pushProvinciaRef = React.useRef('');
+
     const useDragScroll = () => {
         const ref = React.useRef(null);
         const dragging = React.useRef(false);
@@ -65,6 +77,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
             const gJson = await gRes.json();
             const hit   = gJson?.results?.[0];
             if (!hit) { setWxState('error'); return; }
+            pushProvinciaRef.current = (hit.admin2 || hit.admin1 || '').toLowerCase();
             const params = [
                 `latitude=${hit.latitude}`, `longitude=${hit.longitude}`,
                 `current=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,weather_code`,
@@ -177,6 +190,13 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     }, []);
 
     useEffect(() => {
+        fetch('/api/push/status', { credentials: 'include' })
+            .then(r => r.ok ? r.json() : { activo: false })
+            .then(d => setPushActivo(d.activo || false))
+            .catch(() => {});
+    }, []);
+
+    useEffect(() => {
         if (explot === null) return;           // aún cargando
         if (!explot?.municipio?.trim()) { setWxState('error'); return; }
         loadWeather(explot.municipio);
@@ -222,6 +242,46 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
             setNlpTexto(acumulado);
         };
         rec.start();
+    };
+
+    const togglePush = async () => {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+            showToast('Tu navegador no soporta notificaciones push');
+            return;
+        }
+        setPushCargando(true);
+        try {
+            if (pushActivo) {
+                const reg = await navigator.serviceWorker.ready;
+                const sub = await reg.pushManager.getSubscription();
+                if (sub) await sub.unsubscribe();
+                await fetch('/api/push/unsubscribe', { method: 'DELETE', credentials: 'include' });
+                setPushActivo(false);
+                showToast('Alertas push desactivadas');
+            } else {
+                const keyRes = await fetch('/api/push/vapid-public-key', { credentials: 'include' });
+                const keyJson = await keyRes.json();
+                if (!keyJson.public_key) throw new Error('VAPID no configurado en el servidor');
+                const reg = await navigator.serviceWorker.ready;
+                const sub = await reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: _urlBase64ToUint8Array(keyJson.public_key),
+                });
+                const subJson = sub.toJSON();
+                await fetch('/api/push/subscribe', {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        endpoint: subJson.endpoint,
+                        keys: subJson.keys,
+                        provincia: pushProvinciaRef.current,
+                    }),
+                });
+                setPushActivo(true);
+                showToast('🔔 Alertas AEMET activadas — te avisamos cuando salgan publicadas');
+            }
+        } catch (e) { showToast('❌ ' + e.message); }
+        finally { setPushCargando(false); }
     };
 
     const resetNlp = () => {
@@ -764,6 +824,22 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                                     </div>
                                 );
                             })()}
+
+                            {/* ── Botón activar/desactivar alertas push ── */}
+                            <button onClick={togglePush} disabled={pushCargando} style={{
+                                marginTop: 8,
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                background: pushActivo ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.09)',
+                                border: `1px solid ${pushActivo ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.2)'}`,
+                                borderRadius: 8, padding: '7px 12px',
+                                color: '#fff', fontSize: '0.72rem', fontWeight: 700,
+                                cursor: pushCargando ? 'wait' : 'pointer',
+                                fontFamily: 'var(--font-body)',
+                                width: '100%', textAlign: 'left',
+                            }}>
+                                <span style={{ fontSize: 16 }}>{pushActivo ? '🔔' : '🔕'}</span>
+                                <span>{pushCargando ? 'Un momento…' : pushActivo ? 'Alertas activadas — toca para desactivar' : 'Activar alertas AEMET en este dispositivo'}</span>
+                            </button>
 
                             <div style={{ marginTop: 6, fontSize: '0.62rem', fontWeight: 600, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                                 📍 {weather.municipio}
