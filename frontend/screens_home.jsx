@@ -702,22 +702,50 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
 
                             {/* Alertas AEMET + avisos agrícolas */}
                             {(() => {
-                                const alertas = weather.alertas || [];
-                                const avisos  = weather.avisos  || [];
-                                const hayAlgo = alertas.length > 0 || avisos.length > 0;
+                                const alertas    = weather.alertas || [];
+                                const avisos     = weather.avisos  || [];
+                                const aemetOfs   = alertas.filter(a => a.fuente === 'AEMET');
+                                const generadas  = alertas.filter(a => a.fuente !== 'AEMET');
+                                const hayAlgo    = alertas.length > 0 || avisos.length > 0;
+                                const borderColor = a => a.nivel==='rojo'?'#f87171':a.nivel==='naranja'?'#fb923c':'#fbbf24';
+                                const textColor   = a => a.nivel==='rojo'?'#fca5a5':a.nivel==='naranja'?'#fdba74':'#fde68a';
                                 return (
-                                    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                        {alertas.map((a, i) => (
-                                            <div key={`a${i}`} style={{ background: 'rgba(0,0,0,0.35)', borderLeft: `4px solid ${a.nivel==='rojo'?'#f87171':a.nivel==='naranja'?'#fb923c':'#fbbf24'}`, borderRadius: '0 8px 8px 0', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
-                                                <span style={{ fontSize: 16 }}>{a.icon}</span>
-                                                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: a.nivel==='rojo'?'#fca5a5':a.nivel==='naranja'?'#fdba74':'#fde68a', flex: 1 }}>
-                                                    ⚠️ {a.texto}
-                                                </span>
-                                                {a.fuente === 'AEMET' && (
-                                                    <span style={{ fontSize: '0.6rem', fontWeight: 800, background: 'rgba(255,255,255,0.15)', borderRadius: 4, padding: '1px 5px', letterSpacing: '0.05em', opacity: 0.9 }}>AEMET</span>
-                                                )}
+                                    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+
+                                        {/* ── Alertas oficiales AEMET — destacadas ── */}
+                                        {aemetOfs.map((a, i) => (
+                                            <div key={`aemet${i}`} style={{
+                                                background: `rgba(${a.nivel==='rojo'?'180,30,30':a.nivel==='naranja'?'160,70,0':'130,90,0'},0.45)`,
+                                                border: `1.5px solid ${borderColor(a)}`,
+                                                borderRadius: 10, padding: '8px 12px',
+                                                display: 'flex', alignItems: 'flex-start', gap: 10,
+                                            }}>
+                                                <span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{a.icon}</span>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                                        <span style={{ fontSize: '0.6rem', fontWeight: 900, background: borderColor(a), color: '#111', borderRadius: 4, padding: '1px 6px', letterSpacing: '0.07em', flexShrink: 0 }}>
+                                                            ⚡ AEMET OFICIAL
+                                                        </span>
+                                                    </div>
+                                                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: textColor(a), lineHeight: 1.35 }}>
+                                                        {a.texto}
+                                                    </span>
+                                                    {a.area && <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{a.area}</div>}
+                                                </div>
                                             </div>
                                         ))}
+
+                                        {/* ── Alertas generadas desde Open-Meteo ── */}
+                                        {generadas.map((a, i) => (
+                                            <div key={`a${i}`} style={{ background: 'rgba(0,0,0,0.35)', borderLeft: `4px solid ${borderColor(a)}`, borderRadius: '0 8px 8px 0', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
+                                                <span style={{ fontSize: 16 }}>{a.icon}</span>
+                                                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: textColor(a), flex: 1 }}>
+                                                    {a.texto}
+                                                </span>
+                                            </div>
+                                        ))}
+
+                                        {/* ── Avisos agrícolas ── */}
                                         {avisos.map((a, i) => (
                                             <div key={`v${i}`} style={{ background: 'rgba(0,0,0,0.25)', borderLeft: '4px solid #60a5fa', borderRadius: '0 8px 8px 0', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
                                                 <span style={{ fontSize: 16 }}>{a.icon}</span>
@@ -726,6 +754,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                                                 </span>
                                             </div>
                                         ))}
+
                                         {!hayAlgo && (
                                             <div style={{ background: 'rgba(0,0,0,0.20)', borderLeft: '4px solid #4ade80', borderRadius: '0 8px 8px 0', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
                                                 <span style={{ fontSize: 16 }}>✅</span>
