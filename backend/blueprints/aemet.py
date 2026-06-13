@@ -10,6 +10,34 @@ from flask_login import login_required
 bp = Blueprint('aemet', __name__)
 
 
+@bp.route('/api/aemet/diagnostico')
+@login_required
+def aemet_diagnostico():
+    """Endpoint de diagnóstico — muestra la respuesta cruda de AEMET."""
+    api_key = os.environ.get('AEMET_API_KEY', '')
+    if not api_key:
+        return jsonify({'error': 'AEMET_API_KEY no configurada'})
+    try:
+        r1 = req_lib.get(
+            'https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado',
+            params={'api_key': api_key}, timeout=10
+        )
+        if r1.status_code != 200:
+            return jsonify({'paso': 1, 'status': r1.status_code, 'body': r1.text[:500]})
+        meta = r1.json()
+        datos_url = meta.get('datos', '')
+        if not datos_url:
+            return jsonify({'paso': 1, 'status': 200, 'meta': meta, 'error': 'sin URL datos'})
+        r2 = req_lib.get(datos_url, timeout=15)
+        return jsonify({
+            'paso': 2, 'datos_url': datos_url,
+            'status2': r2.status_code,
+            'primeros_500_chars': r2.text[:500],
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+
 @bp.route('/api/aemet/alertas')
 @login_required
 def aemet_alertas():
