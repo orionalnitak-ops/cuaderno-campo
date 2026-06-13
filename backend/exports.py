@@ -135,7 +135,8 @@ def export_excel(user_id, campana='2025/2026'):
     # ══════════════════════════════════════════
     ws3 = wb.create_sheet("CULTIVOS POR CAMPAÑA")
     cc_cols = ["ID", "Parcela", "Campaña", "Cultivo", "Variedad",
-               "Fecha Siembra", "Fecha Recol. Prevista", "Superficie Cultivada (ha)", "Notas"]
+               "Fecha Siembra", "Fecha Recol. Prevista", "Superficie Cultivada (ha)",
+               "Kg Sembrados", "Precio/kg Compra (€)", "Notas"]
     _header_row(ws3, cc_cols, TEAL_FILL)
     cultivos = dicts(conn, """
         SELECT cc.*, p.nombre_finca FROM cultivos_campana cc
@@ -146,7 +147,8 @@ def export_excel(user_id, campana='2025/2026'):
     for ri, r in enumerate(cultivos, 2):
         row_data = [r.get('id'), r.get('nombre_finca'), r.get('campana'),
                     r.get('cultivo'), r.get('variedad'), r.get('fecha_siembra'),
-                    r.get('fecha_recoleccion_prevista'), r.get('superficie_cultivada_ha'), r.get('notas')]
+                    r.get('fecha_recoleccion_prevista'), r.get('superficie_cultivada_ha'),
+                    r.get('kg_sembrados'), r.get('precio_kg_compra'), r.get('notas')]
         for ci, val in enumerate(row_data, 1):
             ws3.cell(row=ri, column=ci, value=val)
         _alt_row(ws3, ri)
