@@ -73,24 +73,48 @@ def _fetch_meteoalarm(provincia):
         for alert_el in entry.findall(f'{{{CAP_NS}}}alert'):
             alertas.extend(_parse_cap_alert(alert_el, provincia))
 
-        # Si no hay CAP embebido, intentar con el summary/title filtrado por provincia
+        # Si no hay CAP embebido, parsear desde title/summary de METEOALARM
         if not alertas:
             title   = entry.findtext(f'{{{ATOM_NS}}}title')   or ''
             summary = entry.findtext(f'{{{ATOM_NS}}}summary') or ''
-            if provincia and provincia not in (title + summary).lower():
+            haystack = (title + ' ' + summary).lower()
+            if provincia and provincia not in haystack:
                 continue
-            # Extraer severidad del título si viene en formato METEOALARM
-            nivel, icono = ('amarillo', '🟡')
-            for k in ('Extreme', 'Severe', 'Moderate', 'Minor',
-                      'extreme', 'severe', 'moderate', 'minor'):
-                if k.lower() in (title + summary).lower():
-                    nivel, icono = SEVERITY_MAP.get(k, ('amarillo', '🟡'))
+
+            # Severidad desde el color en el título
+            nivel, icono = 'amarillo', '🟡'
+            if 'red' in haystack:
+                nivel, icono = 'rojo', '🔴'
+            elif 'orange' in haystack:
+                nivel, icono = 'naranja', '🟠'
+
+            # Tipo de fenómeno → español
+            FENOMENOS = {
+                'thunderstorm': 'Tormentas', 'storm': 'Tormenta',
+                'rain': 'Lluvia intensa', 'wind': 'Viento fuerte',
+                'snow': 'Nieve', 'fog': 'Niebla', 'heat': 'Calor extremo',
+                'cold': 'Frío extremo', 'ice': 'Hielo', 'flood': 'Inundaciones',
+                'avalanche': 'Aludes', 'coastal': 'Oleaje',
+            }
+            fenomeno = 'Fenómeno adverso'
+            for en, es in FENOMENOS.items():
+                if en in haystack:
+                    fenomeno = es
                     break
+
+            NIVEL_ES = {'amarillo': 'amarillo', 'naranja': 'naranja', 'rojo': 'rojo'}
+            texto_es = f'Aviso {NIVEL_ES[nivel]}: {fenomeno}'
+
+            # Área: lo que viene después de " - " en el título de METEOALARM
+            area = ''
+            if ' - ' in title:
+                area = title.split(' - ', 1)[-1].strip()
+
             if title:
                 alertas.append({
                     'nivel': nivel, 'icon': icono,
-                    'evento': title, 'area': '',
-                    'texto': summary or title, 'expira': '',
+                    'evento': fenomeno, 'area': area,
+                    'texto': texto_es, 'expira': '',
                     'fuente': 'AEMET',
                 })
 
