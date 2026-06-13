@@ -9,6 +9,20 @@ from flask_login import login_required
 
 bp = Blueprint('aemet', __name__)
 
+AEMET_CAP_URL = 'https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado'
+
+
+def _aemet_request(api_key):
+    """Llama a AEMET con el formato de autenticación correcto según el tipo de clave."""
+    es_jwt = api_key.startswith('eyJ')
+    if es_jwt:
+        hdrs   = {'Authorization': f'Bearer {api_key}'}
+        params = {}
+    else:
+        hdrs   = {'api_key': api_key}
+        params = {'api_key': api_key}
+    return req_lib.get(AEMET_CAP_URL, headers=hdrs, params=params, timeout=10), es_jwt
+
 
 @bp.route('/api/aemet/diagnostico')
 @login_required
@@ -18,19 +32,20 @@ def aemet_diagnostico():
     if not api_key:
         return jsonify({'error': 'AEMET_API_KEY no configurada'})
     try:
-        r1 = req_lib.get(
-            'https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado',
-            params={'api_key': api_key}, timeout=10
-        )
+        r1, es_jwt = _aemet_request(api_key)
         if r1.status_code != 200:
-            return jsonify({'paso': 1, 'status': r1.status_code, 'body': r1.text[:500]})
+            return jsonify({
+                'paso': 1, 'status': r1.status_code,
+                'es_jwt': es_jwt, 'body': r1.text[:500],
+            })
         meta = r1.json()
         datos_url = meta.get('datos', '')
         if not datos_url:
             return jsonify({'paso': 1, 'status': 200, 'meta': meta, 'error': 'sin URL datos'})
         r2 = req_lib.get(datos_url, timeout=15)
         return jsonify({
-            'paso': 2, 'datos_url': datos_url,
+            'paso': 2, 'es_jwt': es_jwt,
+            'datos_url': datos_url,
             'status2': r2.status_code,
             'primeros_500_chars': r2.text[:500],
         })
@@ -47,15 +62,11 @@ def aemet_alertas():
     if not api_key:
         return jsonify({'ok': True, 'alertas': [], 'msg': 'AEMET_API_KEY no configurada'})
     try:
-        r1 = req_lib.get(
-            'https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado',
-            params={'api_key': api_key},
-            timeout=10
-        )
+        r1, _ = _aemet_request(api_key)
         if r1.status_code == 404:
             return jsonify({'ok': True, 'alertas': [], 'msg': 'Sin alertas activas'})
         if r1.status_code != 200:
-            return jsonify({'ok': False, 'alertas': [], 'status': r1.status_code, 'detail': r1.text[:300]})
+            return jsonify({'ok': False, 'alertas': [], 'status': r1.status_code})
         datos_url = r1.json().get('datos')
         if not datos_url:
             return jsonify({'ok': False, 'alertas': []})
