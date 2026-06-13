@@ -81,6 +81,7 @@ from blueprints.nlp import bp as nlp_bp
 from blueprints.imports_exports import bp as imports_exports_bp
 from blueprints.aemet import bp as aemet_bp
 from blueprints.stripe_bp import bp as stripe_bp
+from blueprints.push import bp as push_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(admin_bp)
@@ -96,6 +97,7 @@ app.register_blueprint(nlp_bp)
 app.register_blueprint(imports_exports_bp)
 app.register_blueprint(aemet_bp)
 app.register_blueprint(stripe_bp)
+app.register_blueprint(push_bp)
 
 # ─────────────────────────────────────────────
 # STATIC SERVING
@@ -148,6 +150,22 @@ def guard_active_plan():
             "error": "subscription_required",
             "plan": current_user.plan_label(),
         }), 403
+
+
+# ─────────────────────────────────────────────
+# SCHEDULER — alertas push cada 30 min
+# Redis SETNX en el job garantiza ejecución única entre workers Gunicorn
+# ─────────────────────────────────────────────
+try:
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from blueprints.push import job_check_push_alertas
+    import atexit
+    _scheduler = BackgroundScheduler(daemon=True)
+    _scheduler.add_job(job_check_push_alertas, 'interval', minutes=30, id='push_alertas')
+    _scheduler.start()
+    atexit.register(lambda: _scheduler.shutdown(wait=False))
+except Exception as _sch_err:
+    logger.warning('APScheduler no arrancó: %s', _sch_err)
 
 
 # ─────────────────────────────────────────────

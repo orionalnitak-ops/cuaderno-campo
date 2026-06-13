@@ -499,6 +499,26 @@ def init_db():
     # Admin accounts never expire
     c.execute("UPDATE users SET plan='pro' WHERE role='admin' AND (plan='trial' OR plan IS NULL)")
 
+    # ── PUSH NOTIFICATIONS ──
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id {_PK},
+            user_id INTEGER NOT NULL,
+            endpoint TEXT NOT NULL UNIQUE,
+            keys_json TEXT NOT NULL,
+            provincia TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    ''')
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS push_alertas_cache (
+            provincia TEXT PRIMARY KEY,
+            alertas_hash TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     conn.commit()
     _seed_admin(conn)
     _seed_if_needed(conn)
