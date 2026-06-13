@@ -1166,6 +1166,8 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
         fecha_siembra:                record?.fecha_siembra                || '',
         fecha_recoleccion_prevista:   record?.fecha_recoleccion_prevista   || '',
         superficie_cultivada_ha:      record?.superficie_cultivada_ha      || '',
+        kg_sembrados:                 record?.kg_sembrados                 || '',
+        precio_kg_compra:             record?.precio_kg_compra             || '',
         notas:                        record?.notas                        || '',
         campana,
     });
@@ -1248,6 +1250,14 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                 <FieldGroup label="Fecha recolección prevista">
                     <input type="date" className="input-field" value={f.fecha_recoleccion_prevista}
                         onChange={e => set('fecha_recoleccion_prevista', e.target.value)} />
+                </FieldGroup>
+                <FieldGroup label="Kg sembrados">
+                    <ZoomInput label="Kg sembrados" type="number" inputMode="decimal"
+                        value={f.kg_sembrados} onConfirm={v => set('kg_sembrados', v)} />
+                </FieldGroup>
+                <FieldGroup label="Precio/kg compra (€)">
+                    <ZoomInput label="Precio/kg compra (€)" type="number" inputMode="decimal"
+                        value={f.precio_kg_compra} onConfirm={v => set('precio_kg_compra', v)} />
                 </FieldGroup>
             </div>
 
