@@ -58,8 +58,14 @@ def _parse_cap_alert(alert_el, provincia):
 
 
 def _norm(s: str) -> str:
-    """Normaliza para comparar: minúsculas, guiones → espacios."""
-    return s.lower().replace('-', ' ').strip()
+    """Normaliza para comparar: minúsculas, guiones → espacios, sin prefijos admin."""
+    s = s.lower().replace('-', ' ').strip()
+    for prefix in ('comunidad autónoma de ', 'comunidad autonoma de ',
+                   'provincia de la ', 'provincia de '):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+            break
+    return s
 
 
 def _zona_match(haystack: str, provincia: str, comunidad: str) -> bool:
