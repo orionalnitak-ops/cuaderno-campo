@@ -24,6 +24,8 @@ def aemet_alertas():
             params={'api_key': api_key},
             timeout=10
         )
+        if r1.status_code == 404:
+            return jsonify({'ok': True, 'alertas': [], 'msg': 'Sin alertas activas'})
         if r1.status_code != 200:
             return jsonify({'ok': False, 'alertas': [], 'status': r1.status_code, 'detail': r1.text[:300]})
         datos_url = r1.json().get('datos')
