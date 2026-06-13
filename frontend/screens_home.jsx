@@ -77,7 +77,8 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
             const gJson = await gRes.json();
             const hit   = gJson?.results?.[0];
             if (!hit) { setWxState('error'); return; }
-            pushProvinciaRef.current = (hit.admin2 || hit.admin1 || '').toLowerCase();
+            // Guardar comunidad autónoma (admin1) para push — METEOALARM la usa como área
+            pushProvinciaRef.current = (hit.admin1 || hit.admin2 || '').toLowerCase();
             const params = [
                 `latitude=${hit.latitude}`, `longitude=${hit.longitude}`,
                 `current=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,weather_code`,
@@ -166,12 +167,17 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                     avisos.push({ nivel: 'aviso', icon: '❄️', texto: `Riesgo de helada (${d.tmin}°C mín) — ${lbl}` });
             });
 
-            // Alertas oficiales AEMET (si hay API key configurada)
+            // Alertas oficiales AEMET — pasamos provincia (admin2) Y comunidad (admin1)
+            // METEOALARM a veces publica el aviso bajo la CCAA, no la provincia
             let aemetAlertas = [];
             try {
-                const provincia = hit.admin2 || hit.admin1 || '';
-                if (provincia) {
-                    const aRes  = await fetch(`/api/aemet/alertas?provincia=${encodeURIComponent(provincia)}`);
+                const prov = hit.admin2 || '';
+                const com  = hit.admin1 || '';
+                if (prov || com) {
+                    const params = new URLSearchParams();
+                    if (prov) params.set('provincia', prov);
+                    if (com)  params.set('comunidad', com);
+                    const aRes  = await fetch(`/api/aemet/alertas?${params}`);
                     const aJson = await aRes.json();
                     if (aJson.ok) aemetAlertas = aJson.alertas || [];
                 }

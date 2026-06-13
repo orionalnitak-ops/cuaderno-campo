@@ -57,8 +57,27 @@ def _parse_cap_alert(alert_el, provincia):
     return results
 
 
-def _fetch_meteoalarm(provincia):
-    """Obtiene alertas de METEOALARM ATOM — sin API key, actualización inmediata."""
+def _norm(s: str) -> str:
+    """Normaliza para comparar: minúsculas, guiones → espacios."""
+    return s.lower().replace('-', ' ').strip()
+
+
+def _zona_match(haystack: str, provincia: str, comunidad: str) -> bool:
+    """True si la provincia O la comunidad aparecen en el haystack normalizado."""
+    h = _norm(haystack)
+    if provincia and _norm(provincia) in h:
+        return True
+    if comunidad and _norm(comunidad) in h:
+        return True
+    return False
+
+
+def _fetch_meteoalarm(provincia, comunidad=''):
+    """Obtiene alertas de METEOALARM ATOM — sin API key, actualización inmediata.
+
+    Acepta `comunidad` (CCAA) para ampliar el matching cuando METEOALARM
+    publica el aviso bajo el nombre de la comunidad en lugar de la provincia.
+    """
     r = req_lib.get(METEOALARM_ATOM, timeout=12,
                     headers={'User-Agent': 'CuadernoExplotacion/2.0'})
     if r.status_code != 200:
@@ -77,8 +96,8 @@ def _fetch_meteoalarm(provincia):
         if not alertas:
             title   = entry.findtext(f'{{{ATOM_NS}}}title')   or ''
             summary = entry.findtext(f'{{{ATOM_NS}}}summary') or ''
-            haystack = (title + ' ' + summary).lower()
-            if provincia and provincia not in haystack:
+            haystack = title + ' ' + summary
+            if (provincia or comunidad) and not _zona_match(haystack, provincia, comunidad):
                 continue
 
             # Severidad desde el color en el título
@@ -156,9 +175,10 @@ def _fetch_aemet_cap(provincia):
 @login_required
 def aemet_alertas():
     provincia = (request.args.get('provincia') or '').strip().lower()
+    comunidad = (request.args.get('comunidad') or '').strip().lower()
     try:
         # 1) Intentar METEOALARM (más fiable y sin lag)
-        alertas, err = _fetch_meteoalarm(provincia)
+        alertas, err = _fetch_meteoalarm(provincia, comunidad)
         if alertas is not None:
             return jsonify({'ok': True, 'alertas': alertas, 'fuente': 'meteoalarm'})
 
