@@ -116,9 +116,9 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 return d >= now && d <= new Date(now.getTime() + 24 * 3600000);
             });
 
-            // Generar alertas a partir de umbrales AEMET
+            // Generar alertas a partir de umbrales AEMET — solo 5 días (pronóstico fiable)
             const alertas = [];
-            daily.forEach(d => {
+            daily.slice(0, 5).forEach(d => {
                 const lbl = _wxDiaLabel(d.fecha);
                 // Tormentas (códigos WMO 95-99)
                 if (d.code === 99) alertas.push({ nivel: 'rojo',    icon: '🔴', texto: `⚡ Tormenta con granizo fuerte — ${lbl}` });
