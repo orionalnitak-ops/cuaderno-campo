@@ -1,5 +1,5 @@
 // ── Field Zoom Overlay — campo a pantalla grande para móvil ──
-function FieldZoomOverlay({ label, value, type, placeholder, multiline, onConfirm, onClose }) {
+function FieldZoomOverlay({ label, value, type, inputMode, placeholder, multiline, onConfirm, onClose }) {
     const [val, setVal] = React.useState(value || '');
     const inputRef = React.useRef(null);
 
@@ -7,7 +7,12 @@ function FieldZoomOverlay({ label, value, type, placeholder, multiline, onConfir
         setTimeout(() => { if (inputRef.current) inputRef.current.focus(); }, 80);
     }, []);
 
-    const confirm = () => onConfirm(typeof val === 'string' ? val.trim() : val);
+    const isDecimal = inputMode === 'decimal' || type === 'number';
+    const confirm = () => {
+        let v = typeof val === 'string' ? val.trim() : val;
+        if (isDecimal) v = v.replace(',', '.');
+        onConfirm(v);
+    };
 
     const inputStyle = {
         width: '100%', boxSizing: 'border-box',
@@ -58,7 +63,8 @@ function FieldZoomOverlay({ label, value, type, placeholder, multiline, onConfir
                     ) : (
                         <input
                             ref={inputRef}
-                            type={type || 'text'}
+                            type="text"
+                            inputMode={inputMode || (type === 'number' ? 'decimal' : undefined)}
                             value={val}
                             onChange={e => setVal(e.target.value)}
                             placeholder={placeholder}
@@ -111,6 +117,7 @@ function ZoomInput({ label, value, type, inputMode, placeholder, multiline, styl
                     label={label}
                     value={value || ''}
                     type={type}
+                    inputMode={inputMode}
                     placeholder={placeholder}
                     multiline={multiline}
                     onConfirm={val => { onConfirm(val); setOpen(false); }}
