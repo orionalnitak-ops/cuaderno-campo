@@ -486,7 +486,7 @@ function App() {
                     }
                     return (
                         <button key={item.id}
-                            className={`nav-tab ${screen === item.id ? 'active' : ''}`}
+                            className={`nav-tab ${item.id === 'inicio' ? 'nav-tab--home' : ''} ${screen === item.id ? 'active' : ''}`}
                             onClick={() => navigate(item.id)}>
                             <span className="tab-icon">{item.icon}</span>
                             <span className="tab-label">{item.label}</span>
