@@ -327,7 +327,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
 
         return (
             <div style={{ padding: '16px 16px 32px' }}>
-                <button onClick={resetNlp} style={S.backBtn}>← Volver</button>
+                <button onClick={resetNlp} style={S.backBtn}><span style={{fontSize:"1.1rem"}}>‹</span> Volver</button>
                 <h2 style={{ fontSize: '1.3rem', fontWeight: 800, margin: '0 0 4px' }}>Confirma los datos</h2>
                 <p style={{ fontSize: '0.82rem', color: 'var(--on-surface-variant)', margin: '0 0 20px' }}>
                     "{nlpResultado.texto_original}"
@@ -420,7 +420,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     if (modalOpcion === 'yo') {
         return (
             <div style={{ padding: '16px', display: 'flex', flexDirection: 'column' }}>
-                <button onClick={volverHome} style={S.backBtn}>← Volver</button>
+                <button onClick={volverHome} style={S.backBtn}><span style={{fontSize:"1.1rem"}}>‹</span> Volver</button>
                 <h2 style={{ fontWeight: 800, fontSize: '1.5rem', margin: '0 0 6px' }}>Habla que yo escribo</h2>
                 <p style={{ fontSize: '0.88rem', color: 'var(--on-surface-variant)', margin: '0 0 24px', lineHeight: 1.5 }}>
                     Escribe lo que has hecho hoy, como si se lo dijeras a alguien:
@@ -484,7 +484,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
         ];
         return (
             <div style={{ padding: '16px' }}>
-                <button onClick={volverHome} style={S.backBtn}>← Volver</button>
+                <button onClick={volverHome} style={S.backBtn}><span style={{fontSize:"1.1rem"}}>‹</span> Volver</button>
                 <h2 style={{ fontWeight: 800, fontSize: '1.4rem', margin: '0 0 16px' }}>¿Qué quieres registrar?</h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {MODULOS.map(q => (
@@ -541,7 +541,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
 
         return (
             <div style={{ padding: '16px' }}>
-                <button onClick={() => setTuSubView(null)} style={S.backBtn}>← Volver</button>
+                <button onClick={() => setTuSubView(null)} style={S.backBtn}><span style={{fontSize:"1.1rem"}}>‹</span> Volver</button>
                 <h2 style={{ fontWeight: 800, fontSize: '1.5rem', margin: '0 0 6px' }}>Parcelas</h2>
                 <p style={{ fontSize: '0.83rem', color: 'var(--on-surface-variant)', margin: '0 0 24px' }}>Importa tus parcelas o introdúcelas manualmente.</p>
 
@@ -878,9 +878,17 @@ function NlpFila({ icono, label, valor, badge, alerta }) {
 // Estilos reutilizables
 const S = {
     backBtn: {
-        background: 'none', border: 'none', color: 'var(--primary)',
-        fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer',
-        marginBottom: 16, padding: 0,
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        background: 'var(--surface-container-low)',
+        border: '1.5px solid var(--outline-variant)',
+        borderRadius: 100,
+        color: 'var(--on-surface)',
+        fontSize: '0.9rem', fontWeight: 700,
+        cursor: 'pointer',
+        padding: '10px 18px',
+        marginBottom: 20,
+        fontFamily: 'var(--font-body)',
+        minHeight: 44,
     },
     btn: {
         border: 'none', borderRadius: 'var(--radius-lg)', padding: '14px 20px',
