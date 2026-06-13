@@ -157,9 +157,17 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                     avisos.push({ nivel: 'aviso', icon: '💨', texto: `Viento fuerte (rachas ${d.rachas}km/h) — no tratar — ${lbl}` });
                 else if (!yaAlertaViento && d.viento >= 25)
                     avisos.push({ nivel: 'aviso', icon: '💨', texto: `Viento moderado (${d.viento}km/h) — precaución al tratar — ${lbl}` });
-                // Lluvia leve: ≥5mm o probabilidad ≥50%
-                if (!yaAlertaLluvia && (d.lluvia_mm >= 5 || d.prob_lluvia >= 50))
-                    avisos.push({ nivel: 'aviso', icon: '🌧️', texto: `Lluvia prevista (${d.lluvia_mm}mm, ${d.prob_lluvia}%) — ${lbl}` });
+                // Chubascos (80-82): mencionar tormenta aunque no llegue al umbral de alerta
+                // Lluvia leve: ≥5mm o probabilidad ≥40%
+                if (!yaAlertaLluvia && (d.lluvia_mm >= 5 || d.prob_lluvia >= 40)) {
+                    const esChubasco = [80, 81, 82].includes(d.code);
+                    avisos.push({ nivel: 'aviso',
+                        icon: esChubasco ? '⛈️' : '🌧️',
+                        texto: esChubasco
+                            ? `Chubascos/tormentas probables (${d.prob_lluvia}%) — ${lbl}`
+                            : `Lluvia prevista (${d.lluvia_mm}mm, ${d.prob_lluvia}%) — ${lbl}`,
+                    });
+                }
                 // Calor agrícola: 35-37°C — riesgo para trabajadores y aplicación de fitosanitarios
                 if (!yaAlertaCalor && d.tmax >= 35 && d.tmax < 38)
                     avisos.push({ nivel: 'aviso', icon: '☀️', texto: `Calor (${d.tmax}°C) — evitar horas centrales — ${lbl}` });
