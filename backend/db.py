@@ -243,6 +243,8 @@ def init_db():
         )
     ''')
     _add_col(c, 'cultivos_campana', 'cultivo_iacs_cod', 'TEXT')
+    _add_col(c, 'cultivos_campana', 'kg_sembrados', 'REAL')
+    _add_col(c, 'cultivos_campana', 'precio_kg_compra', 'REAL')
 
     # ── COMPRAS (Trazabilidad — Anexo III S5) ──
     c.execute(f'''

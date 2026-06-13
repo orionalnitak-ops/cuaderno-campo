@@ -155,24 +155,29 @@ def manage_cultivos():
         c.execute('''
             INSERT INTO cultivos_campana
                 (parcela_id, campana, cultivo, cultivo_iacs_cod, variedad, fecha_siembra,
-                 fecha_recoleccion_prevista, superficie_cultivada_ha, notas)
-            VALUES (?,?,?,?,?,?,?,?,?)
+                 fecha_recoleccion_prevista, superficie_cultivada_ha, notas,
+                 kg_sembrados, precio_kg_compra)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
         ''', (parcela_id, data.get('campana'), data.get('cultivo'),
               data.get('cultivo_iacs_cod'),
               data.get('variedad'), data.get('fecha_siembra'),
               data.get('fecha_recoleccion_prevista'), _to_real(data.get('superficie_cultivada_ha')),
-              data.get('notas')))
+              data.get('notas'),
+              _to_real(data.get('kg_sembrados')), _to_real(data.get('precio_kg_compra'))))
         new_id = c.lastrowid
     except Exception:
         c.execute('''
             UPDATE cultivos_campana SET cultivo=?, cultivo_iacs_cod=?, variedad=?,
                 fecha_siembra=?, fecha_recoleccion_prevista=?,
-                superficie_cultivada_ha=?, notas=?, updated_at=CURRENT_TIMESTAMP
+                superficie_cultivada_ha=?, notas=?,
+                kg_sembrados=?, precio_kg_compra=?, updated_at=CURRENT_TIMESTAMP
             WHERE parcela_id=? AND campana=?
         ''', (data.get('cultivo'), data.get('cultivo_iacs_cod'),
               data.get('variedad'), data.get('fecha_siembra'),
               data.get('fecha_recoleccion_prevista'), _to_real(data.get('superficie_cultivada_ha')),
-              data.get('notas'), parcela_id, data.get('campana')))
+              data.get('notas'),
+              _to_real(data.get('kg_sembrados')), _to_real(data.get('precio_kg_compra')),
+              parcela_id, data.get('campana')))
         new_id = None
     conn.commit(); conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
@@ -199,9 +204,10 @@ def manage_cultivo(cid):
         conn.close()
         return jsonify(row or {})
     data = request.json or {}
-    fields = ['cultivo', 'cultivo_iacs_cod', 'variedad', 'fecha_siembra', 'fecha_recoleccion_prevista', 'superficie_cultivada_ha', 'notas']
+    fields = ['cultivo', 'cultivo_iacs_cod', 'variedad', 'fecha_siembra', 'fecha_recoleccion_prevista', 'superficie_cultivada_ha', 'notas', 'kg_sembrados', 'precio_kg_compra']
+    real_fields = {'superficie_cultivada_ha', 'kg_sembrados', 'precio_kg_compra'}
+    values = [_to_real(data.get(f)) if f in real_fields else data.get(f) for f in fields]
     sets = ', '.join(f"{f}=?" for f in fields)
-    conn.execute(f"UPDATE cultivos_campana SET {sets} WHERE id=?",
-                 [data.get(f) for f in fields] + [cid])
+    conn.execute(f"UPDATE cultivos_campana SET {sets} WHERE id=?", values + [cid])
     conn.commit(); conn.close()
     return jsonify({"status": "ok"})
