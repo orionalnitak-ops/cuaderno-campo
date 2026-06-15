@@ -561,9 +561,46 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
 }
 
 // ── 3. LABOR AGRÍCOLA ──
-const _LABOR_TIPOS = ['Aclareo','Alzado','Arado','Desherbado','Escarda','Fresado','Gradeo','Laboreo del suelo','Limpieza','Plantación','Poda','Riego','Siembra','Subsolado','Triturado de restos','Vendimia','Otros'];
-const _LABOR_MAP = {'arado':'Arado','are':'Arado','poda':'Poda','pode':'Poda','desherbado':'Desherbado','desyerbado':'Desherbado','desbroz':'Desherbado','siembra':'Siembra','sembrado':'Siembra','siembre':'Siembra','sembre':'Siembra','fresado':'Fresado','subsolado':'Subsolado','gradeo':'Gradeo','pase':'Gradeo','limpieza':'Limpieza','limpie':'Limpieza','laboreo':'Laboreo del suelo','labrado':'Laboreo del suelo','labor':'Laboreo del suelo','cultivado':'Laboreo del suelo','vendimia':'Vendimia','vendimiado':'Vendimia','escarda':'Escarda','cave':'Escarda','cavado':'Escarda','trilla':'Triturado de restos','trillado':'Triturado de restos','riego':'Riego','regado':'Riego'};
-const normTipoLabor = (v) => { if (!v) return ''; if (_LABOR_TIPOS.includes(v)) return v; return _LABOR_MAP[(v||'').toLowerCase().trim()] || ''; };
+const _LABOR_TIPOS = [
+  ['Aclareo',                     'Aclareo (eliminar los brotes débiles frutales)'],
+  ['Acordonar/Hilerar',           'Acordonar/Hilerar (amontonar poda)'],
+  ['Alzado',                      'Alzado (arar con vertederas o arados de disco, laboreo superficial <30cm)'],
+  ['Arado',                       'Arado'],
+  ['Atado',                       'Atado'],
+  ['Desherbado o Desbroce',       'Desherbado o Desbroce'],
+  ['Despunte y Deshoje',          'Despunte y Deshoje'],
+  ['Escarda',                     'Escarda'],
+  ['Fresado',                     'Fresado'],
+  ['Gradeo o Rastreo',            'Gradeo o Rastreo'],
+  ['Guiado de brotes',            'Guiado de brotes'],
+  ['Injertado',                   'Injertado'],
+  ['Mantenimiento Instalaciones', 'Mantenimiento Instalaciones'],
+  ['Mantenimiento Maquinaria',    'Mantenimiento Maquinaria'],
+  ['Plantación',                  'Plantación'],
+  ['Poda',                        'Poda'],
+  ['Recolección',                 'Recolección'],
+  ['Retirada de leña',            'Retirada de leña'],
+  ['Riego',                       'Riego'],
+  ['Ruleo',                       'Ruleo'],
+  ['Siembra',                     'Siembra'],
+  ['Subsolado',                   'Subsolado'],
+  ['Triturado de restos',         'Triturado de restos'],
+  ['Otros',                       'Otros'],
+];
+const _LABOR_MAP = {
+  'aclareo':'Aclareo','alzado':'Alzado','arado':'Arado','are':'Arado',
+  'poda':'Poda','pode':'Poda',
+  'desherbado':'Desherbado o Desbroce','desyerbado':'Desherbado o Desbroce','desbroz':'Desherbado o Desbroce',
+  'siembra':'Siembra','sembrado':'Siembra','siembre':'Siembra','sembre':'Siembra',
+  'fresado':'Fresado','subsolado':'Subsolado',
+  'gradeo':'Gradeo o Rastreo','rastreo':'Gradeo o Rastreo','pase':'Gradeo o Rastreo',
+  'laboreo':'Arado','labrado':'Arado','labor':'Arado','cultivado':'Arado',
+  'vendimia':'Recolección','vendimiado':'Recolección',
+  'escarda':'Escarda','cave':'Escarda','cavado':'Escarda',
+  'trilla':'Triturado de restos','trillado':'Triturado de restos',
+  'riego':'Riego','regado':'Riego','plantacion':'Plantación',
+};
+const normTipoLabor = (v) => { if (!v) return ''; if (_LABOR_TIPOS.some(([val]) => val === v)) return v; return _LABOR_MAP[(v||'').toLowerCase().trim()] || ''; };
 
 function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
@@ -609,7 +646,7 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
                 <FieldGroup label="Tipo de labor">
                     <select className="input-field" value={f.tipo_labor} onChange={e => set('tipo_labor', e.target.value)}>
                         <option value="">Seleccionar…</option>
-                        {_LABOR_TIPOS.map(t => <option key={t}>{t}</option>)}
+                        {_LABOR_TIPOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </select>
                 </FieldGroup>
             </div>
