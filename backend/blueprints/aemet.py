@@ -5,6 +5,7 @@ Fuente primaria: METEOALARM ATOM feed (público, sin API key, más fiable).
 Fuente secundaria: AEMET OpenData CAP (requiere AEMET_API_KEY, puede tener lag).
 """
 import os
+import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
@@ -14,6 +15,9 @@ from flask import Blueprint, jsonify, request
 from flask_login import login_required
 
 bp = Blueprint('aemet', __name__)
+
+_feed_cache = {'xml': None, 'ts': 0}
+_CACHE_TTL  = 600  # 10 minutos
 
 METEOALARM_ATOM = 'https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-spain'
 AEMET_CAP_URL   = 'https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado'
@@ -98,13 +102,19 @@ def _fetch_meteoalarm(provincia, comunidad=''):
 
     Acepta `comunidad` (CCAA) para ampliar el matching cuando METEOALARM
     publica el aviso bajo el nombre de la comunidad en lugar de la provincia.
+    El feed completo de España se cachea 10 minutos para evitar descargarlo
+    en cada carga de pantalla.
     """
-    r = req_lib.get(METEOALARM_ATOM, timeout=12,
-                    headers={'User-Agent': 'CuadernoExplotacion/2.0'})
-    if r.status_code != 200:
-        return None, f'METEOALARM HTTP {r.status_code}'
+    now = time.time()
+    if _feed_cache['xml'] is None or now - _feed_cache['ts'] > _CACHE_TTL:
+        r = req_lib.get(METEOALARM_ATOM, timeout=12,
+                        headers={'User-Agent': 'CuadernoExplotacion/2.0'})
+        if r.status_code != 200:
+            return None, f'METEOALARM HTTP {r.status_code}'
+        _feed_cache['xml'] = r.text
+        _feed_cache['ts']  = now
 
-    root = ET.fromstring(r.text)
+    root = ET.fromstring(_feed_cache['xml'])
     alertas = []
 
     FENOMENOS = {

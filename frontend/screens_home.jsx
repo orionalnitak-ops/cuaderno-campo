@@ -97,14 +97,21 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
             if (!hit) { setWxState('error'); return; }
             // Guardar comunidad autónoma (admin1) para push — METEOALARM la usa como área
             pushProvinciaRef.current = (hit.admin1 || hit.admin2 || '').toLowerCase();
-            const params = [
+            const omParams = [
                 `latitude=${hit.latitude}`, `longitude=${hit.longitude}`,
                 `current=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,weather_code`,
                 `daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max`,
                 `hourly=temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m`,
                 `wind_speed_unit=kmh`, `timezone=Europe%2FMadrid`, `forecast_days=7`,
             ].join('&');
-            const wRes  = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
+            const aemetParams = new URLSearchParams();
+            if (hit.admin2) aemetParams.set('provincia', hit.admin2);
+            if (hit.admin1) aemetParams.set('comunidad', hit.admin1);
+            const hasZona = hit.admin2 || hit.admin1;
+            const [wRes, aRes] = await Promise.all([
+                fetch(`https://api.open-meteo.com/v1/forecast?${omParams}`),
+                hasZona ? fetch(`/api/aemet/alertas?${aemetParams}`) : Promise.resolve(null),
+            ]);
             const w = await wRes.json();
             const c = w?.current;
             if (!c) { setWxState('error'); return; }
@@ -193,17 +200,10 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                     avisos.push({ nivel: 'aviso', icon: '❄️', texto: `Riesgo de helada (${d.tmin}°C mín) — ${lbl}` });
             });
 
-            // Alertas oficiales AEMET — pasamos provincia (admin2) Y comunidad (admin1)
-            // METEOALARM a veces publica el aviso bajo la CCAA, no la provincia
+            // Alertas oficiales AEMET — resultado ya disponible (llamada paralela con Open-Meteo)
             let aemetAlertas = [];
             try {
-                const prov = hit.admin2 || '';
-                const com  = hit.admin1 || '';
-                if (prov || com) {
-                    const params = new URLSearchParams();
-                    if (prov) params.set('provincia', prov);
-                    if (com)  params.set('comunidad', com);
-                    const aRes  = await fetch(`/api/aemet/alertas?${params}`);
+                if (aRes) {
                     const aJson = await aRes.json();
                     if (aJson.ok) aemetAlertas = aJson.alertas || [];
                 }
