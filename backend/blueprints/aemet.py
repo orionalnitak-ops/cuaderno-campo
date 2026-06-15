@@ -6,6 +6,7 @@ Fuente secundaria: AEMET OpenData CAP (requiere AEMET_API_KEY, puede tener lag).
 """
 import os
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 
 import requests as req_lib
 
@@ -32,6 +33,17 @@ CAP_NS  = 'urn:oasis:names:tc:emergency:cap:1.2'
 ATOM_NS = 'http://www.w3.org/2005/Atom'
 
 
+def _is_expired(expires_str: str) -> bool:
+    """True si el aviso ya ha expirado. Devuelve False si no se puede determinar."""
+    if not expires_str:
+        return False
+    try:
+        dt = datetime.fromisoformat(expires_str.replace('Z', '+00:00'))
+        return dt < datetime.now(timezone.utc)
+    except Exception:
+        return False
+
+
 def _parse_cap_alert(alert_el, provincia):
     """Extrae alertas de un elemento <alert> CAP filtrando por provincia."""
     results = []
@@ -44,6 +56,8 @@ def _parse_cap_alert(alert_el, provincia):
         headline = info.findtext(f'{{{CAP_NS}}}headline') or event
         expires  = info.findtext(f'{{{CAP_NS}}}expires')  or ''
         onset    = info.findtext(f'{{{CAP_NS}}}onset')    or ''
+        if _is_expired(expires):
+            continue
         nivel, icono = SEVERITY_MAP.get(severity, ('amarillo', '🟡'))
         for area in info.findall(f'{{{CAP_NS}}}area'):
             area_desc = area.findtext(f'{{{CAP_NS}}}areaDesc') or ''
@@ -116,6 +130,9 @@ def _fetch_meteoalarm(provincia, comunidad=''):
         if area_desc:
             if (provincia or comunidad) and not _zona_match(area_desc, provincia, comunidad):
                 continue
+            expira_entry = entry.findtext(f'{{{CAP_NS}}}expires') or ''
+            if _is_expired(expira_entry):
+                continue
             # METEOALARM usa severity='Moderate' para alertas amarillas — usar título ATOM
             t_low = (entry.findtext(f'{{{ATOM_NS}}}title') or '').lower()
             if 'red' in t_low:
@@ -131,7 +148,7 @@ def _fetch_meteoalarm(provincia, comunidad=''):
                 'evento': fenomeno, 'area': area_desc,
                 'texto': f'⚠️ {fenomeno} — {area_desc}',
                 'inicio': entry.findtext(f'{{{CAP_NS}}}onset')   or '',
-                'expira': entry.findtext(f'{{{CAP_NS}}}expires') or '',
+                'expira': expira_entry,
                 'fuente': 'AEMET',
             })
             continue
