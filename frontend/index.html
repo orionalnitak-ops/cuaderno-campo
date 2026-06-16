@@ -318,8 +318,11 @@
     .fab-center:hover { transform: scale(1.06); }
     .fab-center.open { background: var(--surface-container); color: var(--on-surface); }
 
-    /* TABLET breakpoint ≥ 768px — sidebar colapsado (sólo iconos) */
-    @media (min-width: 768px) and (max-width: 1023px) {
+    /* TABLET breakpoint ≥ 768px — sidebar colapsado (sólo iconos)
+       min-height evita que un móvil tumbado (ancho lógico alto, alto bajo)
+       reciba el layout de escritorio: un móvil en landscape tiene mucho
+       ancho pero poco alto, una tablet/PC tiene ambos. */
+    @media (min-width: 768px) and (max-width: 1023px) and (min-height: 500px) {
       #sidebar { display: flex; width: var(--sidebar-w-col); }
       #topbar  { display: flex; }
       #bottom-nav { display: none; }
@@ -334,8 +337,8 @@
       .sidebar-nav-item { justify-content: center; padding: 13px 0; margin: 2px 6px; }
     }
 
-    /* DESKTOP breakpoint ≥ 1024px */
-    @media (min-width: 1024px) {
+    /* DESKTOP breakpoint ≥ 1024px (también requiere min-height, ver nota arriba) */
+    @media (min-width: 1024px) and (min-height: 500px) {
       #sidebar { display: flex; }
       #topbar  { display: flex; }
       #bottom-nav { display: none; }
@@ -345,8 +348,22 @@
     }
 
     /* Pantallas muy anchas ≥ 1400px — centra el contenido */
-    @media (min-width: 1400px) {
+    @media (min-width: 1400px) and (min-height: 500px) {
       #main-content > * { max-width: 1100px; margin-left: auto; margin-right: auto; }
+    }
+
+    /* Móvil en landscape (ancho grande pero alto bajo): mantener layout
+       móvil (bottom-nav) pero compactar cabeceras y nav para no robar
+       tanto alto vertical, que aquí es el recurso escaso. */
+    @media (max-height: 499px) and (orientation: landscape) {
+      :root { --nav-h: 56px; }
+      #bottom-nav { padding: 4px 4px 8px; }
+      .tab-icon { font-size: 18px; }
+      .tab-label { font-size: 0.58rem; }
+      .nav-tab--home .tab-icon { font-size: 20px; }
+      .fab-center { width: 48px; height: 48px; font-size: 22px; margin-bottom: 8px; }
+      .screen-header { padding: 20px 20px 16px; }
+      .hero-header { padding: 20px 24px 20px; }
     }
 
     /* ═══════════════════════════════════════════════════
