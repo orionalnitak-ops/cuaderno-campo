@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request, session
 from flask_login import login_required, current_user
 from db import get_db, one, dicts
 from helpers import admin_required
+from extensions import compute_plan_status
 
 bp = Blueprint('admin', __name__)
 
@@ -18,7 +19,7 @@ bp = Blueprint('admin', __name__)
 def admin_users():
     conn = get_db()
     if request.method == 'GET':
-        users = dicts(conn, "SELECT id,email,nombre,role,active,created_at FROM users ORDER BY created_at DESC")
+        users = dicts(conn, "SELECT id,email,nombre,role,active,created_at,plan,trial_ends_at,subscription_ends_at FROM users ORDER BY created_at DESC")
         for u in users:
             uid = u['id']
             t = one(conn, "SELECT COUNT(*) as n FROM tratamientos WHERE user_id=?", (uid,))
@@ -29,6 +30,7 @@ def admin_users():
                 "parcelas": p['n'] if p else 0,
                 "labores": l['n'] if l else 0,
             }
+            u['plan_label'], u['plan_active'] = compute_plan_status(u['plan'], u['trial_ends_at'], u['role'])
         conn.close()
         return jsonify(users)
 
