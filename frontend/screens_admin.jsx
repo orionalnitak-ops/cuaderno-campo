@@ -122,6 +122,46 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
     const ROLE_COLOR = { admin: '#78350f', agricultor: '#065f46' };
     const ROLE_BG    = { admin: 'rgba(120,53,15,0.10)', agricultor: 'rgba(6,95,70,0.10)' };
 
+    const PLAN_CHIP = {
+        pro:     { bg:'#ede9fe', color:'#5b21b6', label:'🟣 PRO' },
+        basic:   { bg:'#dcfce7', color:'#065f46', label:'🟢 BÁSICO' },
+        trial:   { bg:'#fef3c7', color:'#78350f', label:'🟡 PRUEBA' },
+        expired: { bg:'var(--tertiary-fixed)', color:'var(--tertiary)', label:'🔴 CADUCADO' },
+    };
+
+    const formatFecha = (iso) => {
+        if (!iso) return '';
+        const d = new Date(iso.replace(' ', 'T'));
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleDateString('es-ES');
+    };
+
+    const renderPlanChip = (u) => {
+        if (u.role === 'admin') return null;
+        const style = PLAN_CHIP[u.plan_label] || PLAN_CHIP.expired;
+        let suffix = '';
+        if (u.plan_label === 'trial') {
+            const f = formatFecha(u.trial_ends_at);
+            if (f) suffix = ` · vence ${f}`;
+        } else if (u.plan_label === 'expired') {
+            const f = formatFecha(u.trial_ends_at);
+            if (f) suffix = ` · caducó ${f}`;
+        } else if (u.plan_label === 'basic' || u.plan_label === 'pro') {
+            const f = formatFecha(u.subscription_ends_at);
+            if (f) suffix = ` · renueva ${f}`;
+        }
+        return (
+            <span style={{
+                display:'inline-flex', alignItems:'center', gap:3,
+                background: style.bg, color: style.color,
+                borderRadius:'var(--radius-full)', padding:'2px 8px',
+                fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.04em',
+            }}>
+                {style.label}{suffix}
+            </span>
+        );
+    };
+
     return (
         <div style={{ paddingBottom: 32 }}>
             {/* ── Header ── */}
@@ -271,6 +311,7 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
                                     }}>
                                         {ROLE_LABEL[u.role] || u.role}
                                     </span>
+                                    {renderPlanChip(u)}
                                     {!u.active && (
                                         <span className="chip chip-grey">INACTIVO</span>
                                     )}
