@@ -13,6 +13,40 @@ limiter = Limiter(get_remote_address, default_limits=[])
 login_manager = LoginManager()
 
 
+def compute_plan_status(plan, trial_ends_at, role):
+    """Calcula el estado de plan de un usuario a partir de datos crudos de BD.
+
+    Devuelve (label, active):
+      label  -> 'pro' | 'basic' | 'trial' | 'expired'
+      active -> True si el usuario puede escribir datos en su cuaderno.
+
+    Replica exactamente el comportamiento que antes vivía repartido entre
+    User.plan_is_active() y User.plan_label(), para poder reutilizarlo
+    también con filas de BD que no pasan por un objeto User (p.ej. el
+    listado del panel de admin).
+    """
+    def _is_active():
+        if role == 'admin':
+            return True
+        if plan in ('basic', 'pro'):
+            return True
+        if plan == 'trial' and trial_ends_at:
+            ends = trial_ends_at
+            if isinstance(ends, str):
+                ends = datetime.datetime.fromisoformat(ends.replace('Z', ''))
+            return datetime.datetime.utcnow() < ends
+        return False
+
+    active = _is_active()
+    if plan in ('basic', 'pro'):
+        label = plan
+    elif plan == 'trial':
+        label = 'trial' if active else 'expired'
+    else:
+        label = 'expired'
+    return label, active
+
+
 class User(UserMixin):
     def __init__(self, id, email, nombre, role, active,
                  plan='trial', trial_ends_at=None, subscription_ends_at=None):
@@ -27,26 +61,13 @@ class User(UserMixin):
 
     def plan_is_active(self):
         """True si el usuario puede escribir datos (trial vigente, basic o pro)."""
-        if self.role == 'admin':
-            return True
-        if self.plan in ('basic', 'pro'):
-            return True
-        if self.plan == 'trial' and self.trial_ends_at:
-            ends = self.trial_ends_at
-            if isinstance(ends, str):
-                ends = datetime.datetime.fromisoformat(ends.replace('Z', ''))
-            return datetime.datetime.utcnow() < ends
-        return False
+        _, active = compute_plan_status(self.plan, self.trial_ends_at, self.role)
+        return active
 
     def plan_label(self):
         """Estado legible para el frontend."""
-        if self.plan in ('basic', 'pro'):
-            return self.plan
-        if self.plan == 'trial':
-            if self.plan_is_active():
-                return 'trial'
-            return 'expired'
-        return 'expired'
+        label, _ = compute_plan_status(self.plan, self.trial_ends_at, self.role)
+        return label
 
 
 @login_manager.user_loader
