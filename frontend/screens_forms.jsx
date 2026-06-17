@@ -1202,8 +1202,22 @@ function FormAbonado({ parcelas, record, campana, onClose, isEdit }) {
 }
 
 // ── ExistingCultivoRow ───────────────────────────────────────────────────────
-function ExistingCultivoRow({ cv, onDeleted }) {
+function ExistingCultivoRow({ cv, onDeleted, onUpdated }) {
+    const [editing, setEditing] = React.useState(false);
     const [deleting, setDeleting] = React.useState(false);
+    const [saving, setSaving] = React.useState(false);
+    const [f, setF] = React.useState({
+        cultivo_iacs_cod: cv.cultivo_iacs_cod || '',
+        cultivo:          cv.cultivo          || '',
+        variedad:         cv.variedad         || '',
+        superficie_cultivada_ha:    cv.superficie_cultivada_ha    || '',
+        fecha_siembra:              cv.fecha_siembra              || '',
+        fecha_recoleccion_prevista: cv.fecha_recoleccion_prevista || '',
+        kg_sembrados:    cv.kg_sembrados    || '',
+        precio_kg_compra: cv.precio_kg_compra || '',
+        notas:           cv.notas           || '',
+    });
+    const set = (k, v) => setF(x => ({ ...x, [k]: v }));
 
     const handleDelete = async () => {
         if (!confirm(`¿Eliminar "${cv.cultivo || cv.cultivo_iacs_cod}"?`)) return;
@@ -1212,28 +1226,116 @@ function ExistingCultivoRow({ cv, onDeleted }) {
         if (res.ok) { onDeleted(); } else { alert('Error al eliminar'); setDeleting(false); }
     };
 
-    return (
-        <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8,
-            padding: '10px 12px', marginBottom: 6, gap: 8,
-        }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    🌾 {cv.cultivo || cv.cultivo_iacs_cod || '—'}
-                    {cv.variedad && <span style={{ fontWeight: 400, color: '#6b7280' }}> · {cv.variedad}</span>}
+    const handleSave = async () => {
+        if (!f.cultivo_iacs_cod) { alert('Selecciona el cultivo'); return; }
+        setSaving(true);
+        const res = await fetch(`/api/cultivos-campana/${cv.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(f),
+            credentials: 'include',
+        });
+        if (res.ok) {
+            onUpdated({ ...cv, ...f });
+            setEditing(false);
+        } else {
+            const d = await res.json().catch(() => ({}));
+            alert(d.error || 'Error al guardar');
+        }
+        setSaving(false);
+    };
+
+    const cultivosPorGrupo = (typeof CULTIVOS_IACS !== 'undefined' ? CULTIVOS_IACS : []).reduce((acc, c) => {
+        (acc[c.grupo] = acc[c.grupo] || []).push(c);
+        return acc;
+    }, {});
+
+    if (!editing) {
+        return (
+            <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8,
+                padding: '10px 12px', marginBottom: 6, gap: 8,
+            }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        🌾 {cv.cultivo || cv.cultivo_iacs_cod || '—'}
+                        {cv.variedad && <span style={{ fontWeight: 400, color: '#6b7280' }}> · {cv.variedad}</span>}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: 2 }}>
+                        {cv.superficie_cultivada_ha != null ? `${parseFloat(cv.superficie_cultivada_ha).toFixed(2)} ha` : 'Sin superficie'}
+                        {cv.fecha_siembra && ` · Siembra: ${cv.fecha_siembra}`}
+                        {cv.fecha_recoleccion_prevista && ` · Recol.: ${cv.fecha_recoleccion_prevista}`}
+                    </div>
                 </div>
-                <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: 2 }}>
-                    {cv.superficie_cultivada_ha != null ? `${parseFloat(cv.superficie_cultivada_ha).toFixed(2)} ha` : 'Sin superficie'}
-                    {cv.fecha_siembra && ` · Siembra: ${cv.fecha_siembra}`}
-                    {cv.fecha_recoleccion_prevista && ` · Recol.: ${cv.fecha_recoleccion_prevista}`}
+                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                    <button onClick={() => setEditing(true)}
+                        style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '1.05rem', cursor: 'pointer', padding: '4px 6px' }}
+                        title="Editar">✏️</button>
+                    <button onClick={handleDelete} disabled={deleting}
+                        style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '1.05rem', cursor: 'pointer', padding: '4px 6px' }}
+                        title="Eliminar">
+                        {deleting ? '…' : '🗑'}
+                    </button>
                 </div>
             </div>
-            <button onClick={handleDelete} disabled={deleting}
-                style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '1.1rem', cursor: 'pointer', padding: '4px 6px', flexShrink: 0 }}
-                title="Eliminar">
-                {deleting ? '…' : '🗑'}
-            </button>
+        );
+    }
+
+    return (
+        <div style={{ border: '1px solid #93c5fd', borderRadius: 8, padding: '12px', marginBottom: 6, background: '#eff6ff' }}>
+            <FieldGroup label="Cultivo (código IACS) *">
+                <select className="input-field" value={f.cultivo_iacs_cod}
+                    onChange={e => {
+                        const cod = e.target.value;
+                        const entry = (typeof CULTIVOS_IACS !== 'undefined' ? CULTIVOS_IACS : []).find(c => c.cod === cod);
+                        set('cultivo_iacs_cod', cod);
+                        set('cultivo', entry ? entry.nombre : f.cultivo);
+                    }}>
+                    <option value="">Seleccionar cultivo…</option>
+                    {Object.entries(cultivosPorGrupo).map(([grupo, items]) => (
+                        <optgroup key={grupo} label={grupo}>
+                            {items.map(c => <option key={c.cod} value={c.cod}>{c.nombre}</option>)}
+                        </optgroup>
+                    ))}
+                </select>
+            </FieldGroup>
+            <div className="responsive-grid cols-2">
+                <FieldGroup label="Variedad">
+                    <input type="text" className="input-field" placeholder="Picual, Tempranillo…"
+                        value={f.variedad} onChange={e => set('variedad', e.target.value)} />
+                </FieldGroup>
+                <FieldGroup label="Superficie (ha)">
+                    <ZoomInput label="Superficie (ha)" type="number" inputMode="decimal"
+                        value={f.superficie_cultivada_ha} onConfirm={v => set('superficie_cultivada_ha', v)} />
+                </FieldGroup>
+                <FieldGroup label="Fecha siembra">
+                    <input type="date" className="input-field" value={f.fecha_siembra}
+                        onChange={e => set('fecha_siembra', e.target.value)} />
+                </FieldGroup>
+                <FieldGroup label="Fecha recolección">
+                    <input type="date" className="input-field" value={f.fecha_recoleccion_prevista}
+                        onChange={e => set('fecha_recoleccion_prevista', e.target.value)} />
+                </FieldGroup>
+                <FieldGroup label="Kg sembrados">
+                    <ZoomInput label="Kg sembrados" type="number" inputMode="decimal"
+                        value={f.kg_sembrados} onConfirm={v => set('kg_sembrados', v)} />
+                </FieldGroup>
+                <FieldGroup label="Precio/kg (€)">
+                    <ZoomInput label="Precio/kg (€)" type="number" inputMode="decimal"
+                        value={f.precio_kg_compra} onConfirm={v => set('precio_kg_compra', v)} />
+                </FieldGroup>
+            </div>
+            <FieldGroup label="Notas">
+                <textarea className="input-field" rows={2} value={f.notas}
+                    onChange={e => set('notas', e.target.value)} />
+            </FieldGroup>
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button className="btn-ghost" onClick={() => setEditing(false)} style={{ flex: 1 }}>Cancelar</button>
+                <button className="btn-primary" onClick={handleSave} disabled={saving} style={{ flex: 2 }}>
+                    {saving ? 'Guardando…' : '💾 Guardar cambios'}
+                </button>
+            </div>
         </div>
     );
 }
@@ -1417,10 +1519,18 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                         Ya registrados en esta campaña
                     </div>
                     {existingCultivos.map((cv, i) => (
-                        <ExistingCultivoRow key={cv.id || i} cv={cv} onDeleted={() => {
-                            setExistingCultivos(prev => prev.filter(x => x.id !== cv.id));
-                            setExistingHa(prev => prev - (parseFloat(cv.superficie_cultivada_ha) || 0));
-                        }} />
+                        <ExistingCultivoRow key={cv.id || i} cv={cv}
+                            onDeleted={() => {
+                                setExistingCultivos(prev => prev.filter(x => x.id !== cv.id));
+                                setExistingHa(prev => prev - (parseFloat(cv.superficie_cultivada_ha) || 0));
+                            }}
+                            onUpdated={updated => {
+                                setExistingCultivos(prev => prev.map(x => x.id === updated.id ? updated : x));
+                                const oldHa = parseFloat(cv.superficie_cultivada_ha) || 0;
+                                const newHa2 = parseFloat(updated.superficie_cultivada_ha) || 0;
+                                setExistingHa(prev => prev - oldHa + newHa2);
+                            }}
+                        />
                     ))}
                     <div style={{ borderBottom: '1px solid #e5e7eb', marginBottom: 16, marginTop: 8 }} />
                     <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
