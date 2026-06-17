@@ -1201,6 +1201,43 @@ function FormAbonado({ parcelas, record, campana, onClose, isEdit }) {
     );
 }
 
+// ── ExistingCultivoRow ───────────────────────────────────────────────────────
+function ExistingCultivoRow({ cv, onDeleted }) {
+    const [deleting, setDeleting] = React.useState(false);
+
+    const handleDelete = async () => {
+        if (!confirm(`¿Eliminar "${cv.cultivo || cv.cultivo_iacs_cod}"?`)) return;
+        setDeleting(true);
+        const res = await fetch(`/api/cultivos-campana/${cv.id}`, { method: 'DELETE', credentials: 'include' });
+        if (res.ok) { onDeleted(); } else { alert('Error al eliminar'); setDeleting(false); }
+    };
+
+    return (
+        <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8,
+            padding: '10px 12px', marginBottom: 6, gap: 8,
+        }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    🌾 {cv.cultivo || cv.cultivo_iacs_cod || '—'}
+                    {cv.variedad && <span style={{ fontWeight: 400, color: '#6b7280' }}> · {cv.variedad}</span>}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: 2 }}>
+                    {cv.superficie_cultivada_ha != null ? `${parseFloat(cv.superficie_cultivada_ha).toFixed(2)} ha` : 'Sin superficie'}
+                    {cv.fecha_siembra && ` · Siembra: ${cv.fecha_siembra}`}
+                    {cv.fecha_recoleccion_prevista && ` · Recol.: ${cv.fecha_recoleccion_prevista}`}
+                </div>
+            </div>
+            <button onClick={handleDelete} disabled={deleting}
+                style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '1.1rem', cursor: 'pointer', padding: '4px 6px', flexShrink: 0 }}
+                title="Eliminar">
+                {deleting ? '…' : '🗑'}
+            </button>
+        </div>
+    );
+}
+
 // ── FormCultivoCampana ──────────────────────────────────────────────────────
 function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
     const [saving, setSaving] = React.useState(false);
@@ -1371,6 +1408,24 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                             ¡Excede en {(totalUsedHa - parcelaHa).toFixed(2)} ha la superficie de la parcela!
                         </div>
                     )}
+                </div>
+            )}
+
+            {!isEdit && existingCultivos.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                        Ya registrados en esta campaña
+                    </div>
+                    {existingCultivos.map((cv, i) => (
+                        <ExistingCultivoRow key={cv.id || i} cv={cv} onDeleted={() => {
+                            setExistingCultivos(prev => prev.filter(x => x.id !== cv.id));
+                            setExistingHa(prev => prev - (parseFloat(cv.superficie_cultivada_ha) || 0));
+                        }} />
+                    ))}
+                    <div style={{ borderBottom: '1px solid #e5e7eb', marginBottom: 16, marginTop: 8 }} />
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                        Añadir nuevo cultivo
+                    </div>
                 </div>
             )}
 
