@@ -186,13 +186,13 @@ def historial():
                 sup = f"{r['superficie_cultivada_ha']} ha" if r.get('superficie_cultivada_ha') else ''
                 variedad = f" · {r['variedad']}" if r.get('variedad') else ''
                 records.append({**r, '_modulo': 'cultivos_campana',
-                                '_fecha': r.get('fecha_siembra') or r.get('created_at', ''),
+                                '_fecha': str(r.get('fecha_siembra') or r.get('created_at') or ''),
                                 '_resumen': f"{r.get('cultivo','')}{variedad}" + (f" · {sup}" if sup else '')})
         except Exception as e:
             import traceback, sys
             print(f"[historial] cultivos_campana ERROR: {e}", file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
 
-    records.sort(key=lambda x: x.get('_fecha', '') or '', reverse=True)
+    records.sort(key=lambda x: str(x.get('_fecha', '') or ''), reverse=True)
     conn.close()
     return jsonify(records)
