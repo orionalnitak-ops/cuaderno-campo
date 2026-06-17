@@ -1207,23 +1207,23 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
     const [parcela_id, setParcelaId] = React.useState(record?.parcela_id || '');
     const [parcelaHa, setParcelaHa] = React.useState(null);
     const [existingHa, setExistingHa] = React.useState(0);
+    const [existingCultivos, setExistingCultivos] = React.useState([]);
+    const [showDesglose, setShowDesglose] = React.useState(false);
 
     React.useEffect(() => {
-        if (!parcela_id) { setParcelaHa(null); setExistingHa(0); return; }
+        if (!parcela_id) { setParcelaHa(null); setExistingHa(0); setExistingCultivos([]); return; }
         const p = parcelas.find(x => String(x.id) === String(parcela_id));
         setParcelaHa(p?.superficie_ha ?? null);
         fetch(`/api/cultivos-campana?parcela_id=${parcela_id}&campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
             .then(r => r.json())
             .then(data => {
-                if (!Array.isArray(data)) { setExistingHa(0); return; }
-                let allocated = data.reduce((sum, cv) => sum + (parseFloat(cv.superficie_cultivada_ha) || 0), 0);
-                if (isEdit && record?.id) {
-                    const thisOne = data.find(cv => cv.id === record.id);
-                    if (thisOne) allocated -= (parseFloat(thisOne.superficie_cultivada_ha) || 0);
-                }
+                if (!Array.isArray(data)) { setExistingHa(0); setExistingCultivos([]); return; }
+                const lista = isEdit && record?.id ? data.filter(cv => cv.id !== record.id) : data;
+                let allocated = lista.reduce((sum, cv) => sum + (parseFloat(cv.superficie_cultivada_ha) || 0), 0);
                 setExistingHa(allocated);
+                setExistingCultivos(lista);
             })
-            .catch(() => setExistingHa(0));
+            .catch(() => { setExistingHa(0); setExistingCultivos([]); });
     }, [parcela_id]);
 
     const emptyEntry = () => ({
@@ -1329,14 +1329,48 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                     borderRadius: 8, padding: '8px 12px', marginBottom: 12,
                     fontSize: '0.82rem',
                     color: haExceeded ? '#dc2626' : '#166534',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 }}>
-                    <span>
-                        {haExceeded ? '⚠️ ' : '📐 '}
-                        <strong>{totalUsedHa.toFixed(2)} ha</strong> asignadas de <strong>{parcelaHa.toFixed(2)} ha</strong> totales
-                        {existingHa > 0 && <span style={{ opacity: 0.75 }}> ({existingHa.toFixed(2)} ya registradas)</span>}
-                    </span>
-                    {haExceeded && <span style={{ fontWeight: 600 }}>¡Excede la parcela!</span>}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>
+                            {haExceeded ? '⚠️ ' : '📐 '}
+                            <strong>{totalUsedHa.toFixed(2)} ha</strong> asignadas de <strong>{parcelaHa.toFixed(2)} ha</strong> totales
+                        </span>
+                        {existingCultivos.length > 0 && (
+                            <button onClick={() => setShowDesglose(x => !x)} style={{
+                                background: 'none', border: 'none', cursor: 'pointer',
+                                color: 'inherit', fontSize: '0.78rem', textDecoration: 'underline', padding: 0,
+                            }}>
+                                {showDesglose ? 'Ocultar' : 'Ver desglose'}
+                            </button>
+                        )}
+                    </div>
+                    {showDesglose && existingCultivos.length > 0 && (
+                        <div style={{ marginTop: 8, borderTop: `1px solid ${haExceeded ? '#fca5a5' : '#bbf7d0'}`, paddingTop: 6 }}>
+                            {existingCultivos.map((cv, i) => (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', opacity: 0.9 }}>
+                                    <span>{cv.cultivo || cv.cultivo_iacs_cod || '—'}{cv.variedad ? ` (${cv.variedad})` : ''}</span>
+                                    <span><strong>{cv.superficie_cultivada_ha != null ? parseFloat(cv.superficie_cultivada_ha).toFixed(2) : '—'} ha</strong></span>
+                                </div>
+                            ))}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 0', borderTop: `1px solid ${haExceeded ? '#fca5a5' : '#bbf7d0'}`, marginTop: 4, fontWeight: 600 }}>
+                                <span>Ya registradas</span>
+                                <span>{existingHa.toFixed(2)} ha</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0 0' }}>
+                                <span>Este formulario</span>
+                                <span>{newHa.toFixed(2)} ha</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0 0' }}>
+                                <span>Disponibles</span>
+                                <span style={{ fontWeight: 600 }}>{Math.max(0, parcelaHa - existingHa).toFixed(2)} ha</span>
+                            </div>
+                        </div>
+                    )}
+                    {haExceeded && (
+                        <div style={{ marginTop: 4, fontWeight: 600 }}>
+                            ¡Excede en {(totalUsedHa - parcelaHa).toFixed(2)} ha la superficie de la parcela!
+                        </div>
+                    )}
                 </div>
             )}
 
