@@ -161,6 +161,78 @@ def _add_col(cursor, table, col, col_type):
             pass  # column already exists
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Structural migration helper — NEVER loses farmer data
+#
+# Pattern for any migration that needs to recreate a table:
+#   1. Backup the SQLite .db file before touching anything
+#   2. Rename old table to <table>_bak_<timestamp> (never DROP automatically)
+#   3. Create new table
+#   4. Copy all rows — verify count matches before committing
+#   5. If count mismatch → rollback and raise so the old table stays intact
+#
+# The _bak_ table is kept indefinitely as a safety net. A human must
+# decide when it's safe to drop it manually.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _backup_sqlite_db():
+    """Copy the .db file to .db.bak_<timestamp> before structural migrations."""
+    if USE_PG:
+        return  # PostgreSQL: handled by platform backups (Render daily snapshots)
+    import shutil, datetime
+    ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    src = DATABASE_NAME
+    dst = f"{DATABASE_NAME}.bak_{ts}"
+    try:
+        shutil.copy2(src, dst)
+        print(f"[db] Backup creado: {dst}")
+    except Exception as e:
+        print(f"[db] AVISO: no se pudo crear backup antes de migración: {e}")
+
+
+def _safe_recreate_table(conn, c, table, new_ddl, col_list):
+    """
+    Recreate `table` with `new_ddl` (without the old constraint/schema),
+    preserving all rows. Keeps old table as <table>_bak_<timestamp>.
+
+    col_list: list of column names that exist in BOTH old and new table,
+              used for the INSERT … SELECT copy.
+    """
+    import datetime
+    ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_name = f"{table}_bak_{ts}"
+
+    # 1. Count rows in old table so we can verify the copy
+    c.execute(f"SELECT COUNT(*) FROM {table}")
+    old_count = c.fetchone()[0]
+
+    # 2. Backup the .db file (SQLite only — no-op for PG)
+    _backup_sqlite_db()
+
+    # 3. Rename old table (keeps data safe, never dropped automatically)
+    c.execute(f"ALTER TABLE {table} RENAME TO {backup_name}")
+
+    # 4. Create new table
+    c.execute(new_ddl)
+
+    # 5. Copy all rows
+    cols = ', '.join(col_list)
+    c.execute(f"INSERT INTO {table} ({cols}) SELECT {cols} FROM {backup_name}")
+
+    # 6. Verify row count — if mismatch, rollback so old data stays in backup
+    c.execute(f"SELECT COUNT(*) FROM {table}")
+    new_count = c.fetchone()[0]
+    if new_count != old_count:
+        conn.rollback()
+        raise RuntimeError(
+            f"[db] MIGRACIÓN ABORTADA: {table} tenía {old_count} filas, "
+            f"solo se copiaron {new_count}. Datos seguros en '{backup_name}'."
+        )
+
+    print(f"[db] Migración OK: {table} ({old_count} filas copiadas). "
+          f"Tabla antigua guardada como '{backup_name}'.")
+
+
 def init_db():
     conn = get_db()
     c = conn.cursor()
@@ -253,35 +325,35 @@ def init_db():
         row = c.fetchone()
         tbl_sql = (row[0] if row else '') or ''
         if 'UNIQUE(parcela_id, campana)' in tbl_sql or 'UNIQUE(parcela_id,campana)' in tbl_sql:
-            c.execute('ALTER TABLE cultivos_campana RENAME TO _cultivos_campana_old')
-            c.execute('''CREATE TABLE cultivos_campana (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                parcela_id INTEGER NOT NULL,
-                campana TEXT NOT NULL,
-                cultivo TEXT,
-                cultivo_iacs_cod TEXT,
-                variedad TEXT,
-                fecha_siembra TEXT,
-                fecha_recoleccion_prevista TEXT,
-                superficie_cultivada_ha REAL,
-                notas TEXT,
-                kg_sembrados REAL,
-                precio_kg_compra REAL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(parcela_id) REFERENCES parcelas(id)
-            )''')
-            c.execute('''INSERT INTO cultivos_campana
-                (id, parcela_id, campana, cultivo, cultivo_iacs_cod, variedad,
-                 fecha_siembra, fecha_recoleccion_prevista, superficie_cultivada_ha,
-                 notas, kg_sembrados, precio_kg_compra, created_at, updated_at)
-                SELECT id, parcela_id, campana, cultivo, cultivo_iacs_cod, variedad,
-                       fecha_siembra, fecha_recoleccion_prevista, superficie_cultivada_ha,
-                       notas, kg_sembrados, precio_kg_compra, created_at, updated_at
-                FROM _cultivos_campana_old''')
-            c.execute('DROP TABLE _cultivos_campana_old')
+            _safe_recreate_table(
+                conn, c,
+                table='cultivos_campana',
+                new_ddl='''CREATE TABLE cultivos_campana (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    parcela_id INTEGER NOT NULL,
+                    campana TEXT NOT NULL,
+                    cultivo TEXT,
+                    cultivo_iacs_cod TEXT,
+                    variedad TEXT,
+                    fecha_siembra TEXT,
+                    fecha_recoleccion_prevista TEXT,
+                    superficie_cultivada_ha REAL,
+                    notas TEXT,
+                    kg_sembrados REAL,
+                    precio_kg_compra REAL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(parcela_id) REFERENCES parcelas(id)
+                )''',
+                col_list=[
+                    'id', 'parcela_id', 'campana', 'cultivo', 'cultivo_iacs_cod', 'variedad',
+                    'fecha_siembra', 'fecha_recoleccion_prevista', 'superficie_cultivada_ha',
+                    'notas', 'kg_sembrados', 'precio_kg_compra', 'created_at', 'updated_at',
+                ],
+            )
     else:
         # PostgreSQL: eliminar constraint por nombre estándar si existe
+        # AVISO: antes de cualquier cambio estructural en producción, tomar un pg_dump manual.
         c.execute("""ALTER TABLE cultivos_campana
                      DROP CONSTRAINT IF EXISTS cultivos_campana_parcela_id_campana_key""")
         c.execute("""ALTER TABLE cultivos_campana
