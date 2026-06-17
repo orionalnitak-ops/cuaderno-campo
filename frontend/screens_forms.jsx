@@ -1408,7 +1408,9 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
 
     const newHa = cultivos.reduce((sum, cv) => sum + (parseFloat(cv.superficie_cultivada_ha) || 0), 0);
     const totalUsedHa = existingHa + newHa;
-    const haExceeded = parcelaHa !== null && parcelaHa > 0 && totalUsedHa > parcelaHa + 0.001;
+    const _r2 = v => Math.round((v || 0) * 100) / 100;
+    const haExceeded = parcelaHa !== null && parcelaHa > 0 && _r2(totalUsedHa) > _r2(parcelaHa);
+    const excesoHa = _r2(totalUsedHa - (parcelaHa || 0));
 
     const save = async () => {
         if (!parcela_id) { alert('Selecciona una parcela'); return; }
@@ -1505,9 +1507,9 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                             </div>
                         </div>
                     )}
-                    {haExceeded && (
+                    {haExceeded && excesoHa > 0 && (
                         <div style={{ marginTop: 4, fontWeight: 600 }}>
-                            ¡Excede en {(totalUsedHa - parcelaHa).toFixed(2)} ha la superficie de la parcela!
+                            ¡Excede en {excesoHa.toFixed(2)} ha la superficie de la parcela!
                         </div>
                     )}
                 </div>
