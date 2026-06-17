@@ -236,15 +236,56 @@ def init_db():
             fecha_recoleccion_prevista TEXT,
             superficie_cultivada_ha REAL,
             notas TEXT,
+            kg_sembrados REAL,
+            precio_kg_compra REAL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(parcela_id) REFERENCES parcelas(id),
-            UNIQUE(parcela_id, campana)
+            FOREIGN KEY(parcela_id) REFERENCES parcelas(id)
         )
     ''')
     _add_col(c, 'cultivos_campana', 'cultivo_iacs_cod', 'TEXT')
     _add_col(c, 'cultivos_campana', 'kg_sembrados', 'REAL')
     _add_col(c, 'cultivos_campana', 'precio_kg_compra', 'REAL')
+
+    # Migración: eliminar UNIQUE(parcela_id, campana) si todavía existe (permite múltiples cultivos por parcela)
+    if not USE_PG:
+        c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='cultivos_campana'")
+        row = c.fetchone()
+        tbl_sql = (row[0] if row else '') or ''
+        if 'UNIQUE(parcela_id, campana)' in tbl_sql or 'UNIQUE(parcela_id,campana)' in tbl_sql:
+            c.execute('ALTER TABLE cultivos_campana RENAME TO _cultivos_campana_old')
+            c.execute('''CREATE TABLE cultivos_campana (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                parcela_id INTEGER NOT NULL,
+                campana TEXT NOT NULL,
+                cultivo TEXT,
+                cultivo_iacs_cod TEXT,
+                variedad TEXT,
+                fecha_siembra TEXT,
+                fecha_recoleccion_prevista TEXT,
+                superficie_cultivada_ha REAL,
+                notas TEXT,
+                kg_sembrados REAL,
+                precio_kg_compra REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(parcela_id) REFERENCES parcelas(id)
+            )''')
+            c.execute('''INSERT INTO cultivos_campana
+                (id, parcela_id, campana, cultivo, cultivo_iacs_cod, variedad,
+                 fecha_siembra, fecha_recoleccion_prevista, superficie_cultivada_ha,
+                 notas, kg_sembrados, precio_kg_compra, created_at, updated_at)
+                SELECT id, parcela_id, campana, cultivo, cultivo_iacs_cod, variedad,
+                       fecha_siembra, fecha_recoleccion_prevista, superficie_cultivada_ha,
+                       notas, kg_sembrados, precio_kg_compra, created_at, updated_at
+                FROM _cultivos_campana_old''')
+            c.execute('DROP TABLE _cultivos_campana_old')
+    else:
+        # PostgreSQL: eliminar constraint por nombre estándar si existe
+        c.execute("""ALTER TABLE cultivos_campana
+                     DROP CONSTRAINT IF EXISTS cultivos_campana_parcela_id_campana_key""")
+        c.execute("""ALTER TABLE cultivos_campana
+                     DROP CONSTRAINT IF EXISTS cultivos_campana_parcela_id_campana_uniq""")
 
     # ── COMPRAS (Trazabilidad — Anexo III S5) ──
     c.execute(f'''
