@@ -1213,8 +1213,6 @@ function ExistingCultivoRow({ cv, onDeleted, onUpdated }) {
         superficie_cultivada_ha:    cv.superficie_cultivada_ha    || '',
         fecha_siembra:              cv.fecha_siembra              || '',
         fecha_recoleccion_prevista: cv.fecha_recoleccion_prevista || '',
-        kg_sembrados:    cv.kg_sembrados    || '',
-        precio_kg_compra: cv.precio_kg_compra || '',
         notas:           cv.notas           || '',
     });
     const set = (k, v) => setF(x => ({ ...x, [k]: v }));
@@ -1317,14 +1315,6 @@ function ExistingCultivoRow({ cv, onDeleted, onUpdated }) {
                     <input type="date" className="input-field" value={f.fecha_recoleccion_prevista}
                         onChange={e => set('fecha_recoleccion_prevista', e.target.value)} />
                 </FieldGroup>
-                <FieldGroup label="Kg sembrados">
-                    <ZoomInput label="Kg sembrados" type="number" inputMode="decimal"
-                        value={f.kg_sembrados} onConfirm={v => set('kg_sembrados', v)} />
-                </FieldGroup>
-                <FieldGroup label="Precio/kg (€)">
-                    <ZoomInput label="Precio/kg (€)" type="number" inputMode="decimal"
-                        value={f.precio_kg_compra} onConfirm={v => set('precio_kg_compra', v)} />
-                </FieldGroup>
             </div>
             <FieldGroup label="Notas">
                 <textarea className="input-field" rows={2} value={f.notas}
@@ -1374,8 +1364,6 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
         fecha_siembra: '',
         fecha_recoleccion_prevista: '',
         superficie_cultivada_ha: '',
-        kg_sembrados: '',
-        precio_kg_compra: '',
         notas: '',
     });
 
@@ -1386,8 +1374,6 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                  fecha_siembra: record.fecha_siembra || '',
                  fecha_recoleccion_prevista: record.fecha_recoleccion_prevista || '',
                  superficie_cultivada_ha: record.superficie_cultivada_ha || '',
-                 kg_sembrados: record.kg_sembrados || '',
-                 precio_kg_compra: record.precio_kg_compra || '',
                  notas: record.notas || '' }]
             : [emptyEntry()]
     );
@@ -1430,8 +1416,6 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                     variedad: cv.variedad, fecha_siembra: cv.fecha_siembra,
                     fecha_recoleccion_prevista: cv.fecha_recoleccion_prevista,
                     superficie_cultivada_ha: cv.superficie_cultivada_ha,
-                    kg_sembrados: cv.kg_sembrados,
-                    precio_kg_compra: cv.precio_kg_compra,
                     notas: cv.notas,
                 };
                 const url = (isEdit && cv._id) ? `/api/cultivos-campana/${cv._id}` : '/api/cultivos-campana';
@@ -1595,14 +1579,6 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                         <FieldGroup label="Fecha recolección prevista">
                             <input type="date" className="input-field" value={cv.fecha_recoleccion_prevista}
                                 onChange={e => setField(idx, 'fecha_recoleccion_prevista', e.target.value)} />
-                        </FieldGroup>
-                        <FieldGroup label="Kg sembrados">
-                            <ZoomInput label="Kg sembrados" type="number" inputMode="decimal"
-                                value={cv.kg_sembrados} onConfirm={v => setField(idx, 'kg_sembrados', v)} />
-                        </FieldGroup>
-                        <FieldGroup label="Precio/kg compra (€)">
-                            <ZoomInput label="Precio/kg compra (€)" type="number" inputMode="decimal"
-                                value={cv.precio_kg_compra} onConfirm={v => setField(idx, 'precio_kg_compra', v)} />
                         </FieldGroup>
                     </div>
 
