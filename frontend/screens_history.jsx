@@ -18,24 +18,26 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
 
     // Module metadata
     const MODULE_META = {
-        tratamientos:  { icon: '🌿', label: 'Fitosanitario', chipClass: 'chip-tratamiento', accentColor: 'var(--primary)' },
-        fertilizacion: { icon: '🌱', label: 'Fertilización',  chipClass: 'chip-fertilizacion', accentColor: '#4f46e5' },
-        labores:       { icon: '🚜', label: 'Labor',          chipClass: 'chip-labor',         accentColor: '#1e4ed8' },
-        cosecha:       { icon: '📦', label: 'Cosecha',        chipClass: 'chip-cosecha',        accentColor: '#be185d' },
-        compras:       { icon: '🛒', label: 'Compras',        chipClass: 'chip-compra',         accentColor: '#b45309' },
-        riego:         { icon: '💧', label: 'Riego',          chipClass: 'chip-riego',           accentColor: '#0369a1' },
-        abonado:       { icon: '📋', label: 'Plan abonado',  chipClass: 'chip-abonado',        accentColor: '#0f766e' },
+        tratamientos:    { icon: '🌿', label: 'Fitosanitario',   chipClass: 'chip-tratamiento', accentColor: 'var(--primary)' },
+        fertilizacion:   { icon: '🌱', label: 'Fertilización',   chipClass: 'chip-fertilizacion', accentColor: '#4f46e5' },
+        labores:         { icon: '🚜', label: 'Labor',            chipClass: 'chip-labor',         accentColor: '#1e4ed8' },
+        cosecha:         { icon: '📦', label: 'Cosecha',          chipClass: 'chip-cosecha',        accentColor: '#be185d' },
+        compras:         { icon: '🛒', label: 'Compras',          chipClass: 'chip-compra',         accentColor: '#b45309' },
+        riego:           { icon: '💧', label: 'Riego',            chipClass: 'chip-riego',           accentColor: '#0369a1' },
+        abonado:         { icon: '📋', label: 'Plan abonado',    chipClass: 'chip-abonado',        accentColor: '#0f766e' },
+        cultivos_campana:{ icon: '🌾', label: 'Cultivo campaña', chipClass: 'chip-cultivo',        accentColor: '#16a34a' },
     };
 
     const MODULE_PILLS = [
-        ['todos',         'Todos'],
-        ['tratamientos',  '🌿 Fitosanitarios'],
-        ['fertilizacion', '🌱 Fertilización'],
-        ['labores',       '🚜 Labores'],
-        ['cosecha',       '📦 Cosecha'],
-        ['compras',       '🛒 Compras'],
-        ['riego',         '💧 Riego'],
-        ['abonado',       '📋 Plan abono'],
+        ['todos',            'Todos'],
+        ['tratamientos',     '🌿 Fitosanitarios'],
+        ['fertilizacion',    '🌱 Fertilización'],
+        ['labores',          '🚜 Labores'],
+        ['cosecha',          '📦 Cosecha'],
+        ['compras',          '🛒 Compras'],
+        ['riego',            '💧 Riego'],
+        ['abonado',          '📋 Plan abono'],
+        ['cultivos_campana', '🌾 Cultivo campaña'],
     ];
 
     const fetchRecords = useCallback(() => {
@@ -64,7 +66,7 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
 
     const handleDelete = async (record) => {
         if (!confirm('¿Eliminar este registro?')) return;
-        const endpoint = { tratamientos: 'tratamientos', fertilizacion: 'fertilizacion', labores: 'labores', cosecha: 'cosecha', compras: 'compras' }[record._modulo];
+        const endpoint = { tratamientos: 'tratamientos', fertilizacion: 'fertilizacion', labores: 'labores', cosecha: 'cosecha', compras: 'compras', cultivos_campana: 'cultivos-campana' }[record._modulo];
         if (!endpoint) return;
         await fetch(`/api/${endpoint}/${record.id}`, { method: 'DELETE' });
         showToast('Registro eliminado');
