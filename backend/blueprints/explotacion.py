@@ -174,19 +174,24 @@ def historial():
                             '_resumen': f"{r.get('cultivo','')} — N:{r.get('n_necesario_kg_ha','')} P:{r.get('p_necesario_kg_ha','')} K:{r.get('k_necesario_kg_ha','')} kg/ha"})
 
     if modulo in ('todos', 'cultivos_campana'):
-        rows = dicts(conn, """
-            SELECT cc.*, p.nombre_finca AS parcela_etiqueta
-            FROM cultivos_campana cc
-            JOIN parcelas p ON cc.parcela_id = p.id
-            WHERE p.user_id=?
-            ORDER BY cc.fecha_siembra DESC
-        """, (uid,))
-        for r in apply_filters(rows, 'fecha_siembra'):
-            sup = f"{r['superficie_cultivada_ha']} ha" if r.get('superficie_cultivada_ha') else ''
-            variedad = f" · {r['variedad']}" if r.get('variedad') else ''
-            records.append({**r, '_modulo': 'cultivos_campana',
-                            '_fecha': r.get('fecha_siembra') or r.get('created_at', ''),
-                            '_resumen': f"{r.get('cultivo','')}{variedad}" + (f" · {sup}" if sup else '')})
+        try:
+            rows = dicts(conn, """
+                SELECT cc.*, p.nombre_finca AS parcela_etiqueta
+                FROM cultivos_campana cc
+                JOIN parcelas p ON cc.parcela_id = p.id
+                WHERE p.user_id=?
+                ORDER BY cc.fecha_siembra DESC
+            """, (uid,))
+            for r in apply_filters(rows, 'fecha_siembra'):
+                sup = f"{r['superficie_cultivada_ha']} ha" if r.get('superficie_cultivada_ha') else ''
+                variedad = f" · {r['variedad']}" if r.get('variedad') else ''
+                records.append({**r, '_modulo': 'cultivos_campana',
+                                '_fecha': r.get('fecha_siembra') or r.get('created_at', ''),
+                                '_resumen': f"{r.get('cultivo','')}{variedad}" + (f" · {sup}" if sup else '')})
+        except Exception as e:
+            import traceback, sys
+            print(f"[historial] cultivos_campana ERROR: {e}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
 
     records.sort(key=lambda x: x.get('_fecha', '') or '', reverse=True)
     conn.close()
