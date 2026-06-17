@@ -140,8 +140,8 @@ def manage_cultivos():
     if not parcela_id:
         conn.close()
         return jsonify({"error": "Parcela es obligatoria"}), 400
-    owner = one(conn, "SELECT id FROM parcelas WHERE id=? AND user_id=?", (parcela_id, uid))
-    if not owner:
+    parcela = one(conn, "SELECT id, superficie_ha FROM parcelas WHERE id=? AND user_id=?", (parcela_id, uid))
+    if not parcela:
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 404
     if not data.get('cultivo'):
@@ -150,35 +150,29 @@ def manage_cultivos():
     if not data.get('cultivo_iacs_cod'):
         conn.close()
         return jsonify({"error": "El código IACS del cultivo es obligatorio para la interoperabilidad con SIEX (obligatorio desde ene 2027)"}), 400
+    nueva_sup = _to_real(data.get('superficie_cultivada_ha')) or 0
+    if parcela.get('superficie_ha') and nueva_sup > 0:
+        row = one(conn, """SELECT COALESCE(SUM(superficie_cultivada_ha), 0) AS total
+                           FROM cultivos_campana WHERE parcela_id=? AND campana=?""",
+                  (parcela_id, data.get('campana')))
+        ya_asignada = float(row['total']) if row else 0
+        if ya_asignada + nueva_sup > parcela['superficie_ha'] + 0.01:
+            conn.close()
+            return jsonify({"error": f"La superficie asignada ({ya_asignada + nueva_sup:.2f} ha) supera las {parcela['superficie_ha']:.2f} ha de la parcela"}), 400
     c = conn.cursor()
-    try:
-        c.execute('''
-            INSERT INTO cultivos_campana
-                (parcela_id, campana, cultivo, cultivo_iacs_cod, variedad, fecha_siembra,
-                 fecha_recoleccion_prevista, superficie_cultivada_ha, notas,
-                 kg_sembrados, precio_kg_compra)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
-        ''', (parcela_id, data.get('campana'), data.get('cultivo'),
-              data.get('cultivo_iacs_cod'),
-              data.get('variedad'), data.get('fecha_siembra'),
-              data.get('fecha_recoleccion_prevista'), _to_real(data.get('superficie_cultivada_ha')),
-              data.get('notas'),
-              _to_real(data.get('kg_sembrados')), _to_real(data.get('precio_kg_compra'))))
-        new_id = c.lastrowid
-    except Exception:
-        c.execute('''
-            UPDATE cultivos_campana SET cultivo=?, cultivo_iacs_cod=?, variedad=?,
-                fecha_siembra=?, fecha_recoleccion_prevista=?,
-                superficie_cultivada_ha=?, notas=?,
-                kg_sembrados=?, precio_kg_compra=?, updated_at=CURRENT_TIMESTAMP
-            WHERE parcela_id=? AND campana=?
-        ''', (data.get('cultivo'), data.get('cultivo_iacs_cod'),
-              data.get('variedad'), data.get('fecha_siembra'),
-              data.get('fecha_recoleccion_prevista'), _to_real(data.get('superficie_cultivada_ha')),
-              data.get('notas'),
-              _to_real(data.get('kg_sembrados')), _to_real(data.get('precio_kg_compra')),
-              parcela_id, data.get('campana')))
-        new_id = None
+    c.execute('''
+        INSERT INTO cultivos_campana
+            (parcela_id, campana, cultivo, cultivo_iacs_cod, variedad, fecha_siembra,
+             fecha_recoleccion_prevista, superficie_cultivada_ha, notas,
+             kg_sembrados, precio_kg_compra)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    ''', (parcela_id, data.get('campana'), data.get('cultivo'),
+          data.get('cultivo_iacs_cod'),
+          data.get('variedad'), data.get('fecha_siembra'),
+          data.get('fecha_recoleccion_prevista'), _to_real(data.get('superficie_cultivada_ha')),
+          data.get('notas'),
+          _to_real(data.get('kg_sembrados')), _to_real(data.get('precio_kg_compra'))))
+    new_id = c.lastrowid
     conn.commit(); conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
 
@@ -204,6 +198,19 @@ def manage_cultivo(cid):
         conn.close()
         return jsonify(row or {})
     data = request.json or {}
+    nueva_sup = _to_real(data.get('superficie_cultivada_ha')) or 0
+    if nueva_sup > 0:
+        current = one(conn, "SELECT parcela_id, campana FROM cultivos_campana WHERE id=?", (cid,))
+        if current:
+            parcela = one(conn, "SELECT superficie_ha FROM parcelas WHERE id=?", (current['parcela_id'],))
+            if parcela and parcela.get('superficie_ha'):
+                row = one(conn, """SELECT COALESCE(SUM(superficie_cultivada_ha), 0) AS total
+                                   FROM cultivos_campana WHERE parcela_id=? AND campana=? AND id!=?""",
+                          (current['parcela_id'], current['campana'], cid))
+                resto = float(row['total']) if row else 0
+                if resto + nueva_sup > parcela['superficie_ha'] + 0.01:
+                    conn.close()
+                    return jsonify({"error": f"La superficie asignada ({resto + nueva_sup:.2f} ha) supera las {parcela['superficie_ha']:.2f} ha de la parcela"}), 400
     fields = ['cultivo', 'cultivo_iacs_cod', 'variedad', 'fecha_siembra', 'fecha_recoleccion_prevista', 'superficie_cultivada_ha', 'notas', 'kg_sembrados', 'precio_kg_compra']
     real_fields = {'superficie_cultivada_ha', 'kg_sembrados', 'precio_kg_compra'}
     values = [_to_real(data.get(f)) if f in real_fields else data.get(f) for f in fields]
