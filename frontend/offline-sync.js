@@ -44,16 +44,20 @@
     async post(url, data) {
       if (navigator.onLine) {
         try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 8000);
           const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
             credentials: 'include',
+            signal: ctrl.signal,
           });
+          clearTimeout(timer);
           // Success — no pending record needed
           return res;
         } catch (_e) {
-          // Network error despite onLine — fall through to offline save
+          // Network error or 8s timeout — fall through to offline save
         }
       }
 

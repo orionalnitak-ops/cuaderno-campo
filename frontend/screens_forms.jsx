@@ -134,14 +134,18 @@ function ScreenForms({ modulo, record, campana, onClose }) {
 
     const [parcelas, setParcelas] = useState([]);
     useEffect(() => {
-        fetch('/api/parcelas?pac_only=false', { credentials: 'include' })
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 6000);
+        fetch('/api/parcelas?pac_only=false', { credentials: 'include', signal: ctrl.signal })
             .then(r => r.json())
             .then(d => {
+                clearTimeout(timer);
                 const list = Array.isArray(d) ? d : [];
                 setParcelas(list);
                 if (window.OfflineDB && list.length > 0) window.OfflineDB.cacheParcelas(list);
             })
             .catch(() => {
+                clearTimeout(timer);
                 if (window.OfflineDB) {
                     window.OfflineDB.getCachedParcelas().then(cached => {
                         if (cached.length > 0) setParcelas(cached);
