@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cuaderno-cache-v17';
+const CACHE_NAME = 'cuaderno-cache-v18';
 
 const APP_SHELL = [
   '/',
@@ -41,9 +41,24 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // Nunca interceptar API ni recursos externos (CDN)
+  // Nunca interceptar API
   if (url.pathname.startsWith('/api/')) return;
-  if (url.origin !== self.location.origin) return;
+
+  // CDN (React unpkg): cache-first — el SW pre-cachea estos en install
+  if (url.origin !== self.location.origin) {
+    event.respondWith(
+      caches.match(event.request).then(cached => {
+        if (cached) return cached;
+        return fetch(event.request).then(response => {
+          if (response.ok) {
+            caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
 
   // Navegación (HTML): network-first, caída a caché del shell
   if (event.request.mode === 'navigate') {
