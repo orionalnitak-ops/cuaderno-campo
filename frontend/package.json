@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "babel src --out-dir dist --presets @babel/preset-react"
+    "build": "babel . --out-dir dist --presets @babel/preset-react --ignore \"node_modules,dist,index.html,manifest.json,service-worker.js\" --extensions \".jsx\"",
+    "watch": "babel . --out-dir dist --presets @babel/preset-react --ignore \"node_modules,dist,index.html,manifest.json,service-worker.js\" --extensions \".jsx\" --watch"
   },
   "devDependencies": {
     "@babel/cli": "^7.24.0",

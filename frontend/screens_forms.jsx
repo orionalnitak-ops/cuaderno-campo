@@ -135,7 +135,19 @@ function ScreenForms({ modulo, record, campana, onClose }) {
     const [parcelas, setParcelas] = useState([]);
     useEffect(() => {
         fetch('/api/parcelas?pac_only=false', { credentials: 'include' })
-            .then(r => r.json()).then(d => setParcelas(Array.isArray(d) ? d : []));
+            .then(r => r.json())
+            .then(d => {
+                const list = Array.isArray(d) ? d : [];
+                setParcelas(list);
+                if (window.OfflineDB && list.length > 0) window.OfflineDB.cacheParcelas(list);
+            })
+            .catch(() => {
+                if (window.OfflineDB) {
+                    window.OfflineDB.getCachedParcelas().then(cached => {
+                        if (cached.length > 0) setParcelas(cached);
+                    });
+                }
+            });
     }, []);
 
     const isEdit = !!(record && record.id);
@@ -286,11 +298,14 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
             alert('Rellena todos los campos obligatorios (marcados con *)'); return;
         }
         setSaving(true);
-        const method = isEdit ? 'PUT' : 'POST';
-        const url = isEdit ? `/api/tratamientos/${record.id}` : '/api/tratamientos';
-        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
-        if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar el tratamiento'); setSaving(false); return; }
-        onClose('✅ Tratamiento guardado');
+        try {
+            const url = isEdit ? `/api/tratamientos/${record.id}` : '/api/tratamientos';
+            const res = isEdit
+                ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
+                : await window.OfflineSync.post('/api/tratamientos', f);
+            if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar el tratamiento'); setSaving(false); return; }
+            onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Tratamiento guardado');
+        } catch { alert('Error al guardar el tratamiento'); setSaving(false); }
     };
 
     return (
@@ -445,11 +460,14 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
     const save = async () => {
         if (!f.parcela_id || !f.fecha_aplicacion) { alert('Rellena: parcela y fecha'); return; }
         setSaving(true);
-        const method = isEdit ? 'PUT' : 'POST';
-        const url = isEdit ? `/api/fertilizacion/${record.id}` : '/api/fertilizacion';
-        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
-        if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar el abono'); setSaving(false); return; }
-        onClose('✅ Fertilización guardada');
+        try {
+            const url = isEdit ? `/api/fertilizacion/${record.id}` : '/api/fertilizacion';
+            const res = isEdit
+                ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
+                : await window.OfflineSync.post('/api/fertilizacion', f);
+            if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar el abono'); setSaving(false); return; }
+            onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Abono guardado');
+        } catch { alert('Error al guardar el abono'); setSaving(false); }
     };
 
     const isLiquid = (u) => u && (u.startsWith('L/') || u.toLowerCase().includes('litro'));
@@ -628,11 +646,12 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
         if (!f.parcela_id || !f.fecha) { alert('Rellena: parcela y fecha'); return; }
         setSaving(true);
         try {
-            const method = isEdit ? 'PUT' : 'POST';
             const url = isEdit ? `/api/labores/${record.id}` : '/api/labores';
-            const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
+            const res = isEdit
+                ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
+                : await window.OfflineSync.post('/api/labores', f);
             if (!res.ok) { alert('Error al guardar. Inténtalo de nuevo.'); setSaving(false); return; }
-            onClose('✅ Labor guardada');
+            onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Labor guardada');
         } catch { alert('Error de conexión'); setSaving(false); }
     };
 
@@ -738,11 +757,14 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
     const save = async () => {
         if (!f.parcela_id || !f.fecha_inicio) { alert('Rellena: parcela y fecha de inicio'); return; }
         setSaving(true);
-        const method = isEdit ? 'PUT' : 'POST';
-        const url = isEdit ? `/api/cosecha/${record.id}` : '/api/cosecha';
-        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
-        if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar la cosecha'); setSaving(false); return; }
-        onClose('✅ Cosecha guardada');
+        try {
+            const url = isEdit ? `/api/cosecha/${record.id}` : '/api/cosecha';
+            const res = isEdit
+                ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
+                : await window.OfflineSync.post('/api/cosecha', f);
+            if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar la cosecha'); setSaving(false); return; }
+            onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Cosecha guardada');
+        } catch { alert('Error al guardar la cosecha'); setSaving(false); }
     };
 
     return (
@@ -846,18 +868,14 @@ function FormCompra({ record, campana, onClose, isEdit }) {
     const save = async () => {
         setError('');
         setSaving(true);
-        const url    = isEdit ? `/api/compras/${record.id}` : '/api/compras';
-        const method = isEdit ? 'PUT' : 'POST';
         try {
-            const res = await fetch(url, {
-                method, credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(f),
-            });
-            const data = await res.json();
-            if (!res.ok) { setError(data.error || 'Error al guardar'); setSaving(false); return; }
-            onClose(isEdit ? 'Compra actualizada' : 'Compra registrada');
-        } catch { setError('Error de conexión'); setSaving(false); }
+            const url = isEdit ? `/api/compras/${record.id}` : '/api/compras';
+            const res = isEdit
+                ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
+                : await window.OfflineSync.post('/api/compras', f);
+            if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.error || 'Error al guardar'); setSaving(false); return; }
+            onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Compra guardada');
+        } catch { setError('Error al guardar'); setSaving(false); }
     };
 
     return (
@@ -989,11 +1007,14 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
             alert('Indica al menos las horas de riego o el volumen en m³'); return;
         }
         setSaving(true);
-        const method = isEdit ? 'PUT' : 'POST';
-        const url = isEdit ? `/api/riego/${record.id}` : '/api/riego';
-        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' });
-        if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar'); setSaving(false); return; }
-        onClose('✅ Riego guardado');
+        try {
+            const url = isEdit ? `/api/riego/${record.id}` : '/api/riego';
+            const res = isEdit
+                ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
+                : await window.OfflineSync.post('/api/riego', f);
+            if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar'); setSaving(false); return; }
+            onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Riego guardado');
+        } catch { alert('Error al guardar'); setSaving(false); }
     };
 
     return (

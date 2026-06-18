@@ -14,6 +14,10 @@ function ScreenLogin({ onLogin }) {
     const handleLogin = async (e) => {
         e.preventDefault();
         if (!email || !password) { setError('Introduce email y contraseña'); return; }
+        if (!navigator.onLine) {
+            setError('Sin conexión. Inicia sesión al menos una vez con red para poder acceder sin cobertura después.');
+            return;
+        }
         setLoading(true); setError('');
         try {
             const res = await fetch('/api/auth/login', {
@@ -25,7 +29,7 @@ function ScreenLogin({ onLogin }) {
             const data = await res.json();
             if (!res.ok) { setError(data.error || 'Credenciales incorrectas'); }
             else { onLogin(data); }
-        } catch { setError('Error de conexión.'); }
+        } catch { setError('Sin conexión. Inicia sesión cuando tengas red.'); }
         finally { setLoading(false); }
     };
 
