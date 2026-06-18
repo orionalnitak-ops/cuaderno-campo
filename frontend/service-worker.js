@@ -1,8 +1,23 @@
-const CACHE_NAME = 'cuaderno-cache-v15';
+const CACHE_NAME = 'cuaderno-cache-v17';
 
 const APP_SHELL = [
   '/',
   '/manifest.json',
+  '/offline-db.js',
+  '/offline-sync.js',
+  '/dist/screens_auth.js',
+  '/dist/screens_lopd.js',
+  '/dist/screens_home.js',
+  '/dist/screens_forms.js',
+  '/dist/screens_parcelas.js',
+  '/dist/screens_history.js',
+  '/dist/screens_settings.js',
+  '/dist/screens_admin.js',
+  '/dist/screens_planes.js',
+  '/dist/screens_onboarding.js',
+  '/dist/app.js',
+  'https://unpkg.com/react@18/umd/react.production.min.js',
+  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
 ];
 
 self.addEventListener('install', event => {

@@ -37,6 +37,9 @@ function App() {
     const [installPrompt, setInstallPrompt] = useState(null);
     const [showInstallBanner, setShowInstallBanner] = useState(false);
     const [showOnboarding, setShowOnboarding] = useState(false);
+    const [isOnline, setIsOnline]         = useState(navigator.onLine);
+    const [pendingCount, setPendingCount] = useState(0);
+    const [syncing, setSyncing]           = useState(false);
 
     // ── Boot: check session ──
     useEffect(() => {
@@ -47,6 +50,7 @@ function App() {
                 if (data && data.id) {
                     setCurrentUser(data);
                     setAuthState('authenticated');
+                    localStorage.setItem('cuaderno_auth', JSON.stringify(data));
                     const key = `lopd_accepted_${data.id}`;
                     setLopdOk(!!localStorage.getItem(key));
                     if (isPagoCompletado) {
@@ -54,10 +58,26 @@ function App() {
                         setTimeout(() => showMsg('¡Pago completado! Tu suscripción se activará en unos momentos.'), 500);
                     }
                 } else {
+                    localStorage.removeItem('cuaderno_auth');
                     setAuthState('guest');
                 }
             })
-            .catch(() => setAuthState('guest'));
+            .catch(() => {
+                const cached = localStorage.getItem('cuaderno_auth');
+                if (cached) {
+                    try {
+                        const user = JSON.parse(cached);
+                        setCurrentUser(user);
+                        setAuthState('authenticated');
+                        const key = `lopd_accepted_${user.id}`;
+                        setLopdOk(!!localStorage.getItem(key));
+                    } catch {
+                        setAuthState('guest');
+                    }
+                } else {
+                    setAuthState('guest');
+                }
+            });
     }, []);
 
     // Load campaign on auth + detectar si falta rellenar datos de explotación
@@ -99,6 +119,41 @@ function App() {
         return () => window.removeEventListener('beforeinstallprompt', handler);
     }, []);
 
+    const showMsg = useCallback((msg) => {
+        setToast({ msg, on: true });
+        setTimeout(() => setToast(t => ({ ...t, on: false })), 3000);
+    }, []);
+
+    // Offline support: sync on reconnect, track pending count
+    useEffect(() => {
+        if (window.OfflineDB) {
+            window.OfflineDB.countAllPending().then(setPendingCount);
+        }
+        let unsub;
+        if (window.OfflineSync) {
+            unsub = window.OfflineSync.onStatusChange(setPendingCount);
+        }
+
+        const handleOnline = async () => {
+            setIsOnline(true);
+            if (!window.OfflineSync) return;
+            setSyncing(true);
+            const { synced, failed } = await window.OfflineSync.syncAll();
+            setSyncing(false);
+            if (synced > 0) showMsg(`✅ ${synced} registro${synced > 1 ? 's' : ''} sincronizado${synced > 1 ? 's' : ''}`);
+            if (failed > 0) showMsg(`⚠️ ${failed} registro${failed > 1 ? 's' : ''} no se pudieron subir`);
+        };
+        const handleOffline = () => setIsOnline(false);
+
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+        return () => {
+            if (unsub) unsub();
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, []);
+
     // En desktop (>=1024px) el CSS fija overflow:hidden en html/body para que el topbar
     // quede fijo. Al abrir un formulario necesitamos restaurar el scroll normal.
     useEffect(() => {
@@ -118,12 +173,14 @@ function App() {
     const handleLogin = useCallback((userData) => {
         setCurrentUser(userData);
         setAuthState('authenticated');
+        localStorage.setItem('cuaderno_auth', JSON.stringify(userData));
         const key = `lopd_accepted_${userData.id}`;
         setLopdOk(!!localStorage.getItem(key));
     }, []);
 
     const handleLogout = useCallback(async () => {
         await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+        localStorage.removeItem('cuaderno_auth');
         setCurrentUser(null);
         setAuthState('guest');
         setScreen('inicio');
@@ -141,10 +198,17 @@ function App() {
         setScreen('inicio');
     }, []);
 
-    const showMsg = useCallback((msg) => {
-        setToast({ msg, on: true });
-        setTimeout(() => setToast(t => ({ ...t, on: false })), 3000);
-    }, []);
+    const handleManualSync = useCallback(async () => {
+        if (!navigator.onLine) { showMsg('Sin conexión — conéctate a internet para sincronizar'); return; }
+        if (!window.OfflineSync) { showMsg('Módulo offline no disponible'); return; }
+        if (syncing) return;
+        setSyncing(true);
+        const { synced, failed } = await window.OfflineSync.syncAll();
+        setSyncing(false);
+        if (synced === 0 && failed === 0) { showMsg('No hay registros pendientes'); return; }
+        if (synced > 0) showMsg(`✅ ${synced} registro${synced > 1 ? 's' : ''} sincronizado${synced > 1 ? 's' : ''}`);
+        if (failed > 0) showMsg(`⚠️ ${failed} registro${failed > 1 ? 's' : ''} no se pudieron subir`);
+    }, [syncing, showMsg]);
 
     const openForm = (modulo, record = null) => {
         setActiveForm({ modulo, record });
@@ -260,6 +324,21 @@ function App() {
 
     return (
         <div style={{ display: 'flex', minHeight: '100vh', background: '#f8f9fb' }}>
+
+            {/* Offline & pending banners */}
+            {!isOnline && (
+                <div className="offline-banner">
+                    📵 Sin cobertura — los datos se guardan en el dispositivo
+                </div>
+            )}
+            {isOnline && pendingCount > 0 && (
+                <div className="pending-banner">
+                    <span>⟳ {pendingCount} registro{pendingCount > 1 ? 's' : ''} pendiente{pendingCount > 1 ? 's' : ''} de sincronizar</span>
+                    <button onClick={handleManualSync} disabled={syncing}>
+                        {syncing ? 'Subiendo...' : 'Sincronizar'}
+                    </button>
+                </div>
+            )}
 
             {/* ── Trial caducado / suscripción requerida ── */}
             {planExpired && (

@@ -862,10 +862,58 @@
     ::-webkit-scrollbar { width: 4px; height: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(109,122,115,0.20); border-radius: 4px; }
+
+    /* ── Offline banner ── */
+    .offline-banner {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 200;
+      background: #92400e;
+      color: #fef3c7;
+      font-family: var(--font-body);
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-align: center;
+      padding: 9px 16px;
+      letter-spacing: 0.01em;
+    }
+    .pending-banner {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 200;
+      background: #1e3a5f;
+      color: #bfdbfe;
+      font-family: var(--font-body);
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-align: center;
+      padding: 9px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+    .pending-banner button {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 20px;
+      padding: 4px 14px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: var(--font-body);
+      min-height: 28px;
+    }
+    .pending-banner button:disabled { opacity: 0.6; cursor: not-allowed; }
   </style>
 </head>
 <body>
   <div id="root"></div>
+
+  <!-- Offline: IndexedDB + Sync engine (must load before React app) -->
+  <script src="/offline-db.js"></script>
+  <script src="/offline-sync.js"></script>
 
   <!-- React (CDN) -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
