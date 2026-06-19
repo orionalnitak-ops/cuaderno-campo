@@ -911,9 +911,10 @@
 <body>
   <div id="root"></div>
 
-  <!-- Offline: IndexedDB + Sync engine (must load before React app) -->
+  <!-- Offline: IndexedDB + Sync engine + NLP local (must load before React app) -->
   <script src="/offline-db.js"></script>
   <script src="/offline-sync.js"></script>
+  <script src="/nlp-local.js"></script>
 
   <!-- React (CDN) -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>

@@ -1,10 +1,11 @@
-const CACHE_NAME = 'cuaderno-cache-v19';
+const CACHE_NAME = 'cuaderno-cache-v20';
 
 const APP_SHELL = [
   '/',
   '/manifest.json',
   '/offline-db.js',
   '/offline-sync.js',
+  '/nlp-local.js',
   '/dist/screens_auth.js',
   '/dist/screens_lopd.js',
   '/dist/screens_home.js',
