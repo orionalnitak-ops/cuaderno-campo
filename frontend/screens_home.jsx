@@ -262,7 +262,8 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
         rec.onend   = () => setMicActivo(false);
         rec.onerror = (ev) => {
             setMicActivo(false);
-            if (ev.error !== 'no-speech') showToast('Error de micrófono — comprueba los permisos');
+            if (ev.error === 'network') showToast('Sin conexión — escribe el texto manualmente');
+            else if (ev.error !== 'no-speech') showToast('Error de micrófono — comprueba los permisos');
         };
         rec.onresult = (e) => {
             for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -332,6 +333,10 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
         if (!nlpTexto.trim()) { showToast('Por favor, escribe algo'); return; }
         setNlpProcesando(true);
         try {
+            if (!navigator.onLine && window.NLPLocal) {
+                setNlpResultado(await window.NLPLocal.parse(nlpTexto));
+                return;
+            }
             const res = await fetch('/api/parse', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -340,8 +345,12 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
             });
             if (!res.ok) throw new Error('Error del servidor');
             setNlpResultado(await res.json());
-        } catch (e) { showToast('❌ ' + e.message); }
-        finally { setNlpProcesando(false); }
+        } catch (e) {
+            if (window.NLPLocal) {
+                try { setNlpResultado(await window.NLPLocal.parse(nlpTexto)); return; } catch {}
+            }
+            showToast('❌ ' + e.message);
+        } finally { setNlpProcesando(false); }
     };
 
     // ── NLP: Guardar registro ──
@@ -355,31 +364,33 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
         setNlpGuardando(true);
         try {
             const esRiego = p?.accion?.tipo === 'riego';
-            const res = await fetch('/api/parse/guardar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    accion:          p?.accion?.tipo,
-                    palabra_clave:   p?.accion?.palabra_clave || null,
-                    parcela_id:      p?.parcela?.id || null,
-                    parcela_nombre:  parcelaNombreEfectivo || null,
-                    producto:        p?.producto?.nombre || '',
-                    fecha:           p?.fecha,
-                    texto_original:  nlpResultado.texto_original,
-                    campana,
-                    ...(esRiego && {
-                        tipo_riego:  nlpTipoRiego || 'Goteo',
-                        horas_riego: nlpHorasRiego ? parseFloat(nlpHorasRiego) : null,
-                    }),
+            const payload = {
+                accion:         p?.accion?.tipo,
+                palabra_clave:  p?.accion?.palabra_clave || null,
+                parcela_id:     p?.parcela?.id || null,
+                parcela_nombre: parcelaNombreEfectivo || null,
+                producto:       p?.producto?.nombre || '',
+                fecha:          p?.fecha,
+                texto_original: nlpResultado.texto_original,
+                campana,
+                ...(esRiego && {
+                    tipo_riego:  nlpTipoRiego || 'Goteo',
+                    horas_riego: nlpHorasRiego ? parseFloat(nlpHorasRiego) : null,
                 }),
-                credentials: 'include',
-            });
+            };
+            const res = await (window.OfflineSync
+                ? window.OfflineSync.post('/api/parse/guardar', payload)
+                : fetch('/api/parse/guardar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload), credentials:'include' }));
             const json = await res.json();
-            if (!res.ok) throw new Error(json.error || 'Error al guardar');
-            const esNuevaCreada = !p?.parcela?.id && parcelaNombreEfectivo;
-            showToast(esNuevaCreada
-                ? `✅ Guardado. Parcela "${json.parcela_nombre}" añadida a Mis Parcelas`
-                : `✅ Guardado en ${json.parcela_nombre || 'parcela'}`);
+            if (!res.ok && !res._savedOffline) throw new Error(json.error || 'Error al guardar');
+            if (res._savedOffline) {
+                showToast('✅ Guardado offline — se enviará cuando haya conexión');
+            } else {
+                const esNuevaCreada = !p?.parcela?.id && parcelaNombreEfectivo;
+                showToast(esNuevaCreada
+                    ? `✅ Guardado. Parcela "${json.parcela_nombre}" añadida a Mis Parcelas`
+                    : `✅ Guardado en ${json.parcela_nombre || parcelaNombreEfectivo || 'parcela'}`);
+            }
             setNlpParcelaNombre('');
             volverHome();
         } catch (e) { showToast('❌ ' + e.message); }
