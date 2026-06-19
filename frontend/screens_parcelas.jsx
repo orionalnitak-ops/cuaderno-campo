@@ -393,9 +393,22 @@ function ScreenParcelas({ campana, showToast }) {
     const fetchParcelas = () => {
         setLoading(true);
         fetch('/api/parcelas', { credentials: 'include' }).then(r => r.json()).then(data => {
-            setParcelas(Array.isArray(data) ? data : []);
+            const list = Array.isArray(data) ? data : [];
+            setParcelas(list);
             setLoading(false);
-        }).catch(() => setLoading(false));
+            if (list.length > 0 && window.OfflineDB) {
+                window.OfflineDB.cacheParcelas(list);
+            }
+        }).catch(() => {
+            if (window.OfflineDB) {
+                window.OfflineDB.getCachedParcelas().then(cached => {
+                    setParcelas(cached);
+                    setLoading(false);
+                });
+            } else {
+                setLoading(false);
+            }
+        });
     };
     useEffect(() => { fetchParcelas(); }, []);
 
