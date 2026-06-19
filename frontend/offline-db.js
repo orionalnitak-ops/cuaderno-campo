@@ -1,7 +1,7 @@
 // IndexedDB wrapper — exposes window.OfflineDB
 (function () {
   const DB_NAME = 'cuaderno-offline-v1';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   let _db = null;
   let _dbPromise = null;
 
@@ -19,6 +19,16 @@
         // Parcelas cache (so forms work offline)
         if (!db.objectStoreNames.contains('parcelas_cache')) {
           db.createObjectStore('parcelas_cache', { keyPath: 'id' });
+        }
+        // Historial, equipos y aplicadores (blob bajo clave fija)
+        if (!db.objectStoreNames.contains('historial_cache')) {
+          db.createObjectStore('historial_cache', { keyPath: 'cache_key' });
+        }
+        if (!db.objectStoreNames.contains('equipos_cache')) {
+          db.createObjectStore('equipos_cache', { keyPath: 'cache_key' });
+        }
+        if (!db.objectStoreNames.contains('aplicadores_cache')) {
+          db.createObjectStore('aplicadores_cache', { keyPath: 'cache_key' });
         }
       };
       req.onsuccess = (e) => {
@@ -98,6 +108,45 @@
         const t = db.transaction('parcelas_cache', 'readonly');
         const req = t.objectStore('parcelas_cache').getAll();
         req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => resolve([]);
+      }));
+    },
+
+    // Historial cache
+    cacheHistorial(records) {
+      return tx('historial_cache', 'readwrite', s => s.put({ cache_key: 'default', records }));
+    },
+    getCachedHistorial() {
+      return openDB().then(db => new Promise((resolve) => {
+        const t = db.transaction('historial_cache', 'readonly');
+        const req = t.objectStore('historial_cache').get('default');
+        req.onsuccess = () => resolve(req.result?.records || []);
+        req.onerror = () => resolve([]);
+      }));
+    },
+
+    // Equipos cache
+    cacheEquipos(records) {
+      return tx('equipos_cache', 'readwrite', s => s.put({ cache_key: 'default', records }));
+    },
+    getCachedEquipos() {
+      return openDB().then(db => new Promise((resolve) => {
+        const t = db.transaction('equipos_cache', 'readonly');
+        const req = t.objectStore('equipos_cache').get('default');
+        req.onsuccess = () => resolve(req.result?.records || []);
+        req.onerror = () => resolve([]);
+      }));
+    },
+
+    // Aplicadores cache
+    cacheAplicadores(records) {
+      return tx('aplicadores_cache', 'readwrite', s => s.put({ cache_key: 'default', records }));
+    },
+    getCachedAplicadores() {
+      return openDB().then(db => new Promise((resolve) => {
+        const t = db.transaction('aplicadores_cache', 'readonly');
+        const req = t.objectStore('aplicadores_cache').get('default');
+        req.onsuccess = () => resolve(req.result?.records || []);
         req.onerror = () => resolve([]);
       }));
     },

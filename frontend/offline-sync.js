@@ -8,6 +8,8 @@
     '/api/cosecha': 'cosecha',
     '/api/compras': 'compras',
     '/api/riego': 'riego',
+    '/api/abonado': 'abonado',
+    '/api/parse/guardar': 'nlp',
   };
 
   function getStoreName(url) {

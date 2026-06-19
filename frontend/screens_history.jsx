@@ -49,15 +49,40 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
         if (fHasta)               params.set('fecha_hasta', fHasta);
         if (fCampana)             params.set('campana', fCampana);
 
+        const isDefaultQuery = !fParcela && fModulo === 'todos' && !fDesde && !fHasta;
+
         fetch(`/api/historial?${params}`)
             .then(r => r.json())
-            .then(data => { setRecords(Array.isArray(data) ? data : []); setLoading(false); })
-            .catch(() => setLoading(false));
+            .then(data => {
+                const list = Array.isArray(data) ? data : [];
+                setRecords(list);
+                setLoading(false);
+                if (isDefaultQuery && list.length > 0 && window.OfflineDB) {
+                    window.OfflineDB.cacheHistorial(list);
+                }
+            })
+            .catch(() => {
+                if (isDefaultQuery && window.OfflineDB) {
+                    window.OfflineDB.getCachedHistorial().then(cached => {
+                        setRecords(cached);
+                        setLoading(false);
+                    });
+                } else {
+                    setLoading(false);
+                }
+            });
     }, [fParcela, fModulo, fDesde, fHasta, fCampana]);
 
     useEffect(() => { fetchRecords(); }, [fetchRecords]);
     useEffect(() => {
-        fetch('/api/parcelas').then(r => r.json()).then(d => setParcelas(Array.isArray(d) ? d : []));
+        fetch('/api/parcelas')
+            .then(r => r.json())
+            .then(d => setParcelas(Array.isArray(d) ? d : []))
+            .catch(() => {
+                if (window.OfflineDB) {
+                    window.OfflineDB.getCachedParcelas().then(cached => setParcelas(cached));
+                }
+            });
     }, []);
 
     const clearFilters = () => {
