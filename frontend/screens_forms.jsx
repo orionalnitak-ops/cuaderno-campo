@@ -255,8 +255,26 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
     const set = (k, v) => setF(x => ({ ...x, [k]: v }));
 
     React.useEffect(() => {
-        fetch('/api/equipos', { credentials: 'include' }).then(r => r.json()).then(d => setEquipos(Array.isArray(d) ? d : []));
-        fetch('/api/aplicadores', { credentials: 'include' }).then(r => r.json()).then(d => setAplicadores(Array.isArray(d) ? d : []));
+        fetch('/api/equipos', { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => {
+                const list = Array.isArray(d) ? d : [];
+                setEquipos(list);
+                if (list.length > 0 && window.OfflineDB) window.OfflineDB.cacheEquipos(list);
+            })
+            .catch(() => {
+                if (window.OfflineDB) window.OfflineDB.getCachedEquipos().then(cached => setEquipos(cached));
+            });
+        fetch('/api/aplicadores', { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => {
+                const list = Array.isArray(d) ? d : [];
+                setAplicadores(list);
+                if (list.length > 0 && window.OfflineDB) window.OfflineDB.cacheAplicadores(list);
+            })
+            .catch(() => {
+                if (window.OfflineDB) window.OfflineDB.getCachedAplicadores().then(cached => setAplicadores(cached));
+            });
     }, []);
 
     React.useEffect(() => {
@@ -1127,21 +1145,30 @@ function FormAbonado({ parcelas, record, campana, onClose, isEdit }) {
             alert('Rellena: parcela, cultivo, cultivo anterior, rendimiento y fecha'); return;
         }
         setSaving(true);
-        const method = isEdit ? 'PUT' : 'POST';
-        const url    = isEdit ? `/api/abonado/${record.id}` : '/api/abonado';
-        const res = await fetch(url, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(f),
-            credentials: 'include',
-        });
-        if (!res.ok) {
-            const d = await res.json().catch(() => ({}));
-            alert(d.error || 'Error al guardar');
+        try {
+            let res;
+            if (isEdit) {
+                res = await fetch(`/api/abonado/${record.id}`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(f), credentials: 'include',
+                });
+            } else {
+                res = await (window.OfflineSync
+                    ? window.OfflineSync.post('/api/abonado', f)
+                    : fetch('/api/abonado', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' }));
+            }
+            if (res._savedOffline) { onClose('✅ Plan de abonado guardado offline'); return; }
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                alert(d.error || 'Error al guardar');
+                setSaving(false);
+                return;
+            }
+            onClose('✅ Plan de abonado guardado');
+        } catch (e) {
+            alert('Error al guardar: ' + e.message);
             setSaving(false);
-            return;
         }
-        onClose('✅ Plan de abonado guardado');
     };
 
     const npkReady = f.n_necesario_kg_ha !== '' && f.n_necesario_kg_ha !== null;
