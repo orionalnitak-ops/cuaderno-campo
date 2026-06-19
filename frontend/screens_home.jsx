@@ -52,6 +52,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     const [nlpTipoRiego, setNlpTipoRiego]       = useState('Goteo');
     const [nlpHorasRiego, setNlpHorasRiego]     = useState('');
     const [micActivo, setMicActivo]             = useState(false);
+    const [isOffline, setIsOffline]             = useState(!navigator.onLine);
     const recognitionRef = React.useRef(null);
     const [importando, setImportando]           = useState(false);
     const [importResult, setImportResult]       = useState(null);
@@ -76,6 +77,18 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     };
     const dragDias  = useDragScroll();
     const dragHoras = useDragScroll();
+
+    // ── Estado online/offline ──
+    useEffect(() => {
+        const goOnline  = () => setIsOffline(false);
+        const goOffline = () => setIsOffline(true);
+        window.addEventListener('online',  goOnline);
+        window.addEventListener('offline', goOffline);
+        return () => {
+            window.removeEventListener('online',  goOnline);
+            window.removeEventListener('offline', goOffline);
+        };
+    }, []);
 
     // ── Cargar explotación ──
     useEffect(() => {
@@ -560,6 +573,15 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                         <span>{micActivo ? 'Parar' : 'Hablar'}</span>
                     </button>
                 </div>
+
+                {isOffline && (
+                    <div style={{ background:'#fffbeb', border:'1px solid #f59e0b', borderRadius:'var(--radius-lg)', padding:'12px 14px', marginBottom:14, fontSize:'0.82rem', color:'#92400e', lineHeight:1.6 }}>
+                        <div style={{ fontWeight:700, marginBottom:4 }}>🎤 El micrófono necesita conexión a internet</div>
+                        <div>Sin WiFi o datos, el micrófono no puede transcribir. <strong>Escribe directamente</strong> arriba — el análisis y el guardado funcionan sin conexión.</div>
+                        <div style={{ marginTop:8, paddingTop:8, borderTop:'1px solid #fde68a', fontWeight:600 }}>Cómo activarlo sin WiFi en Android:</div>
+                        <div style={{ marginTop:4 }}>Ajustes → <em>Idioma e introducción de texto</em> → <em>Reconocimiento de voz de Google</em> → <em>Descargar idiomas sin conexión</em> → Español</div>
+                    </div>
+                )}
 
                 <button onClick={procesarTexto} disabled={nlpProcesando || !nlpTexto.trim()}
                     style={{ ...S.btn, background: nlpProcesando || !nlpTexto.trim() ? 'var(--surface-variant)' : 'var(--primary)', color: nlpProcesando || !nlpTexto.trim() ? 'var(--on-surface-variant)' : '#fff' }}>
