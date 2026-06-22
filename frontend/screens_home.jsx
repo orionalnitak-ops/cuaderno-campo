@@ -42,6 +42,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     const [avisosOpen, setAvisosOpen]   = useState(false);
     const [alertaZoom, setAlertaZoom]   = useState(null);  // alerta AEMET seleccionada para modal
     const [tuSubView, setTuSubView]     = useState(null);  // null | 'desde_cero'
+    const [showQuickStart, setShowQuickStart] = useState(false);
 
     // ── Estado NLP ──
     const [nlpTexto, setNlpTexto]               = useState('');
@@ -786,6 +787,12 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ width: 28, height: 28, flexShrink: 0, borderRadius: 'var(--radius-md)', background: 'linear-gradient(135deg, var(--primary), var(--primary-container))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>🌿</div>
                     <span style={{ color: '#fff', fontSize: '0.78rem', fontWeight: 500, flex: 1, lineHeight: 1.4 }}>{headerLine}</span>
+                    <button onClick={() => setShowQuickStart(true)} title="Guía de inicio" style={{
+                        background: 'rgba(255,255,255,0.14)', border: 'none', borderRadius: '50%',
+                        width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#fff', fontSize: '0.82rem', fontWeight: 800, cursor: 'pointer',
+                        flexShrink: 0, fontFamily: 'Manrope, sans-serif',
+                    }}>?</button>
                 </div>
             </div>
 
@@ -1121,6 +1128,13 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                     </button>
                 </div>
             </div>
+
+            {showQuickStart && (
+                <QuickStartModal
+                    onClose={() => setShowQuickStart(false)}
+                    onNavigate={onNavigate}
+                />
+            )}
         </div>
     );
 }

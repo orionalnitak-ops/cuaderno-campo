@@ -603,7 +603,7 @@ function ScreenParcelas({ campana, showToast }) {
                                 {loading ? '…' : `${parcelas.length} parcela(s) visibles`}
                             </p>
                         </div>
-                        <div style={{ display:'flex', gap:8 }}>
+                        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
                             {parcelas.length > 0 && (
                                 <button
                                     onClick={syncAll}
@@ -618,6 +618,7 @@ function ScreenParcelas({ campana, showToast }) {
                             <button className="btn-primary" style={{ padding:'10px 14px', fontSize:'0.82rem' }} onClick={openNew}>
                                 + Nueva
                             </button>
+                            <HelpButton screenId="parcelas" />
                         </div>
                     </div>
                 </div>

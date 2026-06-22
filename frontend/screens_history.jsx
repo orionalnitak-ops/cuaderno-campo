@@ -123,7 +123,7 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
                             {loading ? '…' : `${records.length} registros`}
                         </p>
                     </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         <button className="btn-ghost" onClick={exportExcel}
                             style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.20)', padding: '9px 14px', fontSize: '0.8rem', minHeight: 40, background: 'rgba(104,219,174,0.12)' }}>
                             📊 Exportar Excel
@@ -137,6 +137,7 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
                                 </span>
                             )}
                         </button>
+                        <HelpButton screenId="historial" />
                     </div>
                 </div>
 

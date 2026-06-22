@@ -356,9 +356,12 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
     return (
         <div style={{ paddingBottom: 32 }}>
             <div style={{ background:'linear-gradient(135deg,#111827,#1f2937)', padding:'52px 20px 20px' }}>
-                <h1 style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.4rem', color:'#fff', margin:0 }}>
-                    ⚙️ Ajustes
-                </h1>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                    <h1 style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.4rem', color:'#fff', margin:0 }}>
+                        ⚙️ Ajustes
+                    </h1>
+                    <HelpButton screenId="mas" />
+                </div>
             </div>
 
             <div style={{ background:'#fff', borderBottom:'1px solid #f3f4f6', display:'flex', gap:0, overflowX:'auto' }}>
