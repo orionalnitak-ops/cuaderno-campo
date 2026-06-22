@@ -410,7 +410,7 @@ function HelpButton({ screenId, style }) {
                     flexShrink: 0,
                     ...(style || {}),
                 }}
-            >?</button>
+            >{'?'}</button>
             {show && <HelpModal screenId={screenId} onClose={() => setShow(false)} />}
         </>
     );

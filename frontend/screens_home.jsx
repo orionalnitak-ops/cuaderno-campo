@@ -792,7 +792,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                         width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
                         color: '#fff', fontSize: '0.82rem', fontWeight: 800, cursor: 'pointer',
                         flexShrink: 0, fontFamily: 'Manrope, sans-serif',
-                    }}>?</button>
+                    }}>{'?'}</button>
                 </div>
             </div>
 
