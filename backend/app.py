@@ -82,6 +82,7 @@ from blueprints.imports_exports import bp as imports_exports_bp
 from blueprints.aemet import bp as aemet_bp
 from blueprints.stripe_bp import bp as stripe_bp
 from blueprints.push import bp as push_bp
+from blueprints.uhc import bp as uhc_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(admin_bp)
@@ -98,6 +99,7 @@ app.register_blueprint(imports_exports_bp)
 app.register_blueprint(aemet_bp)
 app.register_blueprint(stripe_bp)
 app.register_blueprint(push_bp)
+app.register_blueprint(uhc_bp)
 
 # ─────────────────────────────────────────────
 # STATIC SERVING
