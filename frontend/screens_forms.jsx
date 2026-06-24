@@ -231,10 +231,13 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
     const [cultivo, setCultivo]         = React.useState({});
     const [showAddAplic, setShowAddAplic] = React.useState(false);
     const [newAplic, setNewAplic]         = React.useState({ nombre: '', num_ropo: '', nif: '' });
+    const [modoUHC, setModoUHC]   = React.useState(false);
+    const [uhcList, setUhcList]   = React.useState([]);
 
     const [f, setF] = React.useState({
         parcela_id:               record?.parcela_id || '',
         parcela_etiqueta:         record?.parcela_etiqueta || '',
+        uhc_id:                   record?.uhc_id || '',
         fecha_aplicacion:         record?.fecha_aplicacion || today,
         producto_comercial:       record?.producto_comercial || '',
         num_registro_mapa:        record?.num_registro_mapa || '',
@@ -298,6 +301,13 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
         if (p) set('parcela_etiqueta', p.nombre_finca);
     }, [f.parcela_id]);
 
+    React.useEffect(() => {
+        fetch(`/api/uhc?campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setUhcList(Array.isArray(d) ? d : []))
+            .catch(() => {});
+    }, [campana]);
+
     const saveNuevoAplicador = async () => {
         if (!newAplic.nombre.trim()) { alert('El nombre del aplicador es obligatorio'); return; }
         const res = await fetch('/api/aplicadores', {
@@ -314,7 +324,7 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
     };
 
     const save = async () => {
-        if (!f.parcela_id || !f.fecha_aplicacion || !f.aplicador_id || !f.producto_comercial ||
+        if ((!f.parcela_id && !f.uhc_id) || !f.fecha_aplicacion || !f.aplicador_id || !f.producto_comercial ||
             !f.plaga_objetivo || !f.sustancia_activa || !f.num_registro_mapa || !f.dosis_valor ||
             !f.equipo_id || !f.plazo_seguridad_dias) {
             alert('Rellena todos los campos obligatorios (marcados con *)'); return;
@@ -332,9 +342,50 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
 
     return (
         <div>
-            <FieldGroup label="Parcela *">
-                <ParcelSelect parcelas={parcelas} value={f.parcela_id} onChange={v => set('parcela_id', v)} />
-            </FieldGroup>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <button type="button"
+                    onClick={() => { setModoUHC(false); set('uhc_id', ''); }}
+                    style={{
+                        flex: 1, padding: '8px', border: 'none', borderRadius: 'var(--radius-full)',
+                        fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer',
+                        fontFamily: 'var(--font-body)',
+                        background: !modoUHC ? 'var(--primary)' : 'var(--surface-container-low)',
+                        color: !modoUHC ? '#fff' : 'var(--on-surface-variant)',
+                    }}>📍 Parcela individual</button>
+                <button type="button"
+                    onClick={() => { setModoUHC(true); set('parcela_id', ''); }}
+                    style={{
+                        flex: 1, padding: '8px', border: 'none', borderRadius: 'var(--radius-full)',
+                        fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer',
+                        fontFamily: 'var(--font-body)',
+                        background: modoUHC ? 'var(--primary)' : 'var(--surface-container-low)',
+                        color: modoUHC ? '#fff' : 'var(--on-surface-variant)',
+                    }}>🌱 Grupo UHC</button>
+            </div>
+
+            {!modoUHC ? (
+                <FieldGroup label="Parcela *">
+                    <ParcelSelect parcelas={parcelas} value={f.parcela_id} onChange={v => set('parcela_id', v)} />
+                </FieldGroup>
+            ) : (
+                <FieldGroup label="Grupo UHC *">
+                    {uhcList.length === 0 ? (
+                        <p style={{ fontSize: '0.82rem', color: 'var(--on-surface-variant)', margin: '4px 0' }}>
+                            No tienes grupos UHC. Ve a "🌱 Grupos UHC" en el menú para crear uno.
+                        </p>
+                    ) : (
+                        <select className="input-field" value={f.uhc_id} onChange={e => set('uhc_id', e.target.value)}>
+                            <option value="">-- Selecciona grupo --</option>
+                            {uhcList.map(g => (
+                                <option key={g.id} value={g.id}>
+                                    {g.nombre}{g.cultivo ? ` (${g.cultivo})` : ''} — {g.num_parcelas} parcelas
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                </FieldGroup>
+            )}
+
             <FieldGroup label="Fecha de aplicación *">
                 <input type="date" className="input-field" value={f.fecha_aplicacion} onChange={e => set('fecha_aplicacion', e.target.value)} />
             </FieldGroup>
