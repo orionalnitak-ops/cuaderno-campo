@@ -568,13 +568,17 @@ def init_db():
             cultivo TEXT,
             campana TEXT DEFAULT '2025/2026',
             notas TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TEXT
         )
     ''')
     for col, typ in [
         ('nombre', 'TEXT'), ('cultivo', 'TEXT'),
         ('campana', 'TEXT'), ('notas', 'TEXT'),
         ('created_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ('updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ('deleted_at', 'TEXT'),
     ]:
         _add_col(c, 'unidades_homogeneas', col, typ)
 
@@ -583,6 +587,7 @@ def init_db():
             id {_PK},
             uhc_id INTEGER NOT NULL,
             parcela_id INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(uhc_id) REFERENCES unidades_homogeneas(id),
             FOREIGN KEY(parcela_id) REFERENCES parcelas(id)
         )
