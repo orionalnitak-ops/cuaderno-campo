@@ -298,6 +298,7 @@ function App() {
             case 'mas':       return <ScreenSettings  campana={campana} onCampana={setCampana} showToast={showMsg} currentUser={currentUser} onLogout={handleLogout} onNavigate={navigate} />;
             case 'admin':     return isAdmin ? <ScreenAdmin currentUser={currentUser} onSwitchUser={handleSwitchUser} showToast={showMsg} /> : <ScreenHome campana={campana} onOpenForm={openForm} showToast={showMsg} />;
             case 'planes':    return <ScreenPlanes currentUser={currentUser} showToast={showMsg} onClose={() => navigate('inicio')} />;
+            case 'uhc':       return <ScreenUHC campana={campana} showToast={showMsg} parcelas={[]} />;
             default:          return <ScreenHome     campana={campana} onOpenForm={openForm} showToast={showMsg} />;
         }
     };
@@ -306,6 +307,7 @@ function App() {
     const sidebarItems = [
         { id: 'inicio',    icon: '🏡', label: 'Inicio' },
         { id: 'parcelas',  icon: '🗺️', label: 'Mis parcelas' },
+        { id: 'uhc',       icon: '🌱', label: 'Grupos UHC' },
         { id: 'historial', icon: '📋', label: 'Historial' },
         { id: 'mas',       icon: '⚙️', label: 'Ajustes' },
         ...(isAdmin ? [{ id: 'admin', icon: '👥', label: 'Panel Admin' }] : [{ id: 'planes', icon: '💳', label: 'Suscripción' }]),

@@ -559,6 +559,40 @@ def init_db():
     ''')
     _add_col(c, 'labores', 'producto', 'TEXT')
 
+    # ── UNIDADES HOMOGÉNEAS DE CULTIVO (UHC) ──
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS unidades_homogeneas (
+            id {_PK},
+            user_id INTEGER DEFAULT 2,
+            nombre TEXT NOT NULL,
+            cultivo TEXT,
+            campana TEXT DEFAULT '2025/2026',
+            notas TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TEXT
+        )
+    ''')
+    for col, typ in [
+        ('nombre', 'TEXT'), ('cultivo', 'TEXT'),
+        ('campana', 'TEXT'), ('notas', 'TEXT'),
+        ('created_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ('updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ('deleted_at', 'TEXT'),
+    ]:
+        _add_col(c, 'unidades_homogeneas', col, typ)
+
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS uhc_parcelas (
+            id {_PK},
+            uhc_id INTEGER NOT NULL,
+            parcela_id INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(uhc_id) REFERENCES unidades_homogeneas(id),
+            FOREIGN KEY(parcela_id) REFERENCES parcelas(id)
+        )
+    ''')
+
     # ── COSECHA ──
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS cosecha (

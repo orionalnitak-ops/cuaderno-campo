@@ -30,7 +30,6 @@ def _validate_tratamiento(data):
     """Devuelve mensaje de error si faltan campos obligatorios (Anexo III S3)."""
     required = {
         'fecha_aplicacion':    'Fecha de aplicación',
-        'parcela_id':          'Parcela SIGPAC (Anexo III S3)',
         'producto_comercial':  'Producto comercial',
         'num_registro_mapa':   'Nº Registro MAPA',
         'sustancia_activa':    'Sustancia activa',
@@ -41,6 +40,10 @@ def _validate_tratamiento(data):
         'plazo_seguridad_dias': 'Plazo de seguridad (días)',
     }
     missing = [label for field, label in required.items() if not data.get(field) and data.get(field) != 0]
+
+    if not data.get('parcela_id') and not data.get('uhc_id'):
+        missing.append('Parcela SIGPAC o Grupo UHC (Anexo III S3)')
+
     if missing:
         return f"Campos obligatorios según RD 1311/2012: {', '.join(missing)}"
     try:
@@ -79,6 +82,29 @@ def _validate_campana(campana):
 
 # ─────────────────────────────────────────────
 
+def _insert_tratamiento(c, uid, data, parcela_id, parcela_etiqueta):
+    """Inserta un único registro de tratamiento para la parcela dada."""
+    c.execute('''
+        INSERT INTO tratamientos (
+            user_id, parcela_id, parcela_etiqueta, fecha_aplicacion,
+            producto_comercial, num_registro_mapa, sustancia_activa,
+            plaga_objetivo, dosis_valor, dosis_unidad, volumen_caldo,
+            equipo_id, condiciones_meteo, plazo_seguridad_dias,
+            fecha_recoleccion_minima, eficacia, aplicador_id, notas, campana
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (
+        uid, parcela_id, parcela_etiqueta, data.get('fecha_aplicacion'),
+        data.get('producto_comercial'), data.get('num_registro_mapa'), data.get('sustancia_activa'),
+        data.get('plaga_objetivo'), _to_real(data.get('dosis_valor')), data.get('dosis_unidad', 'L/ha'),
+        _to_real(data.get('volumen_caldo')), data.get('equipo_id') or None, data.get('condiciones_meteo'),
+        data.get('plazo_seguridad_dias') or None,
+        _calc_fecha_recoleccion(data.get('fecha_aplicacion'), data.get('plazo_seguridad_dias')),
+        data.get('eficacia'), data.get('aplicador_id') or None, data.get('notas'),
+        data.get('campana', '2025/2026'),
+    ))
+    return c.lastrowid
+
+
 @bp.route('/api/tratamientos', methods=['GET', 'POST'])
 @login_required
 def manage_tratamientos():
@@ -108,25 +134,32 @@ def manage_tratamientos():
             )}), 400
 
     c = conn.cursor()
-    c.execute('''
-        INSERT INTO tratamientos (
-            user_id, parcela_id, parcela_etiqueta, fecha_aplicacion,
-            producto_comercial, num_registro_mapa, sustancia_activa,
-            plaga_objetivo, dosis_valor, dosis_unidad, volumen_caldo,
-            equipo_id, condiciones_meteo, plazo_seguridad_dias,
-            fecha_recoleccion_minima, eficacia, aplicador_id, notas, campana
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    ''', (
-        uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha_aplicacion'),
-        data.get('producto_comercial'), data.get('num_registro_mapa'), data.get('sustancia_activa'),
-        data.get('plaga_objetivo'), _to_real(data.get('dosis_valor')), data.get('dosis_unidad', 'L/ha'),
-        _to_real(data.get('volumen_caldo')), data.get('equipo_id') or None, data.get('condiciones_meteo'),
-        data.get('plazo_seguridad_dias') or None,
-        _calc_fecha_recoleccion(data.get('fecha_aplicacion'), data.get('plazo_seguridad_dias')),
-        data.get('eficacia'), data.get('aplicador_id') or None, data.get('notas'),
-        data.get('campana', '2025/2026'),
-    ))
-    conn.commit(); new_id = c.lastrowid; conn.close()
+
+    if data.get('uhc_id'):
+        parcelas = dicts(conn, """
+            SELECT p.id, p.nombre_finca
+            FROM uhc_parcelas up
+            JOIN parcelas p ON p.id = up.parcela_id
+            JOIN unidades_homogeneas u ON u.id = up.uhc_id
+            WHERE up.uhc_id = ? AND u.user_id = ? AND u.deleted_at IS NULL
+        """, (data['uhc_id'], uid))
+
+        if not parcelas:
+            conn.close()
+            return jsonify({"error": "El grupo UHC no existe o no tiene parcelas asignadas"}), 400
+
+        ids = []
+        for p in parcelas:
+            new_id = _insert_tratamiento(c, uid, data, p['id'], p['nombre_finca'])
+            ids.append(new_id)
+
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
+
+    new_id = _insert_tratamiento(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'))
+    conn.commit()
+    conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
