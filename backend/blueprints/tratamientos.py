@@ -36,7 +36,7 @@ def _validate_tratamiento(data):
         'plaga_objetivo':      'Plaga / enfermedad objetivo',
         'dosis_valor':         'Dosis',
         'aplicador_id':        'Aplicador (obligatorio por ROPO)',
-        'equipo_aplicacion':   'Equipo de aplicación (Anexo III S3)',
+        'equipo_id':           'Equipo de aplicación (Anexo III S3)',
         'plazo_seguridad_dias': 'Plazo de seguridad (días)',
     }
     missing = [label for field, label in required.items() if not data.get(field) and data.get(field) != 0]
@@ -90,8 +90,9 @@ def _insert_tratamiento(c, uid, data, parcela_id, parcela_etiqueta):
             producto_comercial, num_registro_mapa, sustancia_activa,
             plaga_objetivo, dosis_valor, dosis_unidad, volumen_caldo,
             equipo_id, condiciones_meteo, plazo_seguridad_dias,
-            fecha_recoleccion_minima, eficacia, aplicador_id, notas, campana
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            fecha_recoleccion_minima, eficacia, aplicador_id, notas, campana,
+            asesor, justificacion_actuacion
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
         uid, parcela_id, parcela_etiqueta, data.get('fecha_aplicacion'),
         data.get('producto_comercial'), data.get('num_registro_mapa'), data.get('sustancia_activa'),
@@ -101,6 +102,7 @@ def _insert_tratamiento(c, uid, data, parcela_id, parcela_etiqueta):
         _calc_fecha_recoleccion(data.get('fecha_aplicacion'), data.get('plazo_seguridad_dias')),
         data.get('eficacia'), data.get('aplicador_id') or None, data.get('notas'),
         data.get('campana', '2025/2026'),
+        data.get('asesor'), data.get('justificacion_actuacion'),
     ))
     return c.lastrowid
 
@@ -131,6 +133,18 @@ def manage_tratamientos():
                 "El aplicador seleccionado no tiene número ROPO registrado. "
                 "El ROPO es obligatorio según el RD 1311/2012 Anexo III S3. "
                 "Edita el aplicador y añade su número de carnet ROPO."
+            )}), 400
+
+    # Verificar que el equipo tiene nº ROMA registrado (Orden APA/204/2023)
+    if data.get('equipo_id'):
+        equipo = one(conn, "SELECT num_registro_roma FROM equipos WHERE id=? AND user_id=?",
+                     (data['equipo_id'], uid))
+        if not equipo or not (equipo.get('num_registro_roma') or '').strip():
+            conn.close()
+            return jsonify({"error": (
+                "El equipo seleccionado no tiene número ROMA registrado. "
+                "El nº ROMA es obligatorio según la Orden APA/204/2023. "
+                "Edita el equipo en Configuración y añade su número de registro ROMA."
             )}), 400
 
     c = conn.cursor()
@@ -190,13 +204,23 @@ def manage_tratamiento(tid):
                 "El aplicador seleccionado no tiene número ROPO registrado. "
                 "Edita el aplicador y añade su número de carnet ROPO antes de guardar."
             )}), 400
+    if data.get('equipo_id'):
+        equipo = one(conn, "SELECT num_registro_roma FROM equipos WHERE id=? AND user_id=?",
+                     (data['equipo_id'], uid))
+        if not equipo or not (equipo.get('num_registro_roma') or '').strip():
+            conn.close()
+            return jsonify({"error": (
+                "El equipo seleccionado no tiene número ROMA registrado. "
+                "Edita el equipo en Configuración y añade su número de registro ROMA."
+            )}), 400
     # Calcular siempre en backend, nunca confiar en el cliente
     data['fecha_recoleccion_minima'] = _calc_fecha_recoleccion(
         data.get('fecha_aplicacion'), data.get('plazo_seguridad_dias'))
     fields = ['parcela_id', 'parcela_etiqueta', 'fecha_aplicacion', 'producto_comercial',
               'num_registro_mapa', 'sustancia_activa', 'plaga_objetivo', 'dosis_valor', 'dosis_unidad',
               'volumen_caldo', 'equipo_id', 'condiciones_meteo', 'plazo_seguridad_dias',
-              'fecha_recoleccion_minima', 'eficacia', 'aplicador_id', 'notas', 'campana']
+              'fecha_recoleccion_minima', 'eficacia', 'aplicador_id', 'notas', 'campana',
+              'asesor', 'justificacion_actuacion']
     sets = ', '.join(f"{f}=?" for f in fields)
     _real_t = {'dosis_valor', 'volumen_caldo'}
     _int_t  = {'equipo_id', 'plazo_seguridad_dias', 'aplicador_id'}
