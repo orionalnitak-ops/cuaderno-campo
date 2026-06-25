@@ -459,6 +459,8 @@ def init_db():
         ('eficacia', 'TEXT'), ('aplicador_id', 'INTEGER'), ('campana', 'TEXT'),
         ('updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
         ('deleted_at', 'TEXT'),
+        ('asesor', 'TEXT'),
+        ('justificacion_actuacion', 'TEXT'),
     ]:
         _add_col(c, 'tratamientos', col, typ)
 

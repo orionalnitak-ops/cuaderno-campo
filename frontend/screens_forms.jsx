@@ -253,6 +253,8 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
         eficacia:                 record?.eficacia || '',
         aplicador_id:             record?.aplicador_id || '',
         notas:                    record?.notas || '',
+        asesor:                   record?.asesor || '',
+        justificacion_actuacion:  record?.justificacion_actuacion || '',
         campana,
     });
     const set = (k, v) => setF(x => ({ ...x, [k]: v }));
@@ -492,6 +494,22 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                         <div style={{ fontSize: '0.85rem', color: '#991b1b', fontWeight: 600 }}>{plazoAlert}</div>
                     </div>
                 )}
+                <FieldGroup label="Asesor fitosanitario">
+                    <ZoomInput label="Asesor fitosanitario" value={f.asesor}
+                        placeholder="Nombre del asesor o empresa asesora"
+                        onConfirm={v => set('asesor', v)} />
+                    <div style={{ fontSize: '0.72rem', color: 'var(--on-surface-variant)', marginTop: 3 }}>
+                        Exigido por la Orden APA/204/2023
+                    </div>
+                </FieldGroup>
+                <FieldGroup label="Justificación de la actuación">
+                    <ZoomInput label="Justificación de la actuación" value={f.justificacion_actuacion}
+                        placeholder="Umbral de daño superado, aviso fitosanitario, inspección visual…"
+                        multiline onConfirm={v => set('justificacion_actuacion', v)} />
+                    <div style={{ fontSize: '0.72rem', color: 'var(--on-surface-variant)', marginTop: 3 }}>
+                        Exigido por la Orden APA/204/2023
+                    </div>
+                </FieldGroup>
                 <FieldGroup label="Notas">
                     <ZoomInput label="Notas" value={f.notas} placeholder="Observaciones adicionales…"
                         multiline onConfirm={v => set('notas', v)} />
