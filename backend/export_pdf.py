@@ -654,6 +654,7 @@ def _cover_page(ex, campana, styles):
     portal_fields = [
         ('Titular de la explotación', ex.get('titular') or '—'),
         ('NIF / CIF',                 ex.get('nif') or '—'),
+        ('Código REGA',               ex.get('rega') or '—'),
         ('Municipio',                 ex.get('municipio') or '—'),
         ('Provincia',                 ex.get('provincia') or '—'),
         ('Código Postal',             ex.get('cp') or '—'),
@@ -700,12 +701,13 @@ def _cover_page(ex, campana, styles):
 
     sections = [
         ('1', 'Registro de Parcelas',              'Identificación SIGPAC — polígono, parcela, recinto, uso'),
-        ('2', 'Tratamientos Fitosanitarios',        'Producto, nº registro MAPA, plaga, dosis, aplicador, plazo'),
+        ('2', 'Tratamientos Fitosanitarios',        'Producto, nº MAPA, plaga, dosis, equipo ROMA, asesor, justificación'),
         ('3', 'Abonado / Fertilización',            'Tipo fertilizante, producto, N-P-K, dosis, método'),
         ('4', 'Labores Agrícolas',                  'Siembra, poda, laboreo, horas, maquinaria, operario'),
-        ('5', 'Cosecha / Recolección',              'Cultivo, producción, rendimiento, destino, comprador'),
-        ('6', 'Plan de Abonado',                    'Programa fertilización por parcela — RD 934/2025 (obligatorio sept 2026)'),
-        ('7', 'Compras de Fitosanitarios',          'Trazabilidad adquisiciones — Nº MAPA, lote, proveedor, factura'),
+        ('5', 'Riego',                              'Tipo, volumen m³, horas, fuente de agua por parcela'),
+        ('6', 'Cosecha / Recolección',              'Cultivo, producción, rendimiento, destino, comprador'),
+        ('7', 'Plan de Abonado',                    'Programa fertilización por parcela — RD 934/2025 (obligatorio sept 2026)'),
+        ('8', 'Compras de Fitosanitarios',          'Trazabilidad adquisiciones — Nº MAPA, lote, proveedor, factura'),
     ]
     for num, sec_title, sec_desc in sections:
         sec_data = [[
