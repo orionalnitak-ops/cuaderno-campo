@@ -25,7 +25,7 @@ def explotacion():
         return jsonify(row or {})
 
     data = request.json or {}
-    fields = ['titular', 'nif', 'municipio', 'provincia', 'cp',
+    fields = ['titular', 'nif', 'rega', 'municipio', 'provincia', 'cp',
               'telefono', 'email', 'campana_activa', 'fecha_apertura']
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM explotacion WHERE user_id=?", (uid,))
