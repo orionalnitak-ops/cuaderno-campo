@@ -504,6 +504,61 @@ def _section_labores(conn, user_id, campana, styles, story):
     story.append(Paragraph(f'Total labores: {len(rows)}', styles['note']))
 
 
+def _section_riego(conn, user_id, campana, styles, story):
+    import sqlite3
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("""
+        SELECT r.*, p.nombre_finca
+        FROM riego r
+        LEFT JOIN parcelas p ON r.parcela_id = p.id
+        WHERE r.user_id=? AND r.campana=? AND r.deleted_at IS NULL
+        ORDER BY r.fecha ASC
+    """, (user_id, campana))
+    rows = [dict(r) for r in c.fetchall()]
+
+    story.append(PageBreak())
+    story.append(_section_banner(
+        'Riego',
+        'Registro de aplicaciones de agua por parcela y campaña',
+        '💧', C_CYAN, styles))
+    story.append(Spacer(1, 4))
+
+    if not rows:
+        story.append(Paragraph('Sin registros de riego en esta campaña.', styles['empty']))
+        return
+
+    cols = ['Fecha', 'Parcela', 'Tipo de Riego', 'Volumen (m³)', 'Horas', 'Fuente de Agua', 'Notas']
+    widths = [1.6*cm, 2.2*cm, 2.4*cm, 1.8*cm, 1.2*cm, 2.8*cm, 3.2*cm]
+    total = sum(widths)
+    widths = [w * INNER_W / total for w in widths]
+
+    data_rows = []
+    for r in rows:
+        data_rows.append([
+            _fmt_date(r.get('fecha')),
+            _v(r.get('nombre_finca')),
+            _v(r.get('tipo_riego')),
+            _v(r.get('volumen_m3')),
+            _v(r.get('horas')),
+            _v(r.get('fuente_agua')),
+            _v(r.get('notas')),
+        ])
+
+    story.append(_data_table(cols, data_rows, widths, C_CYAN, styles))
+
+    total_vol = sum(r.get('volumen_m3') or 0 for r in rows)
+    try:
+        total_vol = float(total_vol)
+    except (ValueError, TypeError):
+        total_vol = 0.0
+
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(
+        f'Total registros campaña {campana}: {len(rows)} · Volumen total acumulado: {total_vol:,.1f} m³',
+        styles['note']))
+
+
 def _section_cosecha(conn, user_id, campana, styles, story):
     import sqlite3
     conn.row_factory = sqlite3.Row
@@ -846,15 +901,19 @@ def export_pdf(user_id, campana='2025/2026'):
     _section_labores(conn, user_id, campana, styles, story)
     story.append(Spacer(1, 10))
 
-    # ── Section 5: Cosecha ──
+    # ── Section 5: Riego ──
+    _section_riego(conn, user_id, campana, styles, story)
+    story.append(Spacer(1, 10))
+
+    # ── Section 6: Cosecha ──
     _section_cosecha(conn, user_id, campana, styles, story)
     story.append(Spacer(1, 10))
 
-    # ── Section 6: Plan Abonado ──
+    # ── Section 7: Plan Abonado ──
     _section_plan_abonado(conn, user_id, campana, styles, story)
     story.append(Spacer(1, 10))
 
-    # ── Section 7: Compras ──
+    # ── Section 8: Compras ──
     _section_compras(conn, user_id, campana, styles, story)
 
     # ── Firma / cierre ──
