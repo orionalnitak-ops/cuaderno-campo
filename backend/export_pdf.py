@@ -520,7 +520,7 @@ def _section_riego(conn, user_id, campana, styles, story):
     story.append(PageBreak())
     story.append(_section_banner(
         'Riego',
-        'Registro de aplicaciones de agua por parcela y campaña',
+        'Registro de riegos por parcela y campaña — RD 1311/2012',
         '💧', C_CYAN, styles))
     story.append(Spacer(1, 4))
 
@@ -537,21 +537,23 @@ def _section_riego(conn, user_id, campana, styles, story):
     for r in rows:
         data_rows.append([
             _fmt_date(r.get('fecha')),
-            _v(r.get('nombre_finca')),
+            _v(r.get('nombre_finca') or r.get('parcela_etiqueta')),
             _v(r.get('tipo_riego')),
             _v(r.get('volumen_m3')),
-            _v(r.get('horas')),
+            _v(r.get('horas_riego')),
             _v(r.get('fuente_agua')),
             _v(r.get('notas')),
         ])
 
     story.append(_data_table(cols, data_rows, widths, C_CYAN, styles))
 
-    total_vol = sum(r.get('volumen_m3') or 0 for r in rows)
-    try:
-        total_vol = float(total_vol)
-    except (ValueError, TypeError):
-        total_vol = 0.0
+    total_vol = 0.0
+    for r in rows:
+        v = r.get('volumen_m3')
+        try:
+            total_vol += float(v or 0)
+        except (ValueError, TypeError):
+            pass
 
     story.append(Spacer(1, 4))
     story.append(Paragraph(
