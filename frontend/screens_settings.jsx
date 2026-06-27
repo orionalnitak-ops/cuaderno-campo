@@ -89,6 +89,7 @@ function ExplotacionModal({ data, onSave, onClose }) {
     const FIELDS = [
         ['titular','Titular','text','Nombre completo'],
         ['nif','NIF / CIF','text','12345678A'],
+        ['rega','Código REGA','text','ej: ES-CM-12345', 'Número de Registro de Explotaciones Agrícolas. Lo facilita la Consejería de Agricultura de tu comunidad autónoma.'],
         ['municipio','Municipio','text','Santa Cruz de Mudela'],
         ['provincia','Provincia','text','Ciudad Real'],
         ['cp','Código postal','text','13730'],
@@ -105,12 +106,13 @@ function ExplotacionModal({ data, onSave, onClose }) {
                     <h3 style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', margin:0 }}>🏡 Datos de la Explotación</h3>
                     <button onClick={onClose} style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#6b7280' }}>✕</button>
                 </div>
-                {FIELDS.map(([k,l,t,ph]) => (
+                {FIELDS.map(([k,l,t,ph,help]) => (
                     <div key={k} style={{ marginBottom:14 }}>
                         <label className="field-label">{l}</label>
                         <input type={t} className="input-field" value={form[k]||''} readOnly placeholder={ph}
                             onClick={() => setZoomField({ key:k, label:l, type:t, placeholder:ph })}
                             style={{ cursor:'pointer' }} />
+                        {help && <p style={{ fontSize:'0.75rem', color:'#6b7280', marginTop:4, marginBottom:0 }}>{help}</p>}
                     </div>
                 ))}
                 <button className="btn-primary" style={{ width:'100%', marginTop:8 }} onClick={save} disabled={saving}>
