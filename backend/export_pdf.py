@@ -300,7 +300,8 @@ def _trat_table(rows, styles):
         row_a_idx = 1 + i * 2
         row_b_idx = 2 + i * 2
 
-        dosis = f"{_v(r.get('dosis_valor'))} {_v(r.get('dosis_unidad', ''))}".strip('— ')
+        dosis = f"{_v(r.get('dosis_valor'))} {_v(r.get('dosis_unidad'))}".strip('— ')
+        dosis = dosis or '—'
 
         # Fila A — datos de aplicación
         row_a = [
@@ -321,7 +322,8 @@ def _trat_table(rows, styles):
         # Fila B — trazabilidad legal (4 celdas fusionadas sobre 12 cols: 3+2+3+4)
         equipo_text = (f"Equipo: {_v(r.get('equipo_nombre'))}  ·  "
                        f"ROMA: {_v(r.get('num_registro_roma'))}  ·  "
-                       f"ITEAF: {_fmt_date(r.get('fecha_iteaf'))}")
+                       f"ITEAF: {_fmt_date(r.get('fecha_iteaf'))}  ·  "
+                       f"Eficacia: {_v(r.get('eficacia'))}")
         row_b = [
             Paragraph(equipo_text, s['table_cell_sub']),          # span 0–2
             '', '',
