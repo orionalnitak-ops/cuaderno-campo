@@ -80,6 +80,9 @@ def _styles():
         'empty': ParagraphStyle('Empty',
             fontName='Helvetica-Oblique', fontSize=9,
             textColor=C_MUTED, leading=14, alignment=TA_CENTER, spaceBefore=8, spaceAfter=8),
+        'table_cell_sub': ParagraphStyle('TableCellSub',
+            fontName='Helvetica', fontSize=6.5,
+            textColor=C_MUTED, leading=9),
     }
 
 
@@ -261,12 +264,99 @@ def _section_parcelas(conn, user_id, styles, story):
         styles['note']))
 
 
+def _trat_table(rows, styles):
+    """Tabla tratamientos con dos filas por registro: aplicación + trazabilidad legal."""
+    s = styles
+
+    # 12 columnas proporcionales al ancho de página
+    col_w_raw = [1.6, 2.0, 2.6, 1.5, 2.0, 1.8, 1.6, 1.4, 1.2, 1.6, 2.0, 1.5]
+    total_w = sum(col_w_raw)
+    col_widths = [w * INNER_W / total_w for w in col_w_raw]
+
+    headers = ['Fecha', 'Parcela', 'Producto\nComercial', 'Nº\nMAPA',
+               'Sustancia\nActiva', 'Plaga/\nObjetivo', 'Dosis',
+               'Vol. Caldo\n(L/ha)', 'Plazo\nSeg.(d)', 'F. mín.\nCosecha',
+               'Aplicador', 'Nº ROPO']
+
+    table_data = [[Paragraph(h, s['table_header']) for h in headers]]
+
+    style_cmds = [
+        ('BACKGROUND', (0, 0), (-1, 0), C_GREEN2),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 7),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, 0), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+        ('TOPPADDING', (0, 1), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('GRID', (0, 0), (-1, -1), 0.3, C_GREY2),
+        ('LINEBELOW', (0, 0), (-1, 0), 1, C_GREEN2),
+    ]
+
+    for i, r in enumerate(rows):
+        row_a_idx = 1 + i * 2
+        row_b_idx = 2 + i * 2
+
+        dosis = f"{_v(r.get('dosis_valor'))} {_v(r.get('dosis_unidad', ''))}".strip('— ')
+
+        # Fila A — datos de aplicación
+        row_a = [
+            Paragraph(_fmt_date(r.get('fecha_aplicacion')), s['table_cell']),
+            Paragraph(_v(r.get('nombre_finca') or r.get('parcela_etiqueta')), s['table_cell']),
+            Paragraph(_v(r.get('producto_comercial')), s['table_cell']),
+            Paragraph(_v(r.get('num_registro_mapa')), s['table_cell']),
+            Paragraph(_v(r.get('sustancia_activa')), s['table_cell']),
+            Paragraph(_v(r.get('plaga_objetivo')), s['table_cell']),
+            Paragraph(dosis, s['table_cell']),
+            Paragraph(_v(r.get('volumen_caldo')), s['table_cell']),
+            Paragraph(_v(r.get('plazo_seguridad_dias')), s['table_cell']),
+            Paragraph(_fmt_date(r.get('fecha_recoleccion_minima')), s['table_cell']),
+            Paragraph(_v(r.get('aplicador_nombre')), s['table_cell']),
+            Paragraph(_v(r.get('num_ropo')), s['table_cell']),
+        ]
+
+        # Fila B — trazabilidad legal (4 celdas fusionadas sobre 12 cols: 3+2+3+4)
+        equipo_text = (f"Equipo: {_v(r.get('equipo_nombre'))}  ·  "
+                       f"ROMA: {_v(r.get('num_registro_roma'))}  ·  "
+                       f"ITEAF: {_fmt_date(r.get('fecha_iteaf'))}")
+        row_b = [
+            Paragraph(equipo_text, s['table_cell_sub']),          # span 0–2
+            '', '',
+            Paragraph(f"Meteo: {_v(r.get('condiciones_meteo'))}", s['table_cell_sub']),  # span 3–4
+            '',
+            Paragraph(f"Asesor: {_v(r.get('asesor'))}", s['table_cell_sub']),            # span 5–7
+            '', '',
+            Paragraph(f"Justif.: {_v(r.get('justificacion_actuacion'))}", s['table_cell_sub']),  # span 8–11
+            '', '', '',
+        ]
+
+        table_data.append(row_a)
+        table_data.append(row_b)
+
+        style_cmds += [
+            ('BACKGROUND', (0, row_b_idx), (-1, row_b_idx), C_GREY1),
+            ('SPAN', (0, row_b_idx), (2, row_b_idx)),
+            ('SPAN', (3, row_b_idx), (4, row_b_idx)),
+            ('SPAN', (5, row_b_idx), (7, row_b_idx)),
+            ('SPAN', (8, row_b_idx), (11, row_b_idx)),
+            ('LINEBELOW', (0, row_b_idx), (-1, row_b_idx), 0.8, C_GREY2),
+        ]
+
+    t = Table(table_data, colWidths=col_widths, repeatRows=1)
+    t.setStyle(TableStyle(style_cmds))
+    return t
+
+
 def _section_tratamientos(conn, user_id, campana, styles, story):
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("""
-        SELECT t.*, p.nombre_finca, e.descripcion as equipo_nombre,
+        SELECT t.*, p.nombre_finca,
+               e.descripcion as equipo_nombre, e.num_registro_roma, e.fecha_iteaf,
                a.nombre as aplicador_nombre, a.num_ropo
         FROM tratamientos t
         LEFT JOIN parcelas p ON t.parcela_id = p.id
@@ -280,7 +370,7 @@ def _section_tratamientos(conn, user_id, campana, styles, story):
     story.append(PageBreak())
     story.append(_section_banner(
         'Tratamientos Fitosanitarios',
-        'Registro obligatorio RD 1311/2012 Anexo III — campos exigidos SIEX',
+        'Registro obligatorio RD 1311/2012 Anexo III — Orden APA/204/2023',
         '🌿', C_GREEN2, styles))
     story.append(Spacer(1, 4))
 
@@ -289,44 +379,11 @@ def _section_tratamientos(conn, user_id, campana, styles, story):
         return
 
     story.append(Paragraph(
-        'Conforme al Artículo 67 del Reglamento (CE) 1107/2009 y RD 1311/2012 '
-        'Anexo III, sección "Tratamientos Fitosanitarios".',
+        'Conforme al Art. 67 Reglamento (CE) 1107/2009, RD 1311/2012 Anexo III y Orden APA/204/2023. '
+        'Fila superior: datos de aplicación. Fila inferior (gris): equipo, asesor y justificación.',
         styles['note']))
 
-    cols = ['Fecha', 'Parcela', 'Producto\nComercial', 'Nº Reg.\nMAPA',
-            'Sustancia\nActiva', 'Plaga\nObjetivo', 'Dosis', 'Vol. Caldo\n(L/ha)',
-            'Equipo', 'Meteo.', 'Plazo\nSeg. (d)', 'F. mín.\nCosecha',
-            'Aplicador', 'Nº ROPO', 'Eficacia']
-    widths = [1.6*cm, 2.0*cm, 2.4*cm, 1.5*cm, 2.0*cm, 2.0*cm, 1.4*cm,
-              1.4*cm, 2.0*cm, 1.6*cm, 1.2*cm, 1.6*cm, 2.0*cm, 1.5*cm, 1.4*cm]
-
-    # Adjust widths to fit INNER_W
-    total = sum(widths)
-    widths = [w * INNER_W / total for w in widths]
-
-    data_rows = []
-    for r in rows:
-        dosis = f"{_v(r.get('dosis_valor'))} {_v(r.get('dosis_unidad',''))}"
-        aplicador = _v(r.get('aplicador_nombre'))
-        data_rows.append([
-            _fmt_date(r.get('fecha_aplicacion')),
-            _v(r.get('nombre_finca') or r.get('parcela_etiqueta')),
-            _v(r.get('producto_comercial')),
-            _v(r.get('num_registro_mapa')),
-            _v(r.get('sustancia_activa')),
-            _v(r.get('plaga_objetivo')),
-            dosis.strip('— '),
-            _v(r.get('volumen_caldo')),
-            _v(r.get('equipo_nombre')),
-            _v(r.get('condiciones_meteo')),
-            _v(r.get('plazo_seguridad_dias')),
-            _fmt_date(r.get('fecha_recoleccion_minima')),
-            aplicador,
-            _v(r.get('num_ropo')),
-            _v(r.get('eficacia')),
-        ])
-
-    story.append(_data_table(cols, data_rows, widths, C_GREEN2, styles))
+    story.append(_trat_table(rows, styles))
     story.append(Spacer(1, 4))
     story.append(Paragraph(
         f'Total registros campaña {campana}: {len(rows)} tratamientos',
