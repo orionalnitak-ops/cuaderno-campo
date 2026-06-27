@@ -96,6 +96,7 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                         cursor: 'pointer', fontSize: 18, color: '#fff',
                     }}>←</button>
                 )}
+                <HelpButton screenId="planes" style={{ position: 'absolute', top: 16, right: 16 }} />
                 <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: isWide ? '1.9rem' : '1.5rem', fontWeight: 800, color: '#fff', margin: '0 0 6px' }}>
                     Elige tu plan
                 </h1>

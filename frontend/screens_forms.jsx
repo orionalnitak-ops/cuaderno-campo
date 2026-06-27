@@ -157,20 +157,24 @@ function ScreenForms({ modulo, record, campana, onClose }) {
     const isEdit = !!(record && record.id);
 
     const MODULE_CONFIG = {
-        tratamiento:   { icon: '🌿', title: 'Tratamiento Fitosanitario', color: '#1D9E75' },
-        fertilizacion: { icon: '🌱', title: 'Fertilización',              color: '#4f46e5' },
-        labor:         { icon: '🚜', title: 'Labor Agrícola',            color: '#1d4ed8' },
-        cosecha:       { icon: '📦', title: 'Cosecha / Producción',      color: '#db2777' },
-        compra:        { icon: '🛒', title: 'Compras',                   color: '#b45309' },
-        riego:         { icon: '💧', title: 'Riego',                    color: '#0ea5e9' },
-        abonado:       { icon: '📋', title: 'Plan de abonado',           color: '#0d9488' },
+        tratamiento:     { icon: '🌿', title: 'Tratamiento Fitosanitario', color: '#1D9E75' },
+        fertilizacion:   { icon: '🌱', title: 'Fertilización',              color: '#4f46e5' },
+        labor:           { icon: '🚜', title: 'Labor Agrícola',            color: '#1d4ed8' },
+        cosecha:         { icon: '📦', title: 'Cosecha / Producción',      color: '#db2777' },
+        compra:          { icon: '🛒', title: 'Compras',                   color: '#b45309' },
+        riego:           { icon: '💧', title: 'Riego',                    color: '#0ea5e9' },
+        abonado:         { icon: '📋', title: 'Plan de abonado',           color: '#0d9488' },
+        cultivo_campana: { icon: '🌾', title: 'Cultivo de Campaña',        color: '#16a34a' },
     };
     const cfg = MODULE_CONFIG[modulo] || { icon: '📝', title: 'Registro', color: '#374151' };
 
     return (
         <div style={{ minHeight: '100vh', background: '#f8f9fb' }}>
             <div style={{ background: `linear-gradient(135deg, ${cfg.color}dd, ${cfg.color})`, padding: '52px 20px 24px' }}>
-                <button className="back-btn" onClick={() => onClose()} style={{ marginBottom: 14 }}>←</button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                    <button className="back-btn" onClick={() => onClose()}>←</button>
+                    <HelpButton screenId={modulo} />
+                </div>
                 <h1 style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.4rem', color:'#fff', margin:'0 0 4px' }}>
                     {cfg.icon} {isEdit ? `Editar ${cfg.title}` : `Nuevo: ${cfg.title}`}
                 </h1>
