@@ -161,10 +161,12 @@ def export_excel(user_id, campana='2025/2026'):
     t_cols = ["ID", "Parcela", "Fecha Aplicación", "Producto Comercial", "Nº Reg. MAPA",
               "Sustancia Activa", "Plaga/Objetivo", "Dosis", "Unidad", "Vol. Caldo (L/ha)",
               "Equipo", "Condic. Meteo.", "Plazo Seg. (días)", "Fecha Mín. Cosecha",
-              "Eficacia", "Aplicador", "Notas", "Campaña"]
+              "Eficacia", "Aplicador", "Notas", "Campaña",
+              "Asesor", "Justificación Actuación", "Nº ROMA Equipo", "Fecha ITEAF Equipo"]
     _header_row(ws4, t_cols, GREEN_FILL)
     trats = dicts(conn, """
-        SELECT t.*, p.nombre_finca, e.descripcion as equipo_nombre,
+        SELECT t.*, p.nombre_finca,
+               e.descripcion as equipo_nombre, e.num_registro_roma, e.fecha_iteaf,
                a.nombre as aplicador_nombre
         FROM tratamientos t
         LEFT JOIN parcelas p ON t.parcela_id = p.id
@@ -182,6 +184,8 @@ def export_excel(user_id, campana='2025/2026'):
             r.get('equipo_nombre'), r.get('condiciones_meteo'), r.get('plazo_seguridad_dias'),
             r.get('fecha_recoleccion_minima'), r.get('eficacia'), r.get('aplicador_nombre'),
             r.get('notas'), r.get('campana'),
+            r.get('asesor'), r.get('justificacion_actuacion'),
+            r.get('num_registro_roma'), r.get('fecha_iteaf'),
         ]
         for ci, val in enumerate(row_data, 1):
             ws4.cell(row=ri, column=ci, value=val)
@@ -233,6 +237,28 @@ def export_excel(user_id, campana='2025/2026'):
             ws6.cell(row=ri, column=ci, value=val)
         _alt_row(ws6, ri)
     _auto_width(ws6, l_cols)
+
+    # ══════════════════════════════════════════
+    # HOJA 6b — RIEGO
+    # ══════════════════════════════════════════
+    ws_riego = wb.create_sheet("RIEGO")
+    riego_cols = ["ID", "Parcela", "Fecha", "Tipo Riego", "Volumen (m³)",
+                  "Horas", "Fuente Agua", "Notas", "Campaña"]
+    _header_row(ws_riego, riego_cols, TEAL_FILL)
+    riegos = dicts(conn, """
+        SELECT r.*, p.nombre_finca FROM riego r
+        LEFT JOIN parcelas p ON r.parcela_id = p.id
+        WHERE r.user_id=? AND r.campana=? AND r.deleted_at IS NULL
+        ORDER BY r.fecha ASC
+    """, (user_id, campana))
+    for ri, r in enumerate(riegos, 2):
+        riego_row = [r.get('id'), r.get('nombre_finca') or r.get('parcela_etiqueta'),
+                    r.get('fecha'), r.get('tipo_riego'), r.get('volumen_m3'),
+                    r.get('horas_riego'), r.get('fuente_agua'), r.get('notas'), r.get('campana')]
+        for ci, val in enumerate(riego_row, 1):
+            ws_riego.cell(row=ri, column=ci, value=val)
+        _alt_row(ws_riego, ri)
+    _auto_width(ws_riego, riego_cols)
 
     # ══════════════════════════════════════════
     # HOJA 7 — COSECHA
