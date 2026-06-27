@@ -7,9 +7,10 @@ function ScreenLogin({ onLogin }) {
     const [password, setPassword] = useState('');
     const [error, setError]       = useState('');
     const [loading, setLoading]   = useState(false);
-    const [showPw, setShowPw]     = useState(false);
+    const [showPw, setShowPw]           = useState(false);
+    const [privacidad, setPrivacidad]   = useState(false);
 
-    const reset = (t) => { setTab(t); setError(''); setNombre(''); setEmail(''); setPassword(''); };
+    const reset = (t) => { setTab(t); setError(''); setNombre(''); setEmail(''); setPassword(''); setPrivacidad(false); };
 
     const handleLogin = async (e) => {
         e.preventDefault();
@@ -38,6 +39,7 @@ function ScreenLogin({ onLogin }) {
         if (!nombre.trim()) { setError('Introduce tu nombre'); return; }
         if (!email || !password) { setError('Introduce email y contraseña'); return; }
         if (password.length < 8) { setError('La contraseña debe tener al menos 8 caracteres'); return; }
+        if (!privacidad) { setError('Debes aceptar la Política de Privacidad para continuar'); return; }
         setLoading(true); setError('');
         try {
             const res = await fetch('/api/auth/register', {
@@ -169,13 +171,26 @@ function ScreenLogin({ onLogin }) {
                                     }}>{showPw ? '🙈' : '👁'}</button>
                                 </div>
                             </div>
+                            <label style={{ display:'flex', alignItems:'flex-start', gap:10, cursor:'pointer', userSelect:'none' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={privacidad}
+                                    onChange={e => { setPrivacidad(e.target.checked); setError(''); }}
+                                    style={{ marginTop:2, width:18, height:18, accentColor:'var(--primary)', flexShrink:0, cursor:'pointer' }}
+                                />
+                                <span style={{ fontSize:'0.78rem', color:'var(--on-surface-variant)', lineHeight:1.5 }}>
+                                    He leído y acepto la{' '}
+                                    <a href="/privacidad" target="_blank" rel="noopener noreferrer"
+                                       style={{ color:'var(--primary)', fontWeight:600 }}>
+                                        Política de Privacidad
+                                    </a>
+                                    {' '}y el tratamiento de mis datos para la gestión del cuaderno de explotación.
+                                </span>
+                            </label>
                             {error && <div style={{ background:'rgba(153,63,58,0.10)', border:'1px solid rgba(153,63,58,0.20)', borderRadius:'var(--radius-lg)', padding:'12px 16px', fontSize:'0.85rem', color:'var(--tertiary)', fontWeight:600 }}>⚠️ {error}</div>}
-                            <button type="submit" className="btn-primary" disabled={loading} style={{ width:'100%', marginTop:4, fontSize:'1rem' }}>
+                            <button type="submit" className="btn-primary" disabled={loading || !privacidad} style={{ width:'100%', marginTop:4, fontSize:'1rem', opacity: privacidad ? 1 : 0.5 }}>
                                 {loading ? 'Creando cuenta…' : '🌱  Empezar prueba gratuita'}
                             </button>
-                            <p style={{ fontSize:'0.72rem', color:'var(--on-surface-variant)', textAlign:'center', margin:0, lineHeight:1.5 }}>
-                                Al registrarte aceptas el uso de tus datos para la gestión del cuaderno de explotación conforme al RGPD.
-                            </p>
                         </form>
                     </>
                 )}

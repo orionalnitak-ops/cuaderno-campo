@@ -112,6 +112,10 @@ def serve_index():
 def serve_pago_completado():
     return app.send_static_file('index.html')
 
+@app.route('/privacidad')
+def serve_privacidad():
+    return app.send_static_file('privacidad.html')
+
 @app.route('/<path:path>')
 def serve_static(path):
     if path.startswith('api/'):
