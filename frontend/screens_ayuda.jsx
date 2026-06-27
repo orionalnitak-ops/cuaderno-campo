@@ -101,6 +101,231 @@ const HELP_SCREENS = {
             },
         ],
     },
+    tratamiento: {
+        title: '🌿 Tratamiento Fitosanitario',
+        intro: 'Registra cada aplicación de productos fitosanitarios. Es el módulo más exigido en una inspección.',
+        steps: [
+            {
+                icon: '🗺️',
+                title: 'Parcela',
+                desc: 'Selecciona la parcela SIGPAC donde se aplicó el producto. Si tratas varias a la vez, crea un Grupo UHC y selecciónalo aquí.',
+            },
+            {
+                icon: '🧪',
+                title: 'Producto y materia activa',
+                desc: 'Escribe el nombre comercial del fitosanitario y su materia activa (ingrediente principal). Ambos son obligatorios por el RD 1311/2012.',
+            },
+            {
+                icon: '📏',
+                title: 'Dosis aplicada',
+                desc: 'Indica cuánto producto usaste por hectárea (L/ha o kg/ha). Debe coincidir con la etiqueta del producto.',
+            },
+            {
+                icon: '👤',
+                title: 'Aplicador ROPO',
+                desc: 'Pon el número de carnet del aplicador que realizó el tratamiento. Si no tienes aplicadores registrados, añádelos primero en Ajustes.',
+            },
+            {
+                icon: '🚜',
+                title: 'Equipo ROMA',
+                desc: 'Selecciona la maquinaria usada para aplicar. El equipo debe tener número de registro ROMA y la revisión ITEAF en vigor.',
+            },
+        ],
+    },
+    fertilizacion: {
+        title: '🌱 Fertilización',
+        intro: 'Anota cada aportación de abonos o enmiendas. El tipo y dosis quedan registrados en el cuaderno oficial.',
+        steps: [
+            {
+                icon: '🗺️',
+                title: 'Parcela',
+                desc: 'Indica en qué parcela se aplicó el fertilizante.',
+            },
+            {
+                icon: '🧪',
+                title: 'Tipo y producto',
+                desc: 'Elige si es fertilizante mineral, orgánico o una enmienda. Luego escribe el nombre comercial del producto.',
+            },
+            {
+                icon: '📏',
+                title: 'Dosis y método',
+                desc: 'Indica la cantidad aplicada (kg/ha o L/ha) y cómo se aplicó: incorporado al suelo, localizado, fertirrigación o foliar.',
+            },
+            {
+                icon: '📅',
+                title: 'Fecha',
+                desc: 'La fecha de aplicación es obligatoria. Si aplicaste en varios días, registra una entrada por día.',
+            },
+        ],
+    },
+    labor: {
+        title: '🚜 Labor Agrícola',
+        intro: 'Registra cualquier labor que hagas en la finca: siembra, poda, laboreo, tratamientos manuales, etc.',
+        steps: [
+            {
+                icon: '🗺️',
+                title: 'Parcela',
+                desc: 'Selecciona la parcela donde realizaste la labor.',
+            },
+            {
+                icon: '🔧',
+                title: 'Tipo de labor',
+                desc: 'Elige el tipo: laboreo de suelo, siembra, trasplante, poda, aclareo, recolección manual, tratamiento manual u otros.',
+            },
+            {
+                icon: '📝',
+                title: 'Descripción',
+                desc: 'Añade los detalles que consideres útiles: maquinaria usada, incidencias, condiciones del campo, etc.',
+            },
+        ],
+    },
+    riego: {
+        title: '💧 Riego',
+        intro: 'Anota cada aplicación de agua por parcela. Sirve para justificar el consumo hídrico y cumplir con los planes de riego.',
+        steps: [
+            {
+                icon: '🗺️',
+                title: 'Parcela',
+                desc: 'Selecciona la parcela regada.',
+            },
+            {
+                icon: '💧',
+                title: 'Tipo de riego',
+                desc: 'Indica el sistema: goteo, aspersión, pivot, gravedad u otro. Si usas varios en la misma parcela, registra una entrada por sistema.',
+            },
+            {
+                icon: '⏱️',
+                title: 'Horas y volumen',
+                desc: 'Pon las horas que estuvo el riego en marcha. Si dispones del contador, añade también el volumen en m³ — es el dato más preciso.',
+            },
+        ],
+    },
+    cosecha: {
+        title: '📦 Cosecha / Producción',
+        intro: 'Registra lo que recolectas: cantidad, destino y número de lote para la trazabilidad.',
+        steps: [
+            {
+                icon: '🗺️',
+                title: 'Parcela',
+                desc: 'Indica de qué parcela proviene la cosecha.',
+            },
+            {
+                icon: '⚖️',
+                title: 'Producción',
+                desc: 'Escribe los kilogramos (o toneladas) recolectados. Si pesaste en báscula, usa ese dato; si no, una estimación razonable.',
+            },
+            {
+                icon: '📦',
+                title: 'Destino y lote',
+                desc: 'Indica el destino (venta, autoconsumo, almacén) y el número de lote si lo tienes. El lote permite rastrear el producto en caso de alerta sanitaria.',
+            },
+        ],
+    },
+    compra: {
+        title: '🛒 Compras',
+        intro: 'Registra las compras de fitosanitarios, fertilizantes y semillas. Es obligatorio conservar la trazabilidad de los productos usados.',
+        steps: [
+            {
+                icon: '🧪',
+                title: 'Tipo y producto',
+                desc: 'Indica si es un fitosanitario, fertilizante, semilla u otro insumo, y escribe el nombre comercial exacto.',
+            },
+            {
+                icon: '📏',
+                title: 'Cantidad',
+                desc: 'Anota las unidades compradas (litros, kg, sacos…). Debe cuadrar con las dosis que registres en los tratamientos y fertilizaciones.',
+            },
+            {
+                icon: '🏪',
+                title: 'Proveedor y albarán',
+                desc: 'Guarda el nombre del proveedor y el número de factura o albarán. Si hay una inspección, pueden pedir los justificantes de compra.',
+            },
+        ],
+    },
+    abonado: {
+        title: '📋 Plan de Abonado',
+        intro: 'Planifica las necesidades de nutrientes (N, P, K) de cada parcela para toda la campaña, según el RD 934/2025.',
+        steps: [
+            {
+                icon: '🗺️',
+                title: 'Parcela y cultivo',
+                desc: 'Selecciona la parcela y confirma el cultivo de la campaña. El plan de abonado se calcula para ese cultivo concreto.',
+            },
+            {
+                icon: '🌱',
+                title: 'Necesidades NPK',
+                desc: 'Indica las unidades fertilizantes de nitrógeno (N), fósforo (P₂O₅) y potasio (K₂O) previstas. Puedes basarte en análisis de suelo o en las tablas de referencia del cultivo.',
+            },
+            {
+                icon: '📅',
+                title: 'Fraccionamiento',
+                desc: 'Si aplicas el abono en varias pasadas, registra cada aplicación por separado en el módulo de Fertilización. El plan de abonado es la previsión; los registros de fertilización son lo que realmente hiciste.',
+            },
+        ],
+    },
+    cultivo_campana: {
+        title: '🌾 Cultivo de Campaña',
+        intro: 'Asigna el cultivo y variedad a cada parcela para la campaña activa. Es obligatorio para que el cuaderno oficial sea correcto.',
+        steps: [
+            {
+                icon: '🗺️',
+                title: 'Parcela',
+                desc: 'Selecciona la parcela a la que vas a asignar el cultivo de esta campaña.',
+            },
+            {
+                icon: '🌾',
+                title: 'Cultivo y variedad',
+                desc: 'Elige la especie (trigo, olivar, viñedo…) y escribe la variedad si la conoces. Estos datos aparecen en el PDF oficial del cuaderno.',
+            },
+            {
+                icon: '📐',
+                title: 'Superficie cultivada',
+                desc: 'Indica los hectáreas dedicadas a este cultivo en la parcela. Puede ser menor que la superficie total si parte está en barbecho.',
+            },
+        ],
+    },
+    uhc: {
+        title: '🌱 Grupos UHC',
+        intro: 'Las Unidades Homogéneas de Cultivo (UHC) te permiten registrar un tratamiento fitosanitario una sola vez para varias parcelas a la vez.',
+        steps: [
+            {
+                icon: '➕',
+                title: 'Crear un grupo',
+                desc: 'Pulsa "+ Nuevo grupo", dale un nombre (ej: "Olivar norte") y selecciona las parcelas que lo forman. Todas deben tener el mismo cultivo.',
+            },
+            {
+                icon: '🌿',
+                title: 'Usar el grupo en un tratamiento',
+                desc: 'Cuando registres un tratamiento fitosanitario, podrás seleccionar el grupo UHC en vez de una sola parcela. El sistema replica el registro en todas las parcelas del grupo.',
+            },
+            {
+                icon: '✏️',
+                title: 'Editar y eliminar',
+                desc: 'Pulsa sobre cualquier grupo para editarlo: cambiar el nombre, añadir o quitar parcelas. Eliminar el grupo no borra los tratamientos ya registrados.',
+            },
+        ],
+    },
+    planes: {
+        title: '💳 Planes y suscripción',
+        intro: 'Elige el plan que mejor se adapta a tu explotación. Puedes cambiar en cualquier momento.',
+        steps: [
+            {
+                icon: '🆓',
+                title: 'Plan Básico',
+                desc: 'Incluye todas las funciones del cuaderno de campo: parcelas SIGPAC, tratamientos, fertilización, labores, riego y exportación PDF. Suficiente para la mayoría de explotaciones.',
+            },
+            {
+                icon: '⚡',
+                title: 'Plan Pro — SIEX incluido',
+                desc: 'Añade la integración con el SIEX (Sistema de Información de Explotaciones), obligatoria para todos los agricultores desde el 1 de enero de 2027. Si necesitas cumplir con esa obligación, elige Pro.',
+            },
+            {
+                icon: '📅',
+                title: 'Anual vs mensual',
+                desc: 'El pago anual tiene descuento respecto al mensual. Puedes cancelar en cualquier momento; el acceso se mantiene hasta el final del período pagado.',
+            },
+        ],
+    },
 };
 
 // ── Slides para la guía de inicio ──

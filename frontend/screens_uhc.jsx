@@ -159,12 +159,15 @@ function ScreenUHC({ campana, showToast, parcelas }) {
         <div style={{ maxWidth: 600, margin: '0 auto', padding: '16px 12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
                 <h2 style={{ margin: 0, fontSize: '1.1rem' }}>🌱 Grupos UHC</h2>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <HelpButton screenId="uhc" style={{ background: 'var(--surface-container-low)', color: 'var(--primary)' }} />
                 <button onClick={abrirNuevo} style={{
                     background: 'var(--primary)', color: '#fff', border: 'none',
                     borderRadius: 'var(--radius-full)', padding: '8px 18px',
                     fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer',
                     fontFamily: 'var(--font-body)',
                 }}>+ Nuevo grupo</button>
+                </div>
             </div>
 
             <p style={{ fontSize: '0.82rem', color: 'var(--on-surface-variant)', marginTop: 0, marginBottom: 20 }}>
