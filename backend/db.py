@@ -247,6 +247,7 @@ def init_db():
             user_id INTEGER DEFAULT 2,
             titular TEXT,
             nif TEXT,
+            rega TEXT,
             municipio TEXT,
             provincia TEXT,
             cp TEXT,
@@ -257,7 +258,7 @@ def init_db():
             lopd_accepted INTEGER DEFAULT 0
         )
     ''')
-    for col, typ in [('fecha_apertura', 'TEXT'), ('lopd_accepted', 'INTEGER DEFAULT 0')]:
+    for col, typ in [('fecha_apertura', 'TEXT'), ('lopd_accepted', 'INTEGER DEFAULT 0'), ('rega', 'TEXT')]:
         _add_col(c, 'explotacion', col, typ)
 
     # ── PARCELAS ──
