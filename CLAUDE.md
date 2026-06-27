@@ -1,96 +1,148 @@
-# CLAUDE.md — Cuaderno de Explotación Digital
-> Este archivo se carga automáticamente. No hace falta pedírselo al agente.
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
+## Contexto global (heredado de Second Brain)
+@../second-brain/raul.md
+@../second-brain/principios.md
+@../second-brain/decisiones.md
 
 ---
 
 ## Qué es este proyecto
-App web SaaS para digitalizar el **Cuaderno de Explotación Agrícola** (CUE) obligatorio por ley en España (RD 1311/2012). Dirigida a agricultores de Castilla-La Mancha sin conocimientos informáticos. Usable en móvil y PC. En desarrollo para comercializarse antes de enero 2027, cuando el registro digital de fitosanitarios se vuelve obligatorio.
+
+App web SaaS para digitalizar el **Cuaderno de Explotación Agrícola** (CUE) obligatorio por ley en España (RD 1311/2012). Dirigida a agricultores sin conocimientos informáticos de Castilla-La Mancha.
+
+**Piloto activo:** Lourdes (finca familiar, ~50+ parcelas SIGPAC).  
+**Deadline legal:** 1 enero 2027 — fitosanitarios digitales obligatorios e interoperables con SIEX.  
+**Versión actual:** `v0.9.0` (tag en GitHub).
 
 ---
 
-## Stack técnico
-- **Backend:** Python + Flask
-- **Base de datos:** SQLite (local) → PostgreSQL (producción futura)
-- **Frontend:** HTML5 + CSS + JS mobile-first (React parcial)
-- **Exportación:** openpyxl (Excel) + ReportLab (PDF oficial)
-- **Auth:** Flask-Login + bcrypt
+## Comandos
 
-## Estructura del proyecto
-```
-Cuaderno ex app/
-├── backend/
-│   ├── app.py              # Servidor Flask + rutas + BD
-│   ├── db.py               # Modelos y conexión SQLite
-│   ├── export_pdf.py       # PDF oficial RD 1311/2012 ✅ TERMINADO
-│   ├── cuaderno.db         # Base de datos SQLite
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx         # App principal React
-│   │   ├── screens/        # Pantallas de la app
-│   │   └── components/     # Componentes reutilizables
-│   └── package.json
-└── CLAUDE.md               # Este archivo
+```bash
+# Arrancar servidor local
+cd "H:\Proyectos\Cuaderno ex app\backend"
+python app.py
+# → http://127.0.0.1:5000 | red local: http://192.168.10.55:5000
+
+# Compilar JSX → JS (necesario tras editar cualquier .jsx)
+cd "H:\Proyectos\Cuaderno ex app\frontend"
+npm run build       # one-shot
+npm run watch       # modo watch durante desarrollo
 ```
 
----
-
-## Módulos implementados ✅
-1. **Parcelas SIGPAC** — provincia, municipio, polígono, parcela, recinto, superficie
-2. **Tratamientos fitosanitarios** — producto, nº MAPA, sustancia activa, plaga, dosis, equipo, aplicador ROPO, plazo seguridad, fecha mínima cosecha
-3. **Fertilización / Abono** — tipo, NPK, dosis, parcela, fecha
-4. **Labores agrícolas** — siembra, riego, poda, cosecha, etc.
-5. **Compras y ventas** — trazabilidad materias primas y productos vendidos
-6. **Exportación Excel** — formato compatible plantilla gobierno
-7. **Exportación PDF oficial** — A4, cabecera por página, 5 secciones coloreadas, firma ✅ RECIÉN TERMINADO
+> En producción el Dockerfile compila los JSX con Babel en la etapa `js-build` y los copia a `frontend/dist/`. En local, Flask sirve los `.jsx` originales directamente desde `frontend/` mediante `<script type="text/babel">` (Babel Standalone en navegador). Cuando despliegues, corre `npm run build` o deja que el Docker lo haga.
 
 ---
 
-## Pendiente (por orden de prioridad)
-1. **Sistema multi-usuario** — Flask-Login, cada agricultor ve solo sus datos, registro de cuentas
-2. **Panel asesor** — vista de todos los agricultores desde una cuenta administrador
-3. **Autocompletado SIGPAC** — API pública visor SIGPAC Castilla-La Mancha
-4. **Despliegue en servidor** — Render.com o Railway, dominio propio
-5. **PWA** — instalable en móvil sin pasar por tienda de apps
-6. **Sistema de pagos** — Stripe, planes Basic y Pro
-7. **Integración SIEX** — API oficial FEGA Anexo VI, obligatoria antes de enero 2027
+## Arquitectura
 
----
+### Estructura de carpetas relevante
 
-## Normativa clave (no cambiar campos sin verificar)
-- **RD 1311/2012 Anexo III** — campos mínimos obligatorios del CUE
-- **Desde 01/01/2027** — fitosanitarios obligatorio digital e interoperable con SIEX
-- **Anexo VI FEGA** — API del Interfaz Único Común para interoperabilidad SIEX
-- **Anexo VII FEGA** — catálogos de códigos estandarizados (cultivos, plagas, productos)
-- Cualquier formato digital es válido si contiene los campos del Anexo III
+```
+backend/
+  app.py              ← factory: init_db, Flask app, CORS, rate-limit, registra blueprints
+  db.py               ← capa de acceso a BD (SQLite/PostgreSQL dual engine)
+  extensions.py       ← Flask-Login + Flask-Limiter instancias compartidas
+  export_pdf.py       ← generación PDF con ReportLab
+  exports.py          ← generación Excel con openpyxl
+  blueprints/         ← una ruta por dominio; NUNCA añadir rutas en app.py
+    auth.py           ← registro, login, logout, trial
+    parcelas.py       ← CRUD parcelas SIGPAC
+    tratamientos.py   ← CRUD fitosanitarios
+    fertilizacion.py  ← CRUD abonado
+    labores.py        ← CRUD labores agrícolas
+    equipos.py        ← CRUD equipos de aplicación (ROMA, ITEAF)
+    compras.py        ← CRUD compras/ventas
+    sigpac.py         ← proxy SIGPAC, bulk update, selector recintos
+    nlp.py            ← NLP por voz / "Habla que yo escribo"
+    imports_exports.py← importar Excel; descargar PDF/Excel
+    aemet.py          ← meteorología (Open-Meteo + METEOALARM + AEMET)
+    push.py           ← push notifications VAPID + APScheduler
+    stripe_bp.py      ← checkout Stripe + webhook
+    admin.py          ← panel admin
+    explotacion.py    ← datos de explotación (REGA, NIF, titular…)
+    uhc.py            ← Unidades Homogéneas de Cultivo
+frontend/
+  app.jsx             ← router principal, componentes raíz
+  screens_*.jsx       ← pantallas (una por módulo)
+  screens_forms.jsx   ← todos los formularios de entrada de datos
+  service-worker.js   ← SW v18 (PWA offline, caché CDN, IndexedDB sync)
+  index.html          ← SPA shell; carga React CDN + Babel Standalone en dev
+```
 
----
+### Capa de base de datos (`db.py`)
 
-## Modelo de negocio
-- **Plan Basic:** 29 €/explotación/año — módulos obligatorios
-- **Plan Pro:** 49 €/explotación/año — todo + PDF oficial + panel asesor
-- **Público objetivo:** agricultores CLM, +45 años, poca experiencia digital, cultivos mixtos (cereal, olivar, viña)
-- **Diferencial:** simplicidad extrema + precio bajo + el asesor gestiona todos sus clientes desde una cuenta
-- **Competencia:** ~48 apps (Cropwise, AgroGEST, FitosGEST) a 80-150 €/año
+El proyecto corre sobre SQLite en local y PostgreSQL en producción. La capa `db.py` abstrae las diferencias:
+
+- `get_db()` → devuelve una conexión normalizada (SQLite `sqlite3.Connection` o `_PgConn`)
+- `dicts(conn, sql, params)` → lista de dicts (funciona en ambos motores)
+- `one(conn, sql, params)` → un dict o `None`
+- `_add_col(cursor, table, col, type)` → migración segura (IF NOT EXISTS en PG, try/except en SQLite)
+
+**Patrón obligatorio para toda operación de BD:**
+
+```python
+conn = get_db()
+# ... operaciones con conn
+conn.commit()
+conn.close()
+```
+
+No usar context manager (`with conn:`) — `_PgConn` no lo implementa.
+
+**Placeholders:** usar siempre `?` (el wrapper traduce a `%s` para psycopg2 automáticamente).
+
+**Upsert en PostgreSQL:** usar `INSERT INTO ... ON CONFLICT (col) DO UPDATE SET col = EXCLUDED.col`. NO usar `INSERT OR REPLACE` (sólo SQLite).
+
+**Nuevas columnas:** añadir siempre con `_add_col()` en `init_db()`, nunca como `ALTER TABLE` en frío.
+
+### API pattern
+
+Todas las rutas devuelven JSON:
+- éxito: `{"ok": true, "data": ...}`
+- error: `{"ok": false, "error": "mensaje"}`
+
+Toda query filtra por `user_id = current_user.id` para aislar datos entre agricultores.
 
 ---
 
 ## Reglas de desarrollo
-- **Aprobar todo automáticamente** en esta sesión — usar "Yes, allow all edits this session"
-- Siempre mobile-first — el agricultor usa el móvil en el campo
-- Interfaces simples: botones grandes, poco texto, iconos claros
-- No romper módulos ya funcionando al añadir nuevos
-- Antes de cada tarea nueva, revisar qué está en `backend/app.py` para no duplicar rutas
-- Arrancar la app: `cd backend && python app.py`
-- URL local: `http://127.0.0.1:5000`
-- El PDF se genera en: `GET /api/export/pdf?campana=2025/2026`
+
+- **Mobile-first siempre.** Botones mínimo 44px. Formularios una columna.
+- **No añadir rutas en `app.py`.** Crear o editar el blueprint correspondiente en `blueprints/`.
+- **No romper módulos ya funcionando.** Cualquier cambio en `db.py` o `exports.py` requiere restart completo de gunicorn en producción (hot-reload parcial deja módulos cacheados).
+- **Tras editar JSX** en local: `npm run build` en `frontend/`. En producción lo hace el Dockerfile.
 
 ---
 
-## Arrancar el servidor
-```bash
-cd "c:\Users\valca\.gemini\antigravity\Cuaderno ex app\backend"
-python app.py
-```
-App disponible en: `http://127.0.0.1:5000`
-Móvil en la misma red: `http://192.168.10.55:5000`
+## Especificaciones (SDD)
+
+Este proyecto usa Spec-Driven Development. Antes de implementar cualquier feature nueva, consultar o crear los artefactos correspondientes:
+
+- `spec/constitution/` — misión, stack y roadmap del proyecto
+- `spec/features/NNN-nombre/spec.md` — qué construir y criterios de aceptación
+- `spec/features/NNN-nombre/plan.md` — cómo implementarlo, archivos y tareas
+
+Para features ya especificadas ver `spec/features/`. Para nueva feature: crear `spec/features/NNN-nombre/spec.md` antes de tocar código.
+
+---
+
+## Pendiente
+
+Ver `spec/constitution/roadmap.md` para prioridades y estado actualizado.
+
+Resumen rápido: 🔴 Stripe live · 🔴 SIEX (deadline 01/01/2027) · 🟠 Emails Resend · 🟠 Ayuda visual · 🟡 Asistente IA
+
+---
+
+## Producción
+
+- **URL:** `https://cuaderno.tualiado.es`
+- **Hosting:** EasyPanel en VPS Contabo `75.119.149.104`
+- **Deploy:** push a `main` → webhook GitHub → EasyPanel reconstruye Docker y reinicia
+- **Variables de entorno necesarias:** `DATABASE_URL`, `SECRET_KEY`, `REDIS_URL`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `ALLOWED_ORIGINS`
