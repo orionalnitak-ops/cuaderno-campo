@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, one, dicts
 from helpers import get_uid, _to_real
+from blueprints.ia import _recalcular_patrones
 
 bp = Blueprint('tratamientos', __name__)
 
@@ -169,11 +170,14 @@ def manage_tratamientos():
 
         conn.commit()
         conn.close()
+        for p in parcelas:
+            _recalcular_patrones(uid, 'tratamientos', p['id'], data.get('fecha_aplicacion'))
         return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
 
     new_id = _insert_tratamiento(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'))
     conn.commit()
     conn.close()
+    _recalcular_patrones(uid, 'tratamientos', data.get('parcela_id'), data.get('fecha_aplicacion'))
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
