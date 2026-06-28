@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, one, dicts, is_pac_eligible
 from helpers import get_uid, _to_real
+from blueprints.ia import _recalcular_patrones
 
 bp = Blueprint('parcelas', __name__)
 
@@ -174,6 +175,7 @@ def manage_cultivos():
           _to_real(data.get('kg_sembrados')), _to_real(data.get('precio_kg_compra'))))
     new_id = c.lastrowid
     conn.commit(); conn.close()
+    _recalcular_patrones(uid, 'cultivo_campana', parcela_id, data.get('fecha_siembra'))
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
