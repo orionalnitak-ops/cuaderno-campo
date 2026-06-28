@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, one, dicts
 from helpers import get_uid, _to_real
+from blueprints.ia import _recalcular_patrones
 
 bp = Blueprint('fertilizacion', __name__)
 
@@ -195,6 +196,7 @@ def manage_fertilizacion():
           data.get('metodo_aplicacion'), data.get('notas'), data.get('campana', '2025/2026'),
           n_ap, p_ap, k_ap))
     conn.commit(); new_id = c.lastrowid; conn.close()
+    _recalcular_patrones(uid, 'fertilizacion', data.get('parcela_id'), data.get('fecha_aplicacion'))
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
@@ -262,6 +264,7 @@ def manage_riego():
           _to_real(data.get('horas_riego')), data.get('fuente_agua'), data.get('notas'),
           data.get('campana', '2025/2026')))
     conn.commit(); new_id = c.lastrowid; conn.close()
+    _recalcular_patrones(uid, 'riego', data.get('parcela_id'), data.get('fecha'))
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
