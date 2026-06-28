@@ -32,6 +32,11 @@ def auth_login():
     user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
                 u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'))
     login_user(user, remember=True)
+    try:
+        from blueprints.ia import _generar_alertas
+        _generar_alertas(u['id'])
+    except Exception:
+        pass
     return jsonify({"id": user.id, "email": user.email,
                     "nombre": user.nombre, "role": user.role})
 
