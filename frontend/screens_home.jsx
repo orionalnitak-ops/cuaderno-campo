@@ -61,6 +61,9 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     const [gsheetActivo, setGsheetActivo]       = useState(false);
     const fileRef = React.useRef(null);
 
+    // ── Alertas IA ──
+    const [iaAlertas, setIaAlertas] = useState([]);
+
     // ── Push notifications ──
     const [pushActivo,   setPushActivo]   = useState(false);
     const [pushCargando, setPushCargando] = useState(false);
@@ -236,6 +239,13 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     }, []);
 
     useEffect(() => {
+        fetch('/api/ia/alertas', { credentials: 'include' })
+            .then(r => r.ok ? r.json() : { ok: false })
+            .then(d => { if (d.ok) setIaAlertas(d.data || []); })
+            .catch(() => {});
+    }, []);
+
+    useEffect(() => {
         fetch('/api/push/status', { credentials: 'include' })
             .then(r => r.ok ? r.json() : { activo: false })
             .then(d => setPushActivo(d.activo || false))
@@ -329,6 +339,11 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
             }
         } catch (e) { showToast('❌ ' + e.message); }
         finally { setPushCargando(false); }
+    };
+
+    const handleDismissAlerta = (id) => {
+        fetch(`/api/ia/alertas/${id}/leer`, { method: 'POST', credentials: 'include' }).catch(() => {});
+        setIaAlertas(prev => prev.filter(a => a.id !== id));
     };
 
     const resetNlp = () => {
@@ -1104,6 +1119,34 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 )}
               </div>{/* /wrapper centrado */}
             </div>
+
+            {/* ══ RECORDATORIOS IA ══ */}
+                {iaAlertas.length > 0 && (
+                    <div style={{ padding: '0 16px 4px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#666', fontWeight: 600, marginBottom: 6, letterSpacing: '0.03em', textTransform: 'uppercase' }}>
+                            💡 Recordatorios
+                        </div>
+                        {iaAlertas.map(a => (
+                            <div key={a.id} style={{
+                                background: '#fff8e1',
+                                border: '1px solid #ffe082',
+                                borderRadius: 10,
+                                padding: '10px 12px',
+                                marginBottom: 8,
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: 8,
+                            }}>
+                                <span style={{ flex: 1, fontSize: '0.85rem', color: '#333', lineHeight: 1.4 }}>{a.mensaje}</span>
+                                <button
+                                    onClick={() => handleDismissAlerta(a.id)}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#bbb', lineHeight: 1, padding: 0, flexShrink: 0, marginTop: -2 }}
+                                    aria-label="Descartar"
+                                >✕</button>
+                            </div>
+                        ))}
+                    </div>
+                )}
 
             {/* ¿Cómo quieres empezar? */}
             <div style={{ padding: '28px 16px 0' }}>
