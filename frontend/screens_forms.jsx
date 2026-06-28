@@ -1712,11 +1712,16 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                 if (!d.ok || !d.data) return;
                 setSugerencias(d.data);
                 if (d.data.variedad) {
-                    setCultivos(prev => prev.map((cv, idx) =>
-                        idx === 0 && (cv.variedad === '' || cv.variedad === undefined || cv.variedad === null)
-                            ? { ...cv, variedad: d.data.variedad.valor }
-                            : cv
-                    ));
+                    setCultivos(prev => {
+                        if (!prev || prev.length === 0) return prev;
+                        const first = prev[0];
+                        if (first.variedad === '' || first.variedad === undefined || first.variedad === null) {
+                            const updated = [...prev];
+                            updated[0] = { ...first, variedad: d.data.variedad.valor };
+                            return updated;
+                        }
+                        return prev;
+                    });
                 }
             })
             .catch(() => {});
