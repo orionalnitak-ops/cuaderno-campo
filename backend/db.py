@@ -725,7 +725,7 @@ def _seed_if_needed(conn):
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS ia_patrones (
             id             {_PK},
-            usuario_id     INTEGER NOT NULL,
+            user_id        INTEGER NOT NULL,
             modulo         TEXT NOT NULL,
             parcela_id     INTEGER,
             temporada      TEXT NOT NULL,
@@ -739,7 +739,7 @@ def _seed_if_needed(conn):
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS ia_alertas (
             id         {_PK},
-            usuario_id INTEGER NOT NULL,
+            user_id    INTEGER NOT NULL,
             tipo       TEXT NOT NULL,
             parcela_id INTEGER,
             modulo     TEXT,
@@ -752,11 +752,12 @@ def _seed_if_needed(conn):
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS ia_feedback (
             id          {_PK},
-            usuario_id  INTEGER NOT NULL,
+            user_id     INTEGER NOT NULL,
             patron_id   INTEGER NOT NULL,
             accion      TEXT NOT NULL,
             valor_final TEXT,
-            creado_en   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            creado_en   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(patron_id) REFERENCES ia_patrones(id)
         )
     ''')
 
