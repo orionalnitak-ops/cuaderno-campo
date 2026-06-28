@@ -128,6 +128,17 @@ function ZoomInput({ label, value, type, inputMode, placeholder, multiline, styl
     );
 }
 
+// ── SugChip — chip de sugerencia IA ──
+function SugChip({ campo, sugerencias, valorActual }) {
+    const item = sugerencias && sugerencias[campo];
+    if (!item || String(valorActual) !== String(item.valor)) return null;
+    return (
+        <span style={{ fontSize: '0.68rem', color: '#aaa', display: 'block', marginTop: 2, lineHeight: 1.2 }}>
+            💡 Sugerido
+        </span>
+    );
+}
+
 // ── Screen: Forms — 4 módulos con campos progresivos ──
 function ScreenForms({ modulo, record, campana, onClose }) {
     const { useState, useEffect } = React;
@@ -237,6 +248,7 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
     const [newAplic, setNewAplic]         = React.useState({ nombre: '', num_ropo: '', nif: '' });
     const [modoUHC, setModoUHC]   = React.useState(false);
     const [uhcList, setUhcList]   = React.useState([]);
+    const [sugerencias, setSugerencias] = React.useState({});
 
     const [f, setF] = React.useState({
         parcela_id:               record?.parcela_id || '',
@@ -314,6 +326,24 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
             .catch(() => {});
     }, [campana]);
 
+    React.useEffect(() => {
+        if (isEdit) return;
+        const qs = new URLSearchParams({ modulo: 'tratamientos' });
+        if (f.parcela_id) qs.append('parcela_id', f.parcela_id);
+        fetch(`/api/ia/sugerencias?${qs}`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : { ok: false })
+            .then(d => {
+                if (!d.ok || !d.data) return;
+                setSugerencias(d.data);
+                const patch = {};
+                for (const [campo, item] of Object.entries(d.data)) {
+                    if (f[campo] === '' || f[campo] === undefined || f[campo] === null) patch[campo] = item.valor;
+                }
+                if (Object.keys(patch).length) setF(x => ({ ...x, ...patch }));
+            })
+            .catch(() => {});
+    }, [f.parcela_id, isEdit]);
+
     const saveNuevoAplicador = async () => {
         if (!newAplic.nombre.trim()) { alert('El nombre del aplicador es obligatorio'); return; }
         const res = await fetch('/api/aplicadores', {
@@ -329,6 +359,19 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
         setShowAddAplic(false);
     };
 
+    const postFeedback = () => {
+        for (const [campo, item] of Object.entries(sugerencias)) {
+            const val = f[campo];
+            const accion = (val === '' || val === undefined || val === null) ? 'ignorada'
+                : String(val) === String(item.valor) ? 'aceptada' : 'modificada';
+            fetch('/api/ia/feedback', {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ patron_id: item.patron_id, accion, valor_final: accion === 'modificada' ? String(val) : null })
+            }).catch(() => {});
+        }
+    };
+
     const save = async () => {
         if ((!f.parcela_id && !f.uhc_id) || !f.fecha_aplicacion || !f.aplicador_id || !f.producto_comercial ||
             !f.plaga_objetivo || !f.sustancia_activa || !f.num_registro_mapa || !f.dosis_valor ||
@@ -342,6 +385,7 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                 ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
                 : await window.OfflineSync.post('/api/tratamientos', f);
             if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar el tratamiento'); setSaving(false); return; }
+            postFeedback();
             onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Tratamiento guardado');
         } catch { alert('Error al guardar el tratamiento'); setSaving(false); }
     };
@@ -433,15 +477,18 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
             <FieldGroup label="Producto comercial *">
                 <ZoomInput label="Producto comercial" value={f.producto_comercial} placeholder="Nombre del producto"
                     onConfirm={v => set('producto_comercial', v)} />
+                <SugChip campo="producto_comercial" sugerencias={sugerencias} valorActual={f.producto_comercial} />
             </FieldGroup>
             <FieldGroup label="Plaga / Objetivo *">
                 <ZoomInput label="Plaga / Objetivo" value={f.plaga_objetivo} placeholder="Repilo, Antracnosis…"
                     onConfirm={v => set('plaga_objetivo', v)} />
+                <SugChip campo="plaga_objetivo" sugerencias={sugerencias} valorActual={f.plaga_objetivo} />
             </FieldGroup>
             <div className="responsive-grid cols-2">
                 <FieldGroup label="Sustancia activa *">
                     <ZoomInput label="Sustancia activa" value={f.sustancia_activa} placeholder="Cobre, Glifosato…"
                         onConfirm={v => set('sustancia_activa', v)} />
+                    <SugChip campo="sustancia_activa" sugerencias={sugerencias} valorActual={f.sustancia_activa} />
                 </FieldGroup>
                 <FieldGroup label="Nº Registro MAPA *">
                     <ZoomInput label="Nº Registro MAPA" value={f.num_registro_mapa} placeholder="ES-00000-0"
@@ -456,6 +503,7 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                         {['cc/ha', 'g/ha', 'kg/ha', 'L/100L', 'L/ha'].map(u => <option key={u}>{u}</option>)}
                     </select>
                 </div>
+                <SugChip campo="dosis_valor" sugerencias={sugerencias} valorActual={f.dosis_valor} />
             </FieldGroup>
             <FieldGroup label="Equipo de aplicación *">
                 <select className="input-field" value={f.equipo_id} onChange={e => set('equipo_id', e.target.value)}>
@@ -534,6 +582,7 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
 function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
     const [saving, setSaving] = React.useState(false);
+    const [sugerencias, setSugerencias] = React.useState({});
     const [f, setF] = React.useState({
         parcela_id: record?.parcela_id || '', parcela_etiqueta: record?.parcela_etiqueta || '',
         fecha_aplicacion: record?.fecha_aplicacion || today,
@@ -552,6 +601,37 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
         if (p) set('parcela_etiqueta', p.nombre_finca);
     }, [f.parcela_id]);
 
+    React.useEffect(() => {
+        if (isEdit) return;
+        const qs = new URLSearchParams({ modulo: 'fertilizacion' });
+        if (f.parcela_id) qs.append('parcela_id', f.parcela_id);
+        fetch(`/api/ia/sugerencias?${qs}`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : { ok: false })
+            .then(d => {
+                if (!d.ok || !d.data) return;
+                setSugerencias(d.data);
+                const patch = {};
+                for (const [campo, item] of Object.entries(d.data)) {
+                    if (f[campo] === '' || f[campo] === undefined || f[campo] === null) patch[campo] = item.valor;
+                }
+                if (Object.keys(patch).length) setF(x => ({ ...x, ...patch }));
+            })
+            .catch(() => {});
+    }, [f.parcela_id, isEdit]);
+
+    const postFeedback = () => {
+        for (const [campo, item] of Object.entries(sugerencias)) {
+            const val = f[campo];
+            const accion = (val === '' || val === undefined || val === null) ? 'ignorada'
+                : String(val) === String(item.valor) ? 'aceptada' : 'modificada';
+            fetch('/api/ia/feedback', {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ patron_id: item.patron_id, accion, valor_final: accion === 'modificada' ? String(val) : null })
+            }).catch(() => {});
+        }
+    };
+
     const save = async () => {
         if (!f.parcela_id || !f.fecha_aplicacion) { alert('Rellena: parcela y fecha'); return; }
         setSaving(true);
@@ -561,6 +641,7 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
                 ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
                 : await window.OfflineSync.post('/api/fertilizacion', f);
             if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar el abono'); setSaving(false); return; }
+            postFeedback();
             onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Abono guardado');
         } catch { alert('Error al guardar el abono'); setSaving(false); }
     };
@@ -598,6 +679,7 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
                 <FieldGroup label="Producto / Abono">
                     <ZoomInput label="Producto / Abono" value={f.producto} placeholder="Urea, NPK, Estiércol…"
                         onConfirm={v => set('producto', v)} />
+                    <SugChip campo="producto" sugerencias={sugerencias} valorActual={f.producto} />
                 </FieldGroup>
             </div>
 
@@ -608,6 +690,7 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
                             <option value="">Seleccionar…</option>
                             {['Enmienda cálcica', 'Enmienda orgánica', 'Foliar', 'Mineral complejo', 'Mineral simple', 'Organomineral', 'Orgánico', 'Otro'].map(t => <option key={t}>{t}</option>)}
                         </select>
+                        <SugChip campo="tipo_fertilizante" sugerencias={sugerencias} valorActual={f.tipo_fertilizante} />
                     </FieldGroup>
                     <FieldGroup label="Riqueza N-P-K">
                         <ZoomInput label="Riqueza N-P-K" value={f.riqueza_npk} placeholder="27-0-0 · 8-15-15…"
@@ -621,6 +704,7 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
                                 {['kg/árbol', 'kg/ha', 'L/árbol', 'L/ha', 't/ha'].map(u => <option key={u}>{u}</option>)}
                             </select>
                         </div>
+                        <SugChip campo="dosis_valor" sugerencias={sugerencias} valorActual={f.dosis_valor} />
                     </FieldGroup>
                     {isLiquid(f.dosis_unidad) && (
                         <FieldGroup label="Densidad del fertilizante (g/mL) *">
@@ -720,6 +804,7 @@ const normTipoLabor = (v) => { if (!v) return ''; if (_LABOR_TIPOS.some(([val]) 
 function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
     const [saving, setSaving] = React.useState(false);
+    const [sugerencias, setSugerencias] = React.useState({});
     const [f, setF] = React.useState({
         parcela_id: record?.parcela_id || '', parcela_etiqueta: record?.parcela_etiqueta || '',
         fecha: record?.fecha || today,
@@ -737,6 +822,37 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
         if (p) set('parcela_etiqueta', p.nombre_finca);
     }, [f.parcela_id]);
 
+    React.useEffect(() => {
+        if (isEdit) return;
+        const qs = new URLSearchParams({ modulo: 'labores' });
+        if (f.parcela_id) qs.append('parcela_id', f.parcela_id);
+        fetch(`/api/ia/sugerencias?${qs}`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : { ok: false })
+            .then(d => {
+                if (!d.ok || !d.data) return;
+                setSugerencias(d.data);
+                const patch = {};
+                for (const [campo, item] of Object.entries(d.data)) {
+                    if (f[campo] === '' || f[campo] === undefined || f[campo] === null) patch[campo] = item.valor;
+                }
+                if (Object.keys(patch).length) setF(x => ({ ...x, ...patch }));
+            })
+            .catch(() => {});
+    }, [f.parcela_id, isEdit]);
+
+    const postFeedback = () => {
+        for (const [campo, item] of Object.entries(sugerencias)) {
+            const val = f[campo];
+            const accion = (val === '' || val === undefined || val === null) ? 'ignorada'
+                : String(val) === String(item.valor) ? 'aceptada' : 'modificada';
+            fetch('/api/ia/feedback', {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ patron_id: item.patron_id, accion, valor_final: accion === 'modificada' ? String(val) : null })
+            }).catch(() => {});
+        }
+    };
+
     const save = async () => {
         if (!f.parcela_id || !f.fecha) { alert('Rellena: parcela y fecha'); return; }
         setSaving(true);
@@ -746,6 +862,7 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
                 ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
                 : await window.OfflineSync.post('/api/labores', f);
             if (!res.ok) { alert('Error al guardar. Inténtalo de nuevo.'); setSaving(false); return; }
+            postFeedback();
             onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Labor guardada');
         } catch { alert('Error de conexión'); setSaving(false); }
     };
@@ -764,6 +881,7 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
                         <option value="">Seleccionar…</option>
                         {_LABOR_TIPOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </select>
+                    <SugChip campo="tipo_labor" sugerencias={sugerencias} valorActual={f.tipo_labor} />
                 </FieldGroup>
             </div>
             <FieldGroup label="Cultivo / Producto sembrado">
@@ -781,6 +899,7 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
                     <FieldGroup label="Maquinaria">
                         <ZoomInput label="Maquinaria" value={f.maquinaria} placeholder="Tractor, vibrador…"
                             onConfirm={v => set('maquinaria', v)} />
+                        <SugChip campo="maquinaria" sugerencias={sugerencias} valorActual={f.maquinaria} />
                     </FieldGroup>
                     <FieldGroup label="Horas trabajadas">
                         <ZoomInput label="Horas trabajadas" value={f.horas_trabajadas} placeholder="4.5" inputMode="decimal"
@@ -812,6 +931,7 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
     const [saving, setSaving]       = React.useState(false);
     const [rendimiento, setRendimiento] = React.useState('');
+    const [sugerencias, setSugerencias] = React.useState({});
     const [f, setF] = React.useState({
         parcela_id: record?.parcela_id || '', parcela_etiqueta: record?.parcela_etiqueta || '',
         fecha_inicio: record?.fecha_inicio || today, fecha_fin: record?.fecha_fin || '',
@@ -849,6 +969,37 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
             });
     }, [f.parcela_id]);
 
+    React.useEffect(() => {
+        if (isEdit) return;
+        const qs = new URLSearchParams({ modulo: 'cosecha' });
+        if (f.parcela_id) qs.append('parcela_id', f.parcela_id);
+        fetch(`/api/ia/sugerencias?${qs}`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : { ok: false })
+            .then(d => {
+                if (!d.ok || !d.data) return;
+                setSugerencias(d.data);
+                const patch = {};
+                for (const [campo, item] of Object.entries(d.data)) {
+                    if (f[campo] === '' || f[campo] === undefined || f[campo] === null) patch[campo] = item.valor;
+                }
+                if (Object.keys(patch).length) setF(x => ({ ...x, ...patch }));
+            })
+            .catch(() => {});
+    }, [f.parcela_id, isEdit]);
+
+    const postFeedback = () => {
+        for (const [campo, item] of Object.entries(sugerencias)) {
+            const val = f[campo];
+            const accion = (val === '' || val === undefined || val === null) ? 'ignorada'
+                : String(val) === String(item.valor) ? 'aceptada' : 'modificada';
+            fetch('/api/ia/feedback', {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ patron_id: item.patron_id, accion, valor_final: accion === 'modificada' ? String(val) : null })
+            }).catch(() => {});
+        }
+    };
+
     const save = async () => {
         if (!f.parcela_id || !f.fecha_inicio) { alert('Rellena: parcela y fecha de inicio'); return; }
         setSaving(true);
@@ -858,6 +1009,7 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                 ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
                 : await window.OfflineSync.post('/api/cosecha', f);
             if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar la cosecha'); setSaving(false); return; }
+            postFeedback();
             onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Cosecha guardada');
         } catch { alert('Error al guardar la cosecha'); setSaving(false); }
     };
@@ -885,6 +1037,7 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                     <FieldGroup label="Variedad">
                         <ZoomInput label="Variedad" value={f.variedad} placeholder="Picual, Tempranillo…"
                             onConfirm={v => set('variedad', v)} />
+                        <SugChip campo="variedad" sugerencias={sugerencias} valorActual={f.variedad} />
                     </FieldGroup>
                     <FieldGroup label="Superficie cosechada (ha)">
                         <ZoomInput label="Superficie cosechada (ha)" value={f.superficie_cosechada_ha} placeholder="3.25" inputMode="decimal"
@@ -911,6 +1064,7 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                             <option value="">Seleccionar…</option>
                             {['Almazara propia', 'Autoconsumo', 'Bodega', 'Cooperativa', 'Exportación', 'Mercado en fresco', 'Otro'].map(d => <option key={d}>{d}</option>)}
                         </select>
+                        <SugChip campo="destino" sugerencias={sugerencias} valorActual={f.destino} />
                     </FieldGroup>
                     <FieldGroup label="Comprador / Destinatario">
                         <ZoomInput label="Comprador / Destinatario" value={f.comprador} placeholder="Nombre de la cooperativa"
@@ -942,6 +1096,7 @@ function FormCompra({ record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
     const [saving, setSaving] = React.useState(false);
     const [error, setError]   = React.useState('');
+    const [sugerencias, setSugerencias] = React.useState({});
 
     const [f, setF] = React.useState({
         fecha:             record?.fecha             || today,
@@ -960,6 +1115,35 @@ function FormCompra({ record, campana, onClose, isEdit }) {
     });
     const set = (k, v) => setF(x => ({ ...x, [k]: v }));
 
+    React.useEffect(() => {
+        if (isEdit) return;
+        fetch('/api/ia/sugerencias?modulo=compras', { credentials: 'include' })
+            .then(r => r.ok ? r.json() : { ok: false })
+            .then(d => {
+                if (!d.ok || !d.data) return;
+                setSugerencias(d.data);
+                const patch = {};
+                for (const [campo, item] of Object.entries(d.data)) {
+                    if (f[campo] === '' || f[campo] === undefined || f[campo] === null) patch[campo] = item.valor;
+                }
+                if (Object.keys(patch).length) setF(x => ({ ...x, ...patch }));
+            })
+            .catch(() => {});
+    }, [isEdit]);
+
+    const postFeedback = () => {
+        for (const [campo, item] of Object.entries(sugerencias)) {
+            const val = f[campo];
+            const accion = (val === '' || val === undefined || val === null) ? 'ignorada'
+                : String(val) === String(item.valor) ? 'aceptada' : 'modificada';
+            fetch('/api/ia/feedback', {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ patron_id: item.patron_id, accion, valor_final: accion === 'modificada' ? String(val) : null })
+            }).catch(() => {});
+        }
+    };
+
     const save = async () => {
         setError('');
         setSaving(true);
@@ -969,6 +1153,7 @@ function FormCompra({ record, campana, onClose, isEdit }) {
                 ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
                 : await window.OfflineSync.post('/api/compras', f);
             if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.error || 'Error al guardar'); setSaving(false); return; }
+            postFeedback();
             onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Compra guardada');
         } catch { setError('Error al guardar'); setSaving(false); }
     };
@@ -1030,6 +1215,7 @@ function FormCompra({ record, campana, onClose, isEdit }) {
                 <ZoomInput label="Proveedor" value={f.proveedor}
                     placeholder="Cooperativa, almacén agrícola…"
                     onConfirm={v => set('proveedor', v)} />
+                <SugChip campo="proveedor" sugerencias={sugerencias} valorActual={f.proveedor} />
             </FieldGroup>
 
             <div className="responsive-grid cols-2">
@@ -1042,6 +1228,7 @@ function FormCompra({ record, campana, onClose, isEdit }) {
                             {['kg', 'L', 'g', 't', 'sacos', 'envases', 'unidades'].map(u => <option key={u}>{u}</option>)}
                         </select>
                     </div>
+                    <SugChip campo="cantidad_unidad" sugerencias={sugerencias} valorActual={f.cantidad_unidad} />
                 </FieldGroup>
                 <FieldGroup label="Precio total (€)">
                     <ZoomInput label="Precio total (€)" value={f.precio_total} placeholder="142.50"
@@ -1075,6 +1262,7 @@ function FormCompra({ record, campana, onClose, isEdit }) {
 function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
     const [saving, setSaving] = React.useState(false);
+    const [sugerencias, setSugerencias] = React.useState({});
     const [f, setF] = React.useState({
         parcela_id:       record?.parcela_id       || '',
         parcela_etiqueta: record?.parcela_etiqueta  || '',
@@ -1094,6 +1282,37 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
         if (p) set('parcela_etiqueta', p.nombre_finca);
     }, [f.parcela_id]);
 
+    React.useEffect(() => {
+        if (isEdit) return;
+        const qs = new URLSearchParams({ modulo: 'riego' });
+        if (f.parcela_id) qs.append('parcela_id', f.parcela_id);
+        fetch(`/api/ia/sugerencias?${qs}`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : { ok: false })
+            .then(d => {
+                if (!d.ok || !d.data) return;
+                setSugerencias(d.data);
+                const patch = {};
+                for (const [campo, item] of Object.entries(d.data)) {
+                    if (f[campo] === '' || f[campo] === undefined || f[campo] === null) patch[campo] = item.valor;
+                }
+                if (Object.keys(patch).length) setF(x => ({ ...x, ...patch }));
+            })
+            .catch(() => {});
+    }, [f.parcela_id, isEdit]);
+
+    const postFeedback = () => {
+        for (const [campo, item] of Object.entries(sugerencias)) {
+            const val = f[campo];
+            const accion = (val === '' || val === undefined || val === null) ? 'ignorada'
+                : String(val) === String(item.valor) ? 'aceptada' : 'modificada';
+            fetch('/api/ia/feedback', {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ patron_id: item.patron_id, accion, valor_final: accion === 'modificada' ? String(val) : null })
+            }).catch(() => {});
+        }
+    };
+
     const save = async () => {
         if (!f.parcela_id || !f.fecha || !f.tipo_riego) {
             alert('Rellena: parcela, fecha y tipo de riego'); return;
@@ -1108,6 +1327,7 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
                 ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
                 : await window.OfflineSync.post('/api/riego', f);
             if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar'); setSaving(false); return; }
+            postFeedback();
             onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Riego guardado');
         } catch { alert('Error al guardar'); setSaving(false); }
     };
@@ -1126,6 +1346,7 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
                         <option value="">Seleccionar…</option>
                         {['Aspersión', 'Goteo', 'Gravedad', 'Otro', 'Pivot'].map(t => <option key={t}>{t}</option>)}
                     </select>
+                    <SugChip campo="tipo_riego" sugerencias={sugerencias} valorActual={f.tipo_riego} />
                 </FieldGroup>
             </div>
             <div className="responsive-grid cols-2">
@@ -1463,6 +1684,7 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
     const [existingHa, setExistingHa] = React.useState(0);
     const [existingCultivos, setExistingCultivos] = React.useState([]);
     const [showDesglose, setShowDesglose] = React.useState(false);
+    const [sugerencias, setSugerencias] = React.useState({});
 
     React.useEffect(() => {
         if (!parcela_id) { setParcelaHa(null); setExistingHa(0); setExistingCultivos([]); return; }
@@ -1479,6 +1701,26 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
             })
             .catch(() => { setExistingHa(0); setExistingCultivos([]); });
     }, [parcela_id]);
+
+    React.useEffect(() => {
+        if (isEdit) return;
+        const qs = new URLSearchParams({ modulo: 'cultivo_campana' });
+        if (parcela_id) qs.append('parcela_id', parcela_id);
+        fetch(`/api/ia/sugerencias?${qs}`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : { ok: false })
+            .then(d => {
+                if (!d.ok || !d.data) return;
+                setSugerencias(d.data);
+                if (d.data.variedad) {
+                    setCultivos(prev => prev.map((cv, idx) =>
+                        idx === 0 && (cv.variedad === '' || cv.variedad === undefined || cv.variedad === null)
+                            ? { ...cv, variedad: d.data.variedad.valor }
+                            : cv
+                    ));
+                }
+            })
+            .catch(() => {});
+    }, [parcela_id, isEdit]);
 
     const emptyEntry = () => ({
         _key: Math.random(),
@@ -1523,6 +1765,20 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
     const haExceeded = parcelaHa !== null && parcelaHa > 0 && _r2(totalUsedHa) > _r2(parcelaHa);
     const excesoHa = _r2(totalUsedHa - (parcelaHa || 0));
 
+    const postFeedback = () => {
+        for (const [campo, item] of Object.entries(sugerencias)) {
+            const firstCv = cultivos[0] || {};
+            const val = firstCv[campo];
+            const accion = (val === '' || val === undefined || val === null) ? 'ignorada'
+                : String(val) === String(item.valor) ? 'aceptada' : 'modificada';
+            fetch('/api/ia/feedback', {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ patron_id: item.patron_id, accion, valor_final: accion === 'modificada' ? String(val) : null })
+            }).catch(() => {});
+        }
+    };
+
     const save = async () => {
         if (!parcela_id) { alert('Selecciona una parcela'); return; }
         for (const cv of cultivos) {
@@ -1558,6 +1814,7 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                     return;
                 }
             }
+            postFeedback();
             const msg = cultivos.length > 1 ? `✅ ${cultivos.length} cultivos guardados` : '✅ Cultivo guardado';
             onClose(msg);
         } catch (e) {
@@ -1692,6 +1949,7 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                         <FieldGroup label="Variedad">
                             <input type="text" className="input-field" placeholder="Picual, Tempranillo…"
                                 value={cv.variedad} onChange={e => setField(idx, 'variedad', e.target.value)} />
+                            {idx === 0 && <SugChip campo="variedad" sugerencias={sugerencias} valorActual={cv.variedad} />}
                         </FieldGroup>
                         <FieldGroup label="Superficie cultivada (ha)">
                             <ZoomInput label="Superficie cultivada (ha)" type="number" inputMode="decimal"
