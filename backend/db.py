@@ -721,6 +721,45 @@ def _seed_if_needed(conn):
     if c.fetchone()[0] == 0:
         _seed_parcelas(c)
 
+    # ── ASISTENTE IA ──────────────────────────────────────────────────────────
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS ia_patrones (
+            id             {_PK},
+            usuario_id     INTEGER NOT NULL,
+            modulo         TEXT NOT NULL,
+            parcela_id     INTEGER,
+            temporada      TEXT NOT NULL,
+            campo          TEXT NOT NULL,
+            valor_sugerido TEXT NOT NULL,
+            frecuencia     INTEGER NOT NULL DEFAULT 1,
+            ultima_vez     DATE,
+            actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS ia_alertas (
+            id         {_PK},
+            usuario_id INTEGER NOT NULL,
+            tipo       TEXT NOT NULL,
+            parcela_id INTEGER,
+            modulo     TEXT,
+            mensaje    TEXT NOT NULL,
+            leida      INTEGER DEFAULT 0,
+            creada_en  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expira_en  TIMESTAMP
+        )
+    ''')
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS ia_feedback (
+            id          {_PK},
+            usuario_id  INTEGER NOT NULL,
+            patron_id   INTEGER NOT NULL,
+            accion      TEXT NOT NULL,
+            valor_final TEXT,
+            creado_en   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     conn.commit()
 
 
