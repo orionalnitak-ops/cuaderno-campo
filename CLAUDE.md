@@ -120,6 +120,30 @@ Toda query filtra por `user_id = current_user.id` para aislar datos entre agricu
 
 ---
 
+## Flujo Git (obligatorio)
+
+```
+feature/xxx  →  PR  →  CI pasa  →  merge a main  →  deploy automático
+```
+
+- **Nunca pushear directo a `main`.** Todo cambio entra vía Pull Request.
+- `main` está protegida: el merge queda bloqueado si el CI falla (lint + bandit).
+- Cada PR recibe automáticamente un **Security Review de Claude** que busca vulnerabilidades antes de mergear.
+- Nombrar ramas: `feat/nombre`, `fix/nombre`, `chore/nombre`.
+
+---
+
+## Prohibiciones de seguridad
+
+- **Nunca hardcodear secretos, API keys ni contraseñas** en el código. Usar siempre variables de entorno.
+- **Nunca construir queries SQL con f-strings o concatenación de strings.** Usar placeholders `?` con el wrapper `db.py`.
+- **Nunca exponer stack traces al usuario.** Los errores de la API devuelven `{"ok": false, "error": "mensaje legible"}`, no el traceback.
+- **Nunca usar `eval()` o `exec()`** con input externo.
+- **Nunca subir el archivo `.env`** al repositorio. Está en `.gitignore`.
+- **Nunca aprobar a ciegas** el código generado por IA. Leer y entender cada cambio antes de mergear.
+
+---
+
 ## Especificaciones (SDD)
 
 Este proyecto usa Spec-Driven Development. Antes de implementar cualquier feature nueva, consultar o crear los artefactos correspondientes:
