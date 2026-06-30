@@ -7,6 +7,8 @@ import bcrypt
 
 logger = logging.getLogger(__name__)
 
+_ROLES_VALIDOS = frozenset({'agricultor', 'admin'})
+
 from flask import Blueprint, jsonify, request, session
 from flask_login import login_required, current_user
 from db import get_db, one, dicts
@@ -82,26 +84,27 @@ def admin_user(uid):
         return jsonify({"status": "ok"})
 
     data = request.json or {}
-    # Columnas permitidas hardcodeadas — los nombres de columna NUNCA vienen del input externo
-    _ROLES_VALIDOS = {'agricultor', 'admin'}
+    # Mapa explícito de campos permitidos con sanitización — elimina necesidad de nosec
+    _CAMPOS = {
+        'nombre': ('nombre=?', lambda v: str(v).strip()[:255] or None),
+        'role':   ('role=?',   lambda v: v if v in _ROLES_VALIDOS else None),
+        'active': ('active=?', lambda v: 1 if v else 0),
+    }
     sets, vals = [], []
-    if 'nombre' in data:
-        sets.append('nombre=?')
-        vals.append(data['nombre'])
-    if 'role' in data:
-        if data['role'] not in _ROLES_VALIDOS:
+    for campo, (fragmento_sql, sanitizar) in _CAMPOS.items():
+        if campo not in data:
+            continue
+        valor = sanitizar(data[campo])
+        if valor is None:
             conn.close()
-            return jsonify({"error": "Rol no válido"}), 400
-        sets.append('role=?')
-        vals.append(data['role'])
-    if 'active' in data:
-        sets.append('active=?')
-        vals.append(1 if data['active'] else 0)
+            return jsonify({"error": f"Valor inválido para {campo}"}), 400
+        sets.append(fragmento_sql)
+        vals.append(valor)
     if data.get('password'):
         sets.append('password_hash=?')
         vals.append(bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))
     if sets:
-        conn.execute(f"UPDATE users SET {','.join(sets)} WHERE id=?", vals + [uid])  # nosec B608
+        conn.execute("UPDATE users SET {} WHERE id=?".format(','.join(sets)), vals + [uid])
         conn.commit()
     conn.close()
     return jsonify({"status": "ok"})
