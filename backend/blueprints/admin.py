@@ -8,6 +8,7 @@ import bcrypt
 logger = logging.getLogger(__name__)
 
 _ROLES_VALIDOS = frozenset({'agricultor', 'admin'})
+_INVALIDO = object()  # centinela único — distinguible de None y de valores legítimos
 
 from flask import Blueprint, jsonify, request, session
 from flask_login import login_required, current_user
@@ -84,10 +85,10 @@ def admin_user(uid):
         return jsonify({"status": "ok"})
 
     data = request.json or {}
-    # Mapa explícito de campos permitidos con sanitización — elimina necesidad de nosec
+    # Mapa explícito de campos permitidos — columnas SQL hardcodeadas, valores sanitizados
     _CAMPOS = {
-        'nombre': ('nombre=?', lambda v: str(v).strip()[:255] or None),
-        'role':   ('role=?',   lambda v: v if v in _ROLES_VALIDOS else None),
+        'nombre': ('nombre=?', lambda v: str(v).strip()[:255] if isinstance(v, str) and str(v).strip() else _INVALIDO),
+        'role':   ('role=?',   lambda v: v if v in _ROLES_VALIDOS else _INVALIDO),
         'active': ('active=?', lambda v: 1 if v else 0),
     }
     sets, vals = [], []
@@ -95,14 +96,18 @@ def admin_user(uid):
         if campo not in data:
             continue
         valor = sanitizar(data[campo])
-        if valor is None:
+        if valor is _INVALIDO:
             conn.close()
             return jsonify({"error": f"Valor inválido para {campo}"}), 400
         sets.append(fragmento_sql)
         vals.append(valor)
     if data.get('password'):
+        pwd = data['password']
+        if not isinstance(pwd, str) or not (8 <= len(pwd) <= 128):
+            conn.close()
+            return jsonify({"error": "Contraseña inválida (8-128 caracteres)"}), 400
         sets.append('password_hash=?')
-        vals.append(bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))
+        vals.append(bcrypt.hashpw(pwd.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))
     if sets:
         conn.execute("UPDATE users SET {} WHERE id=?".format(','.join(sets)), vals + [uid])
         conn.commit()
