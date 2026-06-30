@@ -15,7 +15,6 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
     HRFlowable, KeepTogether, PageBreak
 )
-from reportlab.platypus.flowables import HRFlowable
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
@@ -41,8 +40,6 @@ INNER_W = PAGE_W - 2 * MARGIN
 
 
 def _styles():
-    base = getSampleStyleSheet()
-    normal = base['Normal']
     return {
         'cover_title': ParagraphStyle('CoverTitle',
             fontName='Helvetica-Bold', fontSize=22,
@@ -175,8 +172,7 @@ def _data_table(col_headers, rows, col_widths, header_color, styles):
     header = [Paragraph(h, s['table_header']) for h in col_headers]
     table_data = [header]
 
-    for i, row in enumerate(rows):
-        style = s['table_cell_c'] if False else s['table_cell']
+    for _i, row in enumerate(rows):
         table_data.append([
             Paragraph(_v(cell), s['table_cell']) for cell in row
         ])
@@ -297,7 +293,6 @@ def _trat_table(rows, styles):
     ]
 
     for i, r in enumerate(rows):
-        row_a_idx = 1 + i * 2
         row_b_idx = 2 + i * 2
 
         dosis = f"{_v(r.get('dosis_valor'))} {_v(r.get('dosis_unidad'))}".strip('— ')

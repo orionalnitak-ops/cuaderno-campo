@@ -661,7 +661,7 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(id)
         )
     ''')
-    c.execute(f'''
+    c.execute('''
         CREATE TABLE IF NOT EXISTS push_alertas_cache (
             provincia TEXT PRIMARY KEY,
             alertas_hash TEXT,
