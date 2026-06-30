@@ -90,7 +90,7 @@ def admin_user(uid):
         sets.append('password_hash=?')
         vals.append(bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))
     if sets:
-        conn.execute(f"UPDATE users SET {','.join(sets)} WHERE id=?", vals + [uid])
+        conn.execute(f"UPDATE users SET {','.join(sets)} WHERE id=?", vals + [uid])  # nosec B608 — columnas vienen de claves validadas, no de input externo
         conn.commit()
     conn.close()
     return jsonify({"status": "ok"})
@@ -113,7 +113,7 @@ def admin_delete_permanent(uid):
         # resto de tablas con user_id directo, en orden de dependencia
         for t in ['riego', 'abonado', 'cosecha', 'tratamientos', 'fertilizacion',
                   'labores', 'compras', 'equipos', 'aplicadores', 'parcelas', 'explotacion']:
-            conn.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))
+            conn.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))  # nosec B608 — tabla viene de lista hardcodeada, no de input externo
         conn.execute("DELETE FROM users WHERE id=?", (uid,))
         conn.commit()
         conn.close()

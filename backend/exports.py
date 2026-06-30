@@ -73,8 +73,7 @@ def export_excel(user_id, campana='2025/2026'):
     ws.column_dimensions['A'].width = 30
     ws.column_dimensions['B'].width = 45
 
-    header_fill = PatternFill("solid", fgColor=GREEN_FILL)
-    dark_fill   = PatternFill("solid", fgColor=DARK_FILL)
+    dark_fill = PatternFill("solid", fgColor=DARK_FILL)
 
     ws.merge_cells('A1:B1')
     ws['A1'] = "CUADERNO DE CAMPO"
