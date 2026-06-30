@@ -4,7 +4,7 @@ import warnings
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from db import get_db, init_db, one
+from db import init_db
 
 logger = logging.getLogger(__name__)
 
@@ -67,23 +67,23 @@ login_manager.init_app(app)
 # ─────────────────────────────────────────────
 # BLUEPRINTS
 # ─────────────────────────────────────────────
-from blueprints.auth import bp as auth_bp
-from blueprints.admin import bp as admin_bp
-from blueprints.explotacion import bp as explotacion_bp
-from blueprints.parcelas import bp as parcelas_bp
-from blueprints.tratamientos import bp as tratamientos_bp
-from blueprints.fertilizacion import bp as fertilizacion_bp
-from blueprints.labores import bp as labores_bp
-from blueprints.equipos import bp as equipos_bp
-from blueprints.compras import bp as compras_bp
-from blueprints.sigpac import bp as sigpac_bp
-from blueprints.nlp import bp as nlp_bp
-from blueprints.imports_exports import bp as imports_exports_bp
-from blueprints.aemet import bp as aemet_bp
-from blueprints.stripe_bp import bp as stripe_bp
-from blueprints.push import bp as push_bp
-from blueprints.uhc import bp as uhc_bp
-from blueprints.ia import bp as ia_bp
+from blueprints.auth import bp as auth_bp  # noqa: E402
+from blueprints.admin import bp as admin_bp  # noqa: E402
+from blueprints.explotacion import bp as explotacion_bp  # noqa: E402
+from blueprints.parcelas import bp as parcelas_bp  # noqa: E402
+from blueprints.tratamientos import bp as tratamientos_bp  # noqa: E402
+from blueprints.fertilizacion import bp as fertilizacion_bp  # noqa: E402
+from blueprints.labores import bp as labores_bp  # noqa: E402
+from blueprints.equipos import bp as equipos_bp  # noqa: E402
+from blueprints.compras import bp as compras_bp  # noqa: E402
+from blueprints.sigpac import bp as sigpac_bp  # noqa: E402
+from blueprints.nlp import bp as nlp_bp  # noqa: E402
+from blueprints.imports_exports import bp as imports_exports_bp  # noqa: E402
+from blueprints.aemet import bp as aemet_bp  # noqa: E402
+from blueprints.stripe_bp import bp as stripe_bp  # noqa: E402
+from blueprints.push import bp as push_bp  # noqa: E402
+from blueprints.uhc import bp as uhc_bp  # noqa: E402
+from blueprints.ia import bp as ia_bp  # noqa: E402
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(admin_bp)
@@ -182,4 +182,4 @@ except Exception as _sch_err:
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') != 'production'
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    app.run(host='0.0.0.0', port=port, debug=debug)  # nosec B104 — necesario para Docker
