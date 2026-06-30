@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install ruff
-      - run: ruff check backend/ --exclude backend/venv --select E,W,F --ignore E501,E402,E401,E701,E702,E722,E741,F401
+      - run: ruff check backend/ --exclude backend/venv --select E,W,F --ignore E501,E402,E401,E701,E702,E741,F401
 
   security-scan:
     name: Security Scan (Bandit)

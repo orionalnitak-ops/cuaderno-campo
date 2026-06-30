@@ -80,11 +80,15 @@ def admin_user(uid):
 
     data = request.json or {}
     # Columnas permitidas hardcodeadas — los nombres de columna NUNCA vienen del input externo
+    _ROLES_VALIDOS = {'agricultor', 'admin'}
     sets, vals = [], []
     if 'nombre' in data:
         sets.append('nombre=?')
         vals.append(data['nombre'])
     if 'role' in data:
+        if data['role'] not in _ROLES_VALIDOS:
+            conn.close()
+            return jsonify({"error": "Rol no válido"}), 400
         sets.append('role=?')
         vals.append(data['role'])
     if 'active' in data:
@@ -124,7 +128,7 @@ def admin_delete_permanent(uid):
         return jsonify({"ok": True, "usuario": nombre})
     except Exception as e:
         try: conn.rollback()
-        except: pass
+        except Exception: pass
         conn.close()
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -166,7 +170,7 @@ def admin_reset_cuaderno(uid):
         return jsonify({"ok": True, "usuario": nombre})
     except Exception as e:
         try: conn.rollback()
-        except: pass
+        except Exception: pass
         conn.close()
         return jsonify({"ok": False, "error": str(e)}), 500
 
