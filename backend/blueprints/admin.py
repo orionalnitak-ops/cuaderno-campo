@@ -2,7 +2,10 @@
 blueprints/admin.py — /api/admin/*
 """
 import datetime
+import logging
 import bcrypt
+
+logger = logging.getLogger(__name__)
 
 from flask import Blueprint, jsonify, request, session
 from flask_login import login_required, current_user
@@ -130,7 +133,8 @@ def admin_delete_permanent(uid):
         try: conn.rollback()
         except Exception: pass
         conn.close()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        logger.error("Error en admin_delete_permanent uid=%s: %s", uid, e, exc_info=True)
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 @bp.route('/api/admin/switch-user/<int:target_id>', methods=['POST'])
@@ -172,7 +176,8 @@ def admin_reset_cuaderno(uid):
         try: conn.rollback()
         except Exception: pass
         conn.close()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        logger.error("Error en admin_reset_cuaderno uid=%s: %s", uid, e, exc_info=True)
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 @bp.route('/api/admin/users/<int:uid>/export/pdf')
