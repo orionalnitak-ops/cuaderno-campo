@@ -79,18 +79,22 @@ def admin_user(uid):
         return jsonify({"status": "ok"})
 
     data = request.json or {}
+    # Columnas permitidas hardcodeadas — los nombres de columna NUNCA vienen del input externo
     sets, vals = [], []
     if 'nombre' in data:
-        sets.append('nombre=?'); vals.append(data['nombre'])
+        sets.append('nombre=?')
+        vals.append(data['nombre'])
     if 'role' in data:
-        sets.append('role=?'); vals.append(data['role'])
+        sets.append('role=?')
+        vals.append(data['role'])
     if 'active' in data:
-        sets.append('active=?'); vals.append(1 if data['active'] else 0)
+        sets.append('active=?')
+        vals.append(1 if data['active'] else 0)
     if data.get('password'):
         sets.append('password_hash=?')
         vals.append(bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8'))
     if sets:
-        conn.execute(f"UPDATE users SET {','.join(sets)} WHERE id=?", vals + [uid])  # nosec B608 — columnas vienen de claves validadas, no de input externo
+        conn.execute(f"UPDATE users SET {','.join(sets)} WHERE id=?", vals + [uid])  # nosec B608
         conn.commit()
     conn.close()
     return jsonify({"status": "ok"})
