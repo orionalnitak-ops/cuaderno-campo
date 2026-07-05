@@ -16,8 +16,12 @@ Uso:
     # Contra producción (PostgreSQL): exporta DATABASE_URL antes de ejecutar.
     # Contra local (SQLite): exporta DB_PATH=/ruta/cuaderno.db (o usa el default).
 
+    # Por email (recomendado — resuelve el user_id solo):
+    python scripts/migrar_explotaciones_lourdes.py --email lourdelamo@gmail.com --dry-run
+    python scripts/migrar_explotaciones_lourdes.py --email lourdelamo@gmail.com          # aplica
+
+    # O por id directo:
     python scripts/migrar_explotaciones_lourdes.py --user-id 3 --dry-run
-    python scripts/migrar_explotaciones_lourdes.py --user-id 3          # aplica
 
 Los datos reales de Lourdes están en producción. Haz SIEMPRE una copia de la BD
 y ejecuta primero con --dry-run para revisar el mapeo antes de aplicar.
@@ -46,6 +50,22 @@ PREFIXES = [
     ('ROBERT', 'ROBERT'),
 ]
 
+# Nombre real de cada explotación (nombre_corto y titular provisional), según
+# la indicación de Lourdes. El NIF/REGA legal se rellena luego en Ajustes.
+NOMBRES = {
+    'L': 'Lourdes',
+    'D': 'Daniel',
+    'JL': 'José Luis',
+    'J': 'Juani',
+    'EMILIO': 'Emilio',
+    'ROBERT': 'Robert',
+}
+
+
+def nombre_explotacion(label):
+    """Nombre legible de la explotación a partir de la etiqueta de prefijo."""
+    return NOMBRES.get(label, label)
+
 
 def detectar(nombre):
     """Devuelve (etiqueta_prefijo, nombre_limpio) o (None, nombre) si no hay prefijo."""
@@ -59,38 +79,52 @@ def detectar(nombre):
 
 
 def get_or_create_explotacion(conn, uid, label, dry_run, cache):
-    """Devuelve el id de la explotación (user_id, nombre_corto=label), creándola si falta."""
+    """Devuelve el id de la explotación (nombre real derivado de `label`), creándola si falta."""
     if label in cache:
         return cache[label]
-    row = one(conn, "SELECT id FROM explotacion WHERE user_id=? AND nombre_corto=?", (uid, label))
+    nombre = nombre_explotacion(label)
+    row = one(conn, "SELECT id FROM explotacion WHERE user_id=? AND nombre_corto=?", (uid, nombre))
     if row:
         cache[label] = row['id']
         return row['id']
     if dry_run:
-        cache[label] = f"(nueva:{label})"
+        cache[label] = f"(nueva:{nombre})"
         return cache[label]
     # orden = número de explotaciones actuales (para ordenar el selector)
     n = one(conn, "SELECT COUNT(*) AS n FROM explotacion WHERE user_id=?", (uid,))
     orden = n['n'] if n else 0
     c = conn.cursor()
     c.execute("INSERT INTO explotacion (user_id, nombre_corto, titular, campana_activa, orden) VALUES (?,?,?,?,?)",
-              (uid, label, label, '2025/2026', orden))
+              (uid, nombre, nombre, '2025/2026', orden))
     conn.commit()
-    new = one(conn, "SELECT id FROM explotacion WHERE user_id=? AND nombre_corto=?", (uid, label))
+    new = one(conn, "SELECT id FROM explotacion WHERE user_id=? AND nombre_corto=?", (uid, nombre))
     cache[label] = new['id']
     return new['id']
 
 
 def main():
     ap = argparse.ArgumentParser(description="Migrar parcelas con prefijo a multi-explotación")
-    ap.add_argument('--user-id', type=int, required=True, help="ID del usuario (Lourdes)")
+    grp = ap.add_mutually_exclusive_group(required=True)
+    grp.add_argument('--user-id', type=int, help="ID del usuario a migrar")
+    grp.add_argument('--email', type=str, help="Email del usuario (se resuelve a user_id)")
     ap.add_argument('--dry-run', action='store_true', help="Solo mostrar el mapeo, sin escribir")
     args = ap.parse_args()
 
-    uid = args.user_id
     dry = args.dry_run
 
     conn = get_db()
+
+    # Resolver user_id a partir del email si se pasó así
+    if args.email:
+        row = one(conn, "SELECT id, nombre FROM users WHERE lower(email)=lower(?)", (args.email.strip(),))
+        if not row:
+            print(f"⚠ No existe ningún usuario con email {args.email!r}.")
+            conn.close()
+            return
+        uid = row['id']
+        print(f"Usuario: {row.get('nombre') or '(sin nombre)'} · email {args.email} · user_id={uid}")
+    else:
+        uid = args.user_id
     parcelas = dicts(conn, "SELECT id, nombre_finca, explotacion_id FROM parcelas WHERE user_id=? AND activa=1 ORDER BY nombre_finca", (uid,))
     if not parcelas:
         print(f"⚠ El usuario {uid} no tiene parcelas activas. Nada que migrar.")
@@ -118,13 +152,13 @@ def main():
     for _pid, _orig, _limpio, label, _eid in cambios:
         por_label.setdefault(label, 0)
         por_label[label] += 1
-    print("\nExplotaciones a crear/usar (nombre_corto → nº parcelas):")
+    print("\nExplotaciones a crear/usar (nombre → nº parcelas):")
     for label, n in sorted(por_label.items()):
-        print(f"  · {label:10s} → {n} parcelas")
+        print(f"  · {nombre_explotacion(label):12s} (prefijo {label}) → {n} parcelas")
 
     print("\nEjemplos de renombrado (nombre original → nombre limpio | explotación):")
     for _pid, orig, limpio, label, _eid in cambios[:15]:
-        print(f"  '{orig}'  →  '{limpio}'   [{label}]")
+        print(f"  '{orig}'  →  '{limpio}'   [{nombre_explotacion(label)}]")
     if len(cambios) > 15:
         print(f"  … y {len(cambios) - 15} más")
 
