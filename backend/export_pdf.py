@@ -6,6 +6,8 @@ import io
 import datetime
 from flask import send_file
 
+from db import parcela_scope_clause
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm, mm
@@ -355,9 +357,8 @@ def _section_tratamientos(conn, user_id, campana, styles, story, explotacion_id=
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    extra = " AND t.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)" if explotacion_id else ""
-    params = (user_id, campana) + ((explotacion_id,) if explotacion_id else ())
-    c.execute(f"""
+    clause, cparams = parcela_scope_clause(explotacion_id, 't')
+    c.execute("""
         SELECT t.*, p.nombre_finca,
                e.descripcion as equipo_nombre, e.num_registro_roma, e.fecha_iteaf,
                a.nombre as aplicador_nombre, a.num_ropo
@@ -365,9 +366,9 @@ def _section_tratamientos(conn, user_id, campana, styles, story, explotacion_id=
         LEFT JOIN parcelas p ON t.parcela_id = p.id
         LEFT JOIN equipos e ON t.equipo_id = e.id
         LEFT JOIN aplicadores a ON t.aplicador_id = a.id
-        WHERE t.user_id=? AND t.campana=?{extra}
+        WHERE t.user_id=? AND t.campana=?""" + clause + """
         ORDER BY t.fecha_aplicacion ASC
-    """, params)
+    """, (user_id, campana) + cparams)
     rows = [dict(r) for r in c.fetchall()]
 
     story.append(PageBreak())
@@ -397,14 +398,13 @@ def _section_fertilizacion(conn, user_id, campana, styles, story, explotacion_id
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    extra = " AND f.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)" if explotacion_id else ""
-    params = (user_id, campana) + ((explotacion_id,) if explotacion_id else ())
-    c.execute(f"""
+    clause, cparams = parcela_scope_clause(explotacion_id, 'f')
+    c.execute("""
         SELECT f.*, p.nombre_finca FROM fertilizacion f
         LEFT JOIN parcelas p ON f.parcela_id = p.id
-        WHERE f.user_id=? AND f.campana=?{extra}
+        WHERE f.user_id=? AND f.campana=?""" + clause + """
         ORDER BY f.fecha_aplicacion ASC
-    """, params)
+    """, (user_id, campana) + cparams)
     rows = [dict(r) for r in c.fetchall()]
 
     story.append(PageBreak())
@@ -463,14 +463,13 @@ def _section_labores(conn, user_id, campana, styles, story, explotacion_id=None)
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    extra = " AND l.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)" if explotacion_id else ""
-    params = (user_id, campana) + ((explotacion_id,) if explotacion_id else ())
-    c.execute(f"""
+    clause, cparams = parcela_scope_clause(explotacion_id, 'l')
+    c.execute("""
         SELECT l.*, p.nombre_finca FROM labores l
         LEFT JOIN parcelas p ON l.parcela_id = p.id
-        WHERE l.user_id=? AND l.campana=?{extra}
+        WHERE l.user_id=? AND l.campana=?""" + clause + """
         ORDER BY l.fecha ASC
-    """, params)
+    """, (user_id, campana) + cparams)
     rows = [dict(r) for r in c.fetchall()]
 
     story.append(PageBreak())
@@ -513,15 +512,14 @@ def _section_riego(conn, user_id, campana, styles, story, explotacion_id=None):
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    extra = " AND r.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)" if explotacion_id else ""
-    params = (user_id, campana) + ((explotacion_id,) if explotacion_id else ())
-    c.execute(f"""
+    clause, cparams = parcela_scope_clause(explotacion_id, 'r')
+    c.execute("""
         SELECT r.*, p.nombre_finca
         FROM riego r
         LEFT JOIN parcelas p ON r.parcela_id = p.id
-        WHERE r.user_id=? AND r.campana=? AND r.deleted_at IS NULL{extra}
+        WHERE r.user_id=? AND r.campana=? AND r.deleted_at IS NULL""" + clause + """
         ORDER BY r.fecha ASC
-    """, params)
+    """, (user_id, campana) + cparams)
     rows = [dict(r) for r in c.fetchall()]
 
     story.append(PageBreak())
@@ -572,14 +570,13 @@ def _section_cosecha(conn, user_id, campana, styles, story, explotacion_id=None)
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    extra = " AND co.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)" if explotacion_id else ""
-    params = (user_id, campana) + ((explotacion_id,) if explotacion_id else ())
-    c.execute(f"""
+    clause, cparams = parcela_scope_clause(explotacion_id, 'co')
+    c.execute("""
         SELECT co.*, p.nombre_finca FROM cosecha co
         LEFT JOIN parcelas p ON co.parcela_id = p.id
-        WHERE co.user_id=? AND co.campana=?{extra}
+        WHERE co.user_id=? AND co.campana=?""" + clause + """
         ORDER BY co.fecha_inicio ASC
-    """, params)
+    """, (user_id, campana) + cparams)
     rows = [dict(r) for r in c.fetchall()]
 
     story.append(PageBreak())
@@ -636,14 +633,13 @@ def _section_plan_abonado(conn, user_id, campana, styles, story, explotacion_id=
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    extra = " AND a.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)" if explotacion_id else ""
-    params = (user_id, campana) + ((explotacion_id,) if explotacion_id else ())
-    c.execute(f"""
+    clause, cparams = parcela_scope_clause(explotacion_id, 'a')
+    c.execute("""
         SELECT a.*, p.nombre_finca FROM abonado a
         LEFT JOIN parcelas p ON a.parcela_id = p.id
-        WHERE a.user_id=? AND a.campana=? AND a.deleted_at IS NULL{extra}
+        WHERE a.user_id=? AND a.campana=? AND a.deleted_at IS NULL""" + clause + """
         ORDER BY a.fecha_preparacion ASC
-    """, params)
+    """, (user_id, campana) + cparams)
     rows = [dict(r) for r in c.fetchall()]
 
     story.append(PageBreak())

@@ -5,7 +5,7 @@ import datetime
 
 from flask import Blueprint, jsonify, request, session
 from flask_login import login_required, current_user
-from db import get_db, one, dicts, is_pac_eligible
+from db import get_db, one, dicts, is_pac_eligible, parcela_scope_clause
 from helpers import get_uid, get_active_explotacion_id, resolve_default_explotacion
 
 bp = Blueprint('explotacion', __name__)
@@ -16,15 +16,24 @@ _EXPL_FIELDS = ['titular', 'nombre_corto', 'nif', 'rega', 'municipio', 'provinci
 
 
 def _active_expl(conn, uid):
-    """id de la explotación activa del usuario (crea una por defecto si no existe)."""
+    """id de la explotación activa del usuario (crea una por defecto si no existe).
+
+    El INSERT va protegido con try/except: si dos peticiones simultáneas del mismo
+    usuario sin explotación entran a la vez (TOCTOU), la segunda puede fallar o
+    duplicar; en cualquier caso se hace rollback y se resuelve la explotación real
+    ya existente. No se usa INSERT OR IGNORE (solo SQLite) para no romper PostgreSQL.
+    """
     exp_id = get_active_explotacion_id(conn)
     if exp_id:
         return exp_id
     # El usuario aún no tiene ninguna explotación: crear una vacía por defecto
-    c = conn.cursor()
-    c.execute("INSERT INTO explotacion (user_id, campana_activa) VALUES (?, ?)",
-              (uid, '2025/2026'))
-    conn.commit()
+    try:
+        c = conn.cursor()
+        c.execute("INSERT INTO explotacion (user_id, campana_activa) VALUES (?, ?)",
+                  (uid, '2025/2026'))
+        conn.commit()
+    except Exception:
+        conn.rollback()
     return resolve_default_explotacion(conn, uid)
 
 
@@ -152,32 +161,32 @@ def stats():
     campana = request.args.get('campana', '2025/2026')
     exp_id = get_active_explotacion_id(conn)
 
-    # Filtro por parcelas de la explotación activa (los módulos cuelgan de parcela_id)
-    pfilter = "parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)"
+    # Filtro parametrizado por parcelas de la explotación activa (helper único, sin f-strings)
+    pf, pp = parcela_scope_clause(exp_id)
 
     all_p = dicts(conn, "SELECT uso_sigpac FROM parcelas WHERE user_id=? AND explotacion_id=? AND activa=1", (uid, exp_id))
     pac_count = sum(1 for p in all_p if is_pac_eligible(p['uso_sigpac']))
 
-    t_count = one(conn, f"SELECT COUNT(*) as n FROM tratamientos WHERE user_id=? AND campana=? AND {pfilter}", (uid, campana, exp_id))
-    f_count = one(conn, f"SELECT COUNT(*) as n FROM fertilizacion WHERE user_id=? AND campana=? AND {pfilter}", (uid, campana, exp_id))
-    l_count = one(conn, f"SELECT COUNT(*) as n FROM labores WHERE user_id=? AND campana=? AND {pfilter}", (uid, campana, exp_id))
-    c_count = one(conn, f"SELECT COUNT(*) as n FROM cosecha WHERE user_id=? AND campana=? AND {pfilter}", (uid, campana, exp_id))
-    r_count = one(conn, f"SELECT COUNT(*) as n FROM riego WHERE user_id=? AND campana=? AND deleted_at IS NULL AND {pfilter}", (uid, campana, exp_id))
-    a_count = one(conn, f"SELECT COUNT(*) as n FROM abonado WHERE user_id=? AND campana=? AND deleted_at IS NULL AND {pfilter}", (uid, campana, exp_id))
+    t_count = one(conn, "SELECT COUNT(*) as n FROM tratamientos WHERE user_id=? AND campana=?" + pf, (uid, campana) + pp)
+    f_count = one(conn, "SELECT COUNT(*) as n FROM fertilizacion WHERE user_id=? AND campana=?" + pf, (uid, campana) + pp)
+    l_count = one(conn, "SELECT COUNT(*) as n FROM labores WHERE user_id=? AND campana=?" + pf, (uid, campana) + pp)
+    c_count = one(conn, "SELECT COUNT(*) as n FROM cosecha WHERE user_id=? AND campana=?" + pf, (uid, campana) + pp)
+    r_count = one(conn, "SELECT COUNT(*) as n FROM riego WHERE user_id=? AND campana=? AND deleted_at IS NULL" + pf, (uid, campana) + pp)
+    a_count = one(conn, "SELECT COUNT(*) as n FROM abonado WHERE user_id=? AND campana=? AND deleted_at IS NULL" + pf, (uid, campana) + pp)
 
-    alertas = dicts(conn, f"""
+    alertas = dicts(conn, """
         SELECT parcela_etiqueta, producto_comercial, fecha_recoleccion_minima
-        FROM tratamientos WHERE user_id=? AND fecha_recoleccion_minima >= ? AND fecha_recoleccion_minima <= ? AND {pfilter}
-    """, (uid, today, next7, exp_id))
+        FROM tratamientos WHERE user_id=? AND fecha_recoleccion_minima >= ? AND fecha_recoleccion_minima <= ?""" + pf,
+        (uid, today, next7) + pp)
 
-    last_row = one(conn, f"""
+    last_row = one(conn, """
         SELECT MAX(fecha) as last_fecha FROM (
-            SELECT fecha_aplicacion as fecha FROM tratamientos WHERE user_id=? AND {pfilter}
-            UNION ALL SELECT fecha FROM labores WHERE user_id=? AND {pfilter}
-            UNION ALL SELECT fecha_aplicacion as fecha FROM fertilizacion WHERE user_id=? AND {pfilter}
-            UNION ALL SELECT fecha FROM riego WHERE user_id=? AND deleted_at IS NULL AND {pfilter}
+            SELECT fecha_aplicacion as fecha FROM tratamientos WHERE user_id=?""" + pf + """
+            UNION ALL SELECT fecha FROM labores WHERE user_id=?""" + pf + """
+            UNION ALL SELECT fecha_aplicacion as fecha FROM fertilizacion WHERE user_id=?""" + pf + """
+            UNION ALL SELECT fecha FROM riego WHERE user_id=? AND deleted_at IS NULL""" + pf + """
         ) sub
-    """, (uid, exp_id, uid, exp_id, uid, exp_id, uid, exp_id))
+    """, (uid,) + pp + (uid,) + pp + (uid,) + pp + (uid,) + pp)
     days_inactive = 0
     if last_row and last_row.get('last_fecha'):
         try:
@@ -213,8 +222,8 @@ def historial():
     campana = request.args.get('campana', '')
     exp_id = get_active_explotacion_id(conn)
 
-    # Filtro por parcelas de la explotación activa
-    pfilter = "parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)"
+    # Filtro parametrizado por parcelas de la explotación activa (helper único, sin f-strings)
+    pf, pp = parcela_scope_clause(exp_id)
 
     records = []
 
@@ -234,13 +243,13 @@ def historial():
         return result
 
     if modulo in ('todos', 'tratamientos'):
-        rows = dicts(conn, f"SELECT * FROM tratamientos WHERE user_id=? AND deleted_at IS NULL AND {pfilter} ORDER BY fecha_aplicacion DESC", (uid, exp_id))
+        rows = dicts(conn, "SELECT * FROM tratamientos WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha_aplicacion DESC", (uid,) + pp)
         for r in apply_filters(rows, 'fecha_aplicacion'):
             records.append({**r, '_modulo': 'tratamientos', '_fecha': r.get('fecha_aplicacion', ''),
                             '_resumen': f"{r.get('producto_comercial','')} — {r.get('plaga_objetivo','')}"})
 
     if modulo in ('todos', 'fertilizacion'):
-        rows = dicts(conn, f"SELECT * FROM fertilizacion WHERE user_id=? AND deleted_at IS NULL AND {pfilter} ORDER BY fecha_aplicacion DESC", (uid, exp_id))
+        rows = dicts(conn, "SELECT * FROM fertilizacion WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha_aplicacion DESC", (uid,) + pp)
         for r in apply_filters(rows, 'fecha_aplicacion'):
             records.append({**r, '_modulo': 'fertilizacion', '_fecha': r.get('fecha_aplicacion', ''),
                             '_resumen': (
@@ -250,14 +259,14 @@ def historial():
                             )})
 
     if modulo in ('todos', 'labores'):
-        rows = dicts(conn, f"SELECT * FROM labores WHERE user_id=? AND {pfilter} ORDER BY fecha DESC", (uid, exp_id))
+        rows = dicts(conn, "SELECT * FROM labores WHERE user_id=?" + pf + " ORDER BY fecha DESC", (uid,) + pp)
         for r in apply_filters(rows, 'fecha'):
             desc = r.get('descripcion') or r.get('notas') or ''
             records.append({**r, '_modulo': 'labores', '_fecha': r.get('fecha', ''),
                             '_resumen': f"{r.get('tipo_labor','')} — {desc}".rstrip(' —')})
 
     if modulo in ('todos', 'cosecha'):
-        rows = dicts(conn, f"SELECT * FROM cosecha WHERE user_id=? AND {pfilter} ORDER BY fecha_inicio DESC", (uid, exp_id))
+        rows = dicts(conn, "SELECT * FROM cosecha WHERE user_id=?" + pf + " ORDER BY fecha_inicio DESC", (uid,) + pp)
         for r in apply_filters(rows, 'fecha_inicio'):
             records.append({**r, '_modulo': 'cosecha', '_fecha': r.get('fecha_inicio', ''),
                             '_resumen': f"{r.get('cultivo','')} — {r.get('produccion_total_valor','')} {r.get('produccion_total_unidad','')}"})
@@ -270,14 +279,14 @@ def historial():
                             '_resumen': f"{r.get('tipo_producto','')} — {r.get('producto','')} · {r.get('proveedor','')}"})
 
     if modulo in ('todos', 'riego'):
-        rows = dicts(conn, f"SELECT * FROM riego WHERE user_id=? AND deleted_at IS NULL AND {pfilter} ORDER BY fecha DESC", (uid, exp_id))
+        rows = dicts(conn, "SELECT * FROM riego WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha DESC", (uid,) + pp)
         for r in apply_filters(rows, 'fecha'):
             vol = f"{r['volumen_m3']} m³" if r.get('volumen_m3') else f"{r.get('horas_riego','')} h"
             records.append({**r, '_modulo': 'riego', '_fecha': r.get('fecha', ''),
                             '_resumen': f"{r.get('tipo_riego','')} — {vol}"})
 
     if modulo in ('todos', 'abonado'):
-        rows = dicts(conn, f"SELECT * FROM abonado WHERE user_id=? AND deleted_at IS NULL AND {pfilter} ORDER BY fecha_preparacion DESC", (uid, exp_id))
+        rows = dicts(conn, "SELECT * FROM abonado WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha_preparacion DESC", (uid,) + pp)
         for r in apply_filters(rows, 'fecha_preparacion'):
             records.append({**r, '_modulo': 'abonado', '_fecha': r.get('fecha_preparacion', ''),
                             '_resumen': f"{r.get('cultivo','')} — N:{r.get('n_necesario_kg_ha','')} P:{r.get('p_necesario_kg_ha','')} K:{r.get('k_necesario_kg_ha','')} kg/ha"})

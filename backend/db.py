@@ -147,6 +147,31 @@ def one(conn, sql, params=()):
     return dict(r) if r else None
 
 
+# Alias de tabla permitidos para acotar por explotación (lista blanca — nunca input de usuario)
+_SCOPE_ALIASES = {'', 't', 'f', 'l', 'r', 'c', 'co', 'a', 'cc'}
+
+
+def parcela_scope_clause(explotacion_id, alias=''):
+    """Cláusula SQL parametrizada para acotar registros a las parcelas de una explotación.
+
+    Fuente única para el scoping por explotación (evita f-strings repartidas por
+    exports/PDF). Devuelve `(clausula, params)`:
+      - si `explotacion_id` es falsy → ('', ())
+      - si no → (" AND <alias>.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)", (explotacion_id,))
+
+    El `alias` debe estar en la lista blanca `_SCOPE_ALIASES` (identificador de
+    tabla controlado por el código, jamás input de usuario). El valor de la
+    explotación viaja siempre como placeholder `?`.
+    """
+    if not explotacion_id:
+        return '', ()
+    if alias not in _SCOPE_ALIASES:
+        raise ValueError(f"alias de scope no permitido: {alias!r}")
+    prefix = (alias + '.') if alias else ''
+    return (" AND " + prefix + "parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)",
+            (explotacion_id,))
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Safe column migration helper
 # ─────────────────────────────────────────────────────────────────────────────
