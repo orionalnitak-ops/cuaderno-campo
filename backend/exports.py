@@ -50,16 +50,24 @@ def _alt_row(ws, row_num):
             cell.fill = fill
 
 
-def export_excel(user_id, campana='2025/2026'):
+def export_excel(user_id, campana='2025/2026', explotacion_id=None):
     if not OPENPYXL:
         return ("openpyxl no instalado. Ejecuta: pip install openpyxl", 500)
 
     conn = get_db()
     wb = Workbook()
 
-    # ── Explotación data ──
-    explot = dicts(conn, "SELECT * FROM explotacion WHERE user_id=? LIMIT 1", (user_id,))
+    # ── Explotación data (la activa, o la primera del usuario como fallback) ──
+    if explotacion_id:
+        explot = dicts(conn, "SELECT * FROM explotacion WHERE id=? AND user_id=?", (explotacion_id, user_id))
+    else:
+        explot = dicts(conn, "SELECT * FROM explotacion WHERE user_id=? ORDER BY orden, id LIMIT 1", (user_id,))
     ex = explot[0] if explot else {}
+    if explotacion_id is None and ex.get('id'):
+        explotacion_id = ex['id']
+    # Cláusula de filtro por parcelas de la explotación (para módulos que cuelgan de parcela)
+    _pf = (lambda alias: f" AND {alias}.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)") if explotacion_id else (lambda alias: "")
+    _pfp = (explotacion_id,) if explotacion_id else ()
     titular = ex.get('titular', 'Explotación')
     municipio = ex.get('municipio', '')
     provincia = ex.get('provincia', '')
@@ -115,7 +123,10 @@ def export_excel(user_id, campana='2025/2026'):
               "Sistema Explotación", "Masa Agua <50m", "Notas"]
     _header_row(ws2, p_cols, GREEN_FILL)
 
-    all_parcelas = dicts(conn, "SELECT * FROM parcelas WHERE user_id=? AND activa=1 ORDER BY nombre_finca", (user_id,))
+    if explotacion_id:
+        all_parcelas = dicts(conn, "SELECT * FROM parcelas WHERE user_id=? AND explotacion_id=? AND activa=1 ORDER BY nombre_finca", (user_id, explotacion_id))
+    else:
+        all_parcelas = dicts(conn, "SELECT * FROM parcelas WHERE user_id=? AND activa=1 ORDER BY nombre_finca", (user_id,))
     for ri, p in enumerate(all_parcelas, 2):
         row_data = [
             p.get('id'), p.get('nombre_finca'), p.get('poligono'),
@@ -137,12 +148,12 @@ def export_excel(user_id, campana='2025/2026'):
                "Fecha Siembra", "Fecha Recol. Prevista", "Superficie Cultivada (ha)",
                "Kg Sembrados", "Precio/kg Compra (€)", "Notas"]
     _header_row(ws3, cc_cols, TEAL_FILL)
-    cultivos = dicts(conn, """
+    cultivos = dicts(conn, f"""
         SELECT cc.*, p.nombre_finca FROM cultivos_campana cc
         LEFT JOIN parcelas p ON cc.parcela_id = p.id
-        WHERE p.user_id=?
+        WHERE p.user_id=?{_pf('cc')}
         ORDER BY cc.campana DESC, p.nombre_finca
-    """, (user_id,))
+    """, (user_id,) + _pfp)
     for ri, r in enumerate(cultivos, 2):
         row_data = [r.get('id'), r.get('nombre_finca'), r.get('campana'),
                     r.get('cultivo'), r.get('variedad'), r.get('fecha_siembra'),
@@ -163,7 +174,7 @@ def export_excel(user_id, campana='2025/2026'):
               "Eficacia", "Aplicador", "Notas", "Campaña",
               "Asesor", "Justificación Actuación", "Nº ROMA Equipo", "Fecha ITEAF Equipo"]
     _header_row(ws4, t_cols, GREEN_FILL)
-    trats = dicts(conn, """
+    trats = dicts(conn, f"""
         SELECT t.*, p.nombre_finca,
                e.descripcion as equipo_nombre, e.num_registro_roma, e.fecha_iteaf,
                a.nombre as aplicador_nombre
@@ -171,9 +182,9 @@ def export_excel(user_id, campana='2025/2026'):
         LEFT JOIN parcelas p ON t.parcela_id = p.id
         LEFT JOIN equipos e ON t.equipo_id = e.id
         LEFT JOIN aplicadores a ON t.aplicador_id = a.id
-        WHERE t.user_id=? AND t.campana=?
+        WHERE t.user_id=? AND t.campana=?{_pf('t')}
         ORDER BY t.fecha_aplicacion DESC
-    """, (user_id, campana))
+    """, (user_id, campana) + _pfp)
     for ri, r in enumerate(trats, 2):
         row_data = [
             r.get('id'), r.get('nombre_finca') or r.get('parcela_etiqueta'),
@@ -198,12 +209,12 @@ def export_excel(user_id, campana='2025/2026'):
     f_cols = ["ID", "Parcela", "Fecha", "Tipo Fertilizante", "Producto",
               "Riqueza N-P-K", "Dosis", "Unidad", "Método", "Notas", "Campaña"]
     _header_row(ws5, f_cols, AMBER_FILL)
-    fertz = dicts(conn, """
+    fertz = dicts(conn, f"""
         SELECT f.*, p.nombre_finca FROM fertilizacion f
         LEFT JOIN parcelas p ON f.parcela_id = p.id
-        WHERE f.user_id=? AND f.campana=?
+        WHERE f.user_id=? AND f.campana=?{_pf('f')}
         ORDER BY f.fecha_aplicacion DESC
-    """, (user_id, campana))
+    """, (user_id, campana) + _pfp)
     for ri, r in enumerate(fertz, 2):
         row_data = [r.get('id'), r.get('nombre_finca') or r.get('parcela_etiqueta'),
                     r.get('fecha_aplicacion'), r.get('tipo_fertilizante'), r.get('producto'),
@@ -221,12 +232,12 @@ def export_excel(user_id, campana='2025/2026'):
     l_cols = ["ID", "Parcela", "Fecha", "Tipo Labor", "Descripción",
               "Maquinaria", "Horas", "Operario", "Notas", "Campaña"]
     _header_row(ws6, l_cols, BLUE_FILL)
-    labores = dicts(conn, """
+    labores = dicts(conn, f"""
         SELECT l.*, p.nombre_finca FROM labores l
         LEFT JOIN parcelas p ON l.parcela_id = p.id
-        WHERE l.user_id=? AND l.campana=?
+        WHERE l.user_id=? AND l.campana=?{_pf('l')}
         ORDER BY l.fecha DESC
-    """, (user_id, campana))
+    """, (user_id, campana) + _pfp)
     for ri, r in enumerate(labores, 2):
         row_data = [r.get('id'), r.get('nombre_finca') or r.get('parcela_etiqueta'),
                     r.get('fecha'), r.get('tipo_labor'), r.get('descripcion'),
@@ -244,12 +255,12 @@ def export_excel(user_id, campana='2025/2026'):
     riego_cols = ["ID", "Parcela", "Fecha", "Tipo Riego", "Volumen (m³)",
                   "Horas", "Fuente Agua", "Notas", "Campaña"]
     _header_row(ws_riego, riego_cols, TEAL_FILL)
-    riegos = dicts(conn, """
+    riegos = dicts(conn, f"""
         SELECT r.*, p.nombre_finca FROM riego r
         LEFT JOIN parcelas p ON r.parcela_id = p.id
-        WHERE r.user_id=? AND r.campana=? AND r.deleted_at IS NULL
+        WHERE r.user_id=? AND r.campana=? AND r.deleted_at IS NULL{_pf('r')}
         ORDER BY r.fecha ASC
-    """, (user_id, campana))
+    """, (user_id, campana) + _pfp)
     for ri, r in enumerate(riegos, 2):
         riego_row = [r.get('id'), r.get('nombre_finca') or r.get('parcela_etiqueta'),
                     r.get('fecha'), r.get('tipo_riego'), r.get('volumen_m3'),
@@ -267,12 +278,12 @@ def export_excel(user_id, campana='2025/2026'):
               "Variedad", "Sup. Cosechada (ha)", "Producción Total", "Unidad",
               "Rendimiento (kg/ha)", "Destino", "Comprador", "Precio/Unidad", "Notas", "Campaña"]
     _header_row(ws7, c_cols, PINK_FILL)
-    cosechas = dicts(conn, """
+    cosechas = dicts(conn, f"""
         SELECT c.*, p.nombre_finca FROM cosecha c
         LEFT JOIN parcelas p ON c.parcela_id = p.id
-        WHERE c.user_id=? AND c.campana=?
+        WHERE c.user_id=? AND c.campana=?{_pf('c')}
         ORDER BY c.fecha_inicio DESC
-    """, (user_id, campana))
+    """, (user_id, campana) + _pfp)
     for ri, r in enumerate(cosechas, 2):
         row_data = [r.get('id'), r.get('nombre_finca') or r.get('parcela_etiqueta'),
                     r.get('fecha_inicio'), r.get('fecha_fin'), r.get('cultivo'),

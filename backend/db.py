@@ -258,7 +258,8 @@ def init_db():
             lopd_accepted INTEGER DEFAULT 0
         )
     ''')
-    for col, typ in [('fecha_apertura', 'TEXT'), ('lopd_accepted', 'INTEGER DEFAULT 0'), ('rega', 'TEXT')]:
+    for col, typ in [('fecha_apertura', 'TEXT'), ('lopd_accepted', 'INTEGER DEFAULT 0'), ('rega', 'TEXT'),
+                     ('nombre_corto', 'TEXT'), ('activa', 'INTEGER DEFAULT 1'), ('orden', 'INTEGER DEFAULT 0')]:
         _add_col(c, 'explotacion', col, typ)
 
     # ── PARCELAS ──
@@ -293,6 +294,7 @@ def init_db():
         ('notas', 'TEXT'), ('activa', 'INTEGER DEFAULT 1'),
         ('created_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
         ('updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+        ('explotacion_id', 'INTEGER'),
     ]:
         _add_col(c, 'parcelas', col, typ)
 
@@ -672,9 +674,40 @@ def init_db():
     conn.commit()
     _seed_admin(conn)
     _seed_if_needed(conn)
+    _backfill_explotaciones(conn)
     if USE_PG:
         c.execute("SELECT pg_advisory_unlock(7311201201)")
     conn.close()
+
+
+def _backfill_explotaciones(conn):
+    """Garantiza que toda parcela cuelgue de una explotación (modelo multi).
+
+    Idempotente: para cada usuario con parcelas sin `explotacion_id`, asegura que
+    exista al menos una explotación propia y asigna las parcelas huérfanas a la
+    explotación por defecto (la de menor `orden`/`id`). No toca parcelas ya
+    asignadas ni explotaciones ya creadas por el usuario.
+    """
+    c = conn.cursor()
+    # Usuarios con parcelas huérfanas (explotacion_id NULL)
+    user_rows = dicts(conn,
+        "SELECT DISTINCT user_id FROM parcelas WHERE explotacion_id IS NULL AND user_id IS NOT NULL")
+    for row in user_rows:
+        uid = row['user_id']
+        expl = one(conn,
+            "SELECT id FROM explotacion WHERE user_id=? ORDER BY orden, id LIMIT 1", (uid,))
+        if not expl:
+            # Crear explotación por defecto para el usuario (usa su nombre si lo tenemos)
+            u = one(conn, "SELECT nombre FROM users WHERE id=?", (uid,))
+            titular = (u.get('nombre') if u else None) or 'Explotación principal'
+            c.execute(
+                "INSERT INTO explotacion (user_id, titular, nombre_corto, campana_activa) VALUES (?,?,?,?)",
+                (uid, titular, titular, '2025/2026'))
+            expl = one(conn,
+                "SELECT id FROM explotacion WHERE user_id=? ORDER BY orden, id LIMIT 1", (uid,))
+        c.execute("UPDATE parcelas SET explotacion_id=? WHERE user_id=? AND explotacion_id IS NULL",
+                  (expl['id'], uid))
+    conn.commit()
 
 
 def _seed_admin(conn):

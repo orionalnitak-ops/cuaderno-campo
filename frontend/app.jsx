@@ -20,6 +20,122 @@ const MODULE_CARDS = [
     { id: 'cultivo_campana', icon: '🌾', title: 'Cultivo campaña', desc: 'Registra el cultivo y variedad por parcela para la campaña actual.', bg: 'linear-gradient(135deg, #166534, #16a34a)' },
 ];
 
+// ── Modal de alta de explotación (feature multi) ──
+function NuevaExplotacionModal({ onClose, onCreated, onUpsell, showToast }) {
+    const [nombreCorto, setNombreCorto] = useState('');
+    const [titular, setTitular] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    const crear = async () => {
+        if (!nombreCorto.trim() && !titular.trim()) { showToast && showToast('Pon al menos un nombre'); return; }
+        setSaving(true);
+        try {
+            const r = await fetch('/api/explotaciones', {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nombre_corto: nombreCorto.trim(), titular: titular.trim() }),
+            });
+            if (r.status === 403) { onClose(); onUpsell && onUpsell(); return; }
+            const data = await r.json();
+            if (data && data.id) { onCreated && onCreated(data.id); onClose(); }
+            else { showToast && showToast(data.error || 'No se pudo crear'); }
+        } catch { showToast && showToast('Error de conexión'); }
+        finally { setSaving(false); }
+    };
+
+    return (
+        <div className="overlay" onClick={onClose}>
+            <div className="module-sheet" onClick={e => e.stopPropagation()} style={{ paddingBottom: 40, maxWidth: 440 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+                    <h3 style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', margin:0 }}>🏡 Nueva explotación</h3>
+                    <button onClick={onClose} style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#6b7280' }}>✕</button>
+                </div>
+                <p style={{ fontSize:'0.82rem', color:'#6b7280', marginTop:0 }}>
+                    Cada explotación es un cuaderno independiente con su propio titular, NIF y REGA. Después podrás rellenar sus datos en Ajustes.
+                </p>
+                <div style={{ marginBottom:14 }}>
+                    <label className="field-label">Nombre corto (para el selector)</label>
+                    <input className="input-field" value={nombreCorto} placeholder="Ej: Emilio, Robert, Lourdes…"
+                        onChange={e => setNombreCorto(e.target.value)} />
+                </div>
+                <div style={{ marginBottom:14 }}>
+                    <label className="field-label">Titular (opcional ahora)</label>
+                    <input className="input-field" value={titular} placeholder="Nombre completo del titular"
+                        onChange={e => setTitular(e.target.value)} />
+                </div>
+                <button className="btn-primary" style={{ width:'100%', marginTop:8 }} onClick={crear} disabled={saving}>
+                    {saving ? 'Creando…' : '＋ Crear explotación'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ── Barra selector de explotación activa (multi) ──
+function ExplotacionBar({ explotaciones, currentUser, onSwitch, onReload, onNavigate, showToast }) {
+    const [showNew, setShowNew] = useState(false);
+    const allowsMulti = !!(currentUser && (currentUser.allows_multi || currentUser.role === 'admin'));
+
+    // Nada que mostrar: usuario mono con 0-1 explotación
+    if (!allowsMulti && explotaciones.length <= 1) return null;
+
+    const active = explotaciones.find(e => e.is_active) || explotaciones[0];
+    const label = e => (e.nombre_corto || e.titular || `Explotación ${e.id}`);
+
+    const handleAdd = () => {
+        if (allowsMulti) setShowNew(true);
+        else onNavigate && onNavigate('planes'); // upsell
+    };
+
+    return (
+        <div style={{
+            display:'flex', alignItems:'center', gap:10, flexWrap:'wrap',
+            padding:'10px 16px', background:'var(--surface-container-low, #eef1f0)',
+            borderBottom:'1px solid rgba(109,122,115,0.15)',
+        }}>
+            <span style={{ fontSize:'0.9rem' }}>🏡</span>
+            <span style={{ fontSize:'0.72rem', fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:'0.03em' }}>Explotación</span>
+            {explotaciones.length > 1 ? (
+                <select
+                    value={active ? active.id : ''}
+                    onChange={e => onSwitch(parseInt(e.target.value, 10))}
+                    style={{
+                        flex:'1 1 160px', maxWidth:280, padding:'8px 12px', fontSize:'0.9rem', fontWeight:600,
+                        border:'1.5px solid rgba(109,122,115,0.3)', borderRadius:'var(--radius-full, 999px)',
+                        background:'#fff', color:'#111827', cursor:'pointer',
+                    }}>
+                    {explotaciones.map(e => (
+                        <option key={e.id} value={e.id}>{label(e)}</option>
+                    ))}
+                </select>
+            ) : (
+                <span style={{ fontSize:'0.9rem', fontWeight:700, color:'#111827', flex:1 }}>
+                    {active ? label(active) : '—'}
+                </span>
+            )}
+            {allowsMulti ? (
+                <button onClick={handleAdd} style={{
+                    background:'none', border:'1.5px solid var(--primary, #00694c)', color:'var(--primary, #00694c)',
+                    borderRadius:'var(--radius-full, 999px)', padding:'7px 14px', fontSize:'0.8rem', fontWeight:700, cursor:'pointer',
+                }}>＋ Nueva</button>
+            ) : (
+                <button onClick={handleAdd} style={{
+                    background:'linear-gradient(135deg,#78350f,#b45309)', border:'none', color:'#fff',
+                    borderRadius:'var(--radius-full, 999px)', padding:'7px 14px', fontSize:'0.8rem', fontWeight:700, cursor:'pointer',
+                }}>⭐ Multi-explotación</button>
+            )}
+            {showNew && (
+                <NuevaExplotacionModal
+                    onClose={() => setShowNew(false)}
+                    onCreated={(newId) => { onReload().then(() => onSwitch(newId)); }}
+                    onUpsell={() => onNavigate && onNavigate('planes')}
+                    showToast={showToast}
+                />
+            )}
+        </div>
+    );
+}
+
 function App() {
     // ── Auth state ──
     const [authState, setAuthState]   = useState('loading'); // loading | guest | authenticated
@@ -40,6 +156,27 @@ function App() {
     const [isOnline, setIsOnline]         = useState(navigator.onLine);
     const [pendingCount, setPendingCount] = useState(0);
     const [syncing, setSyncing]           = useState(false);
+
+    // ── Multi-explotación ──
+    const [explotaciones, setExplotaciones] = useState([]);
+    const [explKey, setExplKey]             = useState(0); // bump para remontar pantallas al cambiar de explotación
+
+    const reloadExplotaciones = useCallback(() => {
+        return fetch('/api/explotaciones', { credentials: 'include' })
+            .then(r => r.ok ? r.json() : [])
+            .then(list => { setExplotaciones(Array.isArray(list) ? list : []); return list; })
+            .catch(() => []);
+    }, []);
+
+    const handleSwitchExpl = useCallback((eid) => {
+        fetch(`/api/explotaciones/${eid}/activar`, { method: 'POST', credentials: 'include' })
+            .then(r => r.ok ? r.json() : null)
+            .then(() => {
+                setExplotaciones(list => list.map(e => ({ ...e, is_active: e.id === eid })));
+                setExplKey(k => k + 1); // fuerza recarga de todas las pantallas con datos acotados
+            })
+            .catch(() => {});
+    }, []);
 
     // ── Boot: check session ──
     useEffect(() => {
@@ -92,6 +229,8 @@ function App() {
                 if (!expl?.titular) setShowOnboarding(true);
             })
             .catch(() => {});
+
+        reloadExplotaciones();
     }, [authState]);
 
     // PWA install prompt
@@ -513,7 +652,19 @@ function App() {
 
                 {/* Screen content */}
                 <main id="main-content" className={isTrialActive ? 'with-trial-strip' : ''}>
-                    {renderScreen()}
+                    {authState === 'authenticated' && !isAdmin && (
+                        <ExplotacionBar
+                            explotaciones={explotaciones}
+                            currentUser={currentUser}
+                            onSwitch={handleSwitchExpl}
+                            onReload={reloadExplotaciones}
+                            onNavigate={navigate}
+                            showToast={showMsg}
+                        />
+                    )}
+                    <div key={explKey}>
+                        {renderScreen()}
+                    </div>
                 </main>
             </div>
 

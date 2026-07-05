@@ -87,6 +87,7 @@ function ExplotacionModal({ data, onSave, onClose }) {
     };
 
     const FIELDS = [
+        ['nombre_corto','Nombre corto','text','Ej: Emilio, Robert…', 'Etiqueta breve para distinguir esta explotación en el selector superior.'],
         ['titular','Titular','text','Nombre completo'],
         ['nif','NIF / CIF','text','12345678A'],
         ['rega','Código REGA','text','ej: ES-CM-12345', 'Número de Registro de Explotaciones Agrícolas. Lo facilita la Consejería de Agricultura de tu comunidad autónoma.'],

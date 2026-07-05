@@ -211,12 +211,16 @@ def _data_table(col_headers, rows, col_widths, header_color, styles):
 # ─────────────────────────────────────────────────────────
 # SECTIONS
 # ─────────────────────────────────────────────────────────
-def _section_parcelas(conn, user_id, styles, story):
+def _section_parcelas(conn, user_id, styles, story, explotacion_id=None):
     from db import get_db
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("SELECT * FROM parcelas WHERE user_id=? AND activa=1 ORDER BY nombre_finca", (user_id,))
+    if explotacion_id:
+        c.execute("SELECT * FROM parcelas WHERE user_id=? AND explotacion_id=? AND activa=1 ORDER BY nombre_finca",
+                  (user_id, explotacion_id))
+    else:
+        c.execute("SELECT * FROM parcelas WHERE user_id=? AND activa=1 ORDER BY nombre_finca", (user_id,))
     rows = [dict(r) for r in c.fetchall()]
 
     story.append(_section_banner(
@@ -347,11 +351,13 @@ def _trat_table(rows, styles):
     return t
 
 
-def _section_tratamientos(conn, user_id, campana, styles, story):
+def _section_tratamientos(conn, user_id, campana, styles, story, explotacion_id=None):
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("""
+    extra = " AND t.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)" if explotacion_id else ""
+    params = (user_id, campana) + ((explotacion_id,) if explotacion_id else ())
+    c.execute(f"""
         SELECT t.*, p.nombre_finca,
                e.descripcion as equipo_nombre, e.num_registro_roma, e.fecha_iteaf,
                a.nombre as aplicador_nombre, a.num_ropo
@@ -359,9 +365,9 @@ def _section_tratamientos(conn, user_id, campana, styles, story):
         LEFT JOIN parcelas p ON t.parcela_id = p.id
         LEFT JOIN equipos e ON t.equipo_id = e.id
         LEFT JOIN aplicadores a ON t.aplicador_id = a.id
-        WHERE t.user_id=? AND t.campana=?
+        WHERE t.user_id=? AND t.campana=?{extra}
         ORDER BY t.fecha_aplicacion ASC
-    """, (user_id, campana))
+    """, params)
     rows = [dict(r) for r in c.fetchall()]
 
     story.append(PageBreak())
@@ -387,16 +393,18 @@ def _section_tratamientos(conn, user_id, campana, styles, story):
         styles['note']))
 
 
-def _section_fertilizacion(conn, user_id, campana, styles, story):
+def _section_fertilizacion(conn, user_id, campana, styles, story, explotacion_id=None):
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("""
+    extra = " AND f.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)" if explotacion_id else ""
+    params = (user_id, campana) + ((explotacion_id,) if explotacion_id else ())
+    c.execute(f"""
         SELECT f.*, p.nombre_finca FROM fertilizacion f
         LEFT JOIN parcelas p ON f.parcela_id = p.id
-        WHERE f.user_id=? AND f.campana=?
+        WHERE f.user_id=? AND f.campana=?{extra}
         ORDER BY f.fecha_aplicacion ASC
-    """, (user_id, campana))
+    """, params)
     rows = [dict(r) for r in c.fetchall()]
 
     story.append(PageBreak())
@@ -451,16 +459,18 @@ def _section_fertilizacion(conn, user_id, campana, styles, story):
         styles['note']))
 
 
-def _section_labores(conn, user_id, campana, styles, story):
+def _section_labores(conn, user_id, campana, styles, story, explotacion_id=None):
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("""
+    extra = " AND l.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)" if explotacion_id else ""
+    params = (user_id, campana) + ((explotacion_id,) if explotacion_id else ())
+    c.execute(f"""
         SELECT l.*, p.nombre_finca FROM labores l
         LEFT JOIN parcelas p ON l.parcela_id = p.id
-        WHERE l.user_id=? AND l.campana=?
+        WHERE l.user_id=? AND l.campana=?{extra}
         ORDER BY l.fecha ASC
-    """, (user_id, campana))
+    """, params)
     rows = [dict(r) for r in c.fetchall()]
 
     story.append(PageBreak())
@@ -499,17 +509,19 @@ def _section_labores(conn, user_id, campana, styles, story):
     story.append(Paragraph(f'Total labores: {len(rows)}', styles['note']))
 
 
-def _section_riego(conn, user_id, campana, styles, story):
+def _section_riego(conn, user_id, campana, styles, story, explotacion_id=None):
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("""
+    extra = " AND r.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)" if explotacion_id else ""
+    params = (user_id, campana) + ((explotacion_id,) if explotacion_id else ())
+    c.execute(f"""
         SELECT r.*, p.nombre_finca
         FROM riego r
         LEFT JOIN parcelas p ON r.parcela_id = p.id
-        WHERE r.user_id=? AND r.campana=? AND r.deleted_at IS NULL
+        WHERE r.user_id=? AND r.campana=? AND r.deleted_at IS NULL{extra}
         ORDER BY r.fecha ASC
-    """, (user_id, campana))
+    """, params)
     rows = [dict(r) for r in c.fetchall()]
 
     story.append(PageBreak())
@@ -556,16 +568,18 @@ def _section_riego(conn, user_id, campana, styles, story):
         styles['note']))
 
 
-def _section_cosecha(conn, user_id, campana, styles, story):
+def _section_cosecha(conn, user_id, campana, styles, story, explotacion_id=None):
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("""
+    extra = " AND co.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)" if explotacion_id else ""
+    params = (user_id, campana) + ((explotacion_id,) if explotacion_id else ())
+    c.execute(f"""
         SELECT co.*, p.nombre_finca FROM cosecha co
         LEFT JOIN parcelas p ON co.parcela_id = p.id
-        WHERE co.user_id=? AND co.campana=?
+        WHERE co.user_id=? AND co.campana=?{extra}
         ORDER BY co.fecha_inicio ASC
-    """, (user_id, campana))
+    """, params)
     rows = [dict(r) for r in c.fetchall()]
 
     story.append(PageBreak())
@@ -618,16 +632,18 @@ def _section_cosecha(conn, user_id, campana, styles, story):
         styles['note']))
 
 
-def _section_plan_abonado(conn, user_id, campana, styles, story):
+def _section_plan_abonado(conn, user_id, campana, styles, story, explotacion_id=None):
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("""
+    extra = " AND a.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)" if explotacion_id else ""
+    params = (user_id, campana) + ((explotacion_id,) if explotacion_id else ())
+    c.execute(f"""
         SELECT a.*, p.nombre_finca FROM abonado a
         LEFT JOIN parcelas p ON a.parcela_id = p.id
-        WHERE a.user_id=? AND a.campana=? AND a.deleted_at IS NULL
+        WHERE a.user_id=? AND a.campana=? AND a.deleted_at IS NULL{extra}
         ORDER BY a.fecha_preparacion ASC
-    """, (user_id, campana))
+    """, params)
     rows = [dict(r) for r in c.fetchall()]
 
     story.append(PageBreak())
@@ -847,16 +863,22 @@ def _cover_page(ex, campana, styles):
 # ─────────────────────────────────────────────────────────
 # MAIN ENTRY POINT
 # ─────────────────────────────────────────────────────────
-def export_pdf(user_id, campana='2025/2026'):
+def export_pdf(user_id, campana='2025/2026', explotacion_id=None):
     from db import get_db
     import sqlite3
 
     conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("SELECT * FROM explotacion WHERE user_id=? LIMIT 1", (user_id,))
+    if explotacion_id:
+        c.execute("SELECT * FROM explotacion WHERE id=? AND user_id=?", (explotacion_id, user_id))
+    else:
+        c.execute("SELECT * FROM explotacion WHERE user_id=? ORDER BY orden, id LIMIT 1", (user_id,))
     ex_row = c.fetchone()
     ex = dict(ex_row) if ex_row else {}
+    # Fallback: si no se pasó explotación, usar la primera del usuario
+    if explotacion_id is None and ex.get('id'):
+        explotacion_id = ex['id']
     titular = ex.get('titular') or 'Explotación'
 
     buf = io.BytesIO()
@@ -883,31 +905,31 @@ def export_pdf(user_id, campana='2025/2026'):
     story.append(PageBreak())
 
     # ── Section 1: Parcelas ──
-    _section_parcelas(conn, user_id, styles, story)
+    _section_parcelas(conn, user_id, styles, story, explotacion_id)
     story.append(Spacer(1, 10))
 
     # ── Section 2: Tratamientos ──
-    _section_tratamientos(conn, user_id, campana, styles, story)
+    _section_tratamientos(conn, user_id, campana, styles, story, explotacion_id)
     story.append(Spacer(1, 10))
 
     # ── Section 3: Fertilización ──
-    _section_fertilizacion(conn, user_id, campana, styles, story)
+    _section_fertilizacion(conn, user_id, campana, styles, story, explotacion_id)
     story.append(Spacer(1, 10))
 
     # ── Section 4: Labores ──
-    _section_labores(conn, user_id, campana, styles, story)
+    _section_labores(conn, user_id, campana, styles, story, explotacion_id)
     story.append(Spacer(1, 10))
 
     # ── Section 5: Riego ──
-    _section_riego(conn, user_id, campana, styles, story)
+    _section_riego(conn, user_id, campana, styles, story, explotacion_id)
     story.append(Spacer(1, 10))
 
     # ── Section 6: Cosecha ──
-    _section_cosecha(conn, user_id, campana, styles, story)
+    _section_cosecha(conn, user_id, campana, styles, story, explotacion_id)
     story.append(Spacer(1, 10))
 
     # ── Section 7: Plan Abonado ──
-    _section_plan_abonado(conn, user_id, campana, styles, story)
+    _section_plan_abonado(conn, user_id, campana, styles, story, explotacion_id)
     story.append(Spacer(1, 10))
 
     # ── Section 8: Compras ──
