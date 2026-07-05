@@ -16,8 +16,12 @@ Uso:
     # Contra producción (PostgreSQL): exporta DATABASE_URL antes de ejecutar.
     # Contra local (SQLite): exporta DB_PATH=/ruta/cuaderno.db (o usa el default).
 
+    # Por email (recomendado — resuelve el user_id solo):
+    python scripts/migrar_explotaciones_lourdes.py --email lourdelamo@gmail.com --dry-run
+    python scripts/migrar_explotaciones_lourdes.py --email lourdelamo@gmail.com          # aplica
+
+    # O por id directo:
     python scripts/migrar_explotaciones_lourdes.py --user-id 3 --dry-run
-    python scripts/migrar_explotaciones_lourdes.py --user-id 3          # aplica
 
 Los datos reales de Lourdes están en producción. Haz SIEMPRE una copia de la BD
 y ejecuta primero con --dry-run para revisar el mapeo antes de aplicar.
@@ -83,14 +87,27 @@ def get_or_create_explotacion(conn, uid, label, dry_run, cache):
 
 def main():
     ap = argparse.ArgumentParser(description="Migrar parcelas con prefijo a multi-explotación")
-    ap.add_argument('--user-id', type=int, required=True, help="ID del usuario (Lourdes)")
+    grp = ap.add_mutually_exclusive_group(required=True)
+    grp.add_argument('--user-id', type=int, help="ID del usuario a migrar")
+    grp.add_argument('--email', type=str, help="Email del usuario (se resuelve a user_id)")
     ap.add_argument('--dry-run', action='store_true', help="Solo mostrar el mapeo, sin escribir")
     args = ap.parse_args()
 
-    uid = args.user_id
     dry = args.dry_run
 
     conn = get_db()
+
+    # Resolver user_id a partir del email si se pasó así
+    if args.email:
+        row = one(conn, "SELECT id, nombre FROM users WHERE lower(email)=lower(?)", (args.email.strip(),))
+        if not row:
+            print(f"⚠ No existe ningún usuario con email {args.email!r}.")
+            conn.close()
+            return
+        uid = row['id']
+        print(f"Usuario: {row.get('nombre') or '(sin nombre)'} · email {args.email} · user_id={uid}")
+    else:
+        uid = args.user_id
     parcelas = dicts(conn, "SELECT id, nombre_finca, explotacion_id FROM parcelas WHERE user_id=? AND activa=1 ORDER BY nombre_finca", (uid,))
     if not parcelas:
         print(f"⚠ El usuario {uid} no tiene parcelas activas. Nada que migrar.")
