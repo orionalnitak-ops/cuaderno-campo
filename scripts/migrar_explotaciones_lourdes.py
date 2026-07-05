@@ -50,6 +50,22 @@ PREFIXES = [
     ('ROBERT', 'ROBERT'),
 ]
 
+# Nombre real de cada explotación (nombre_corto y titular provisional), según
+# la indicación de Lourdes. El NIF/REGA legal se rellena luego en Ajustes.
+NOMBRES = {
+    'L': 'Lourdes',
+    'D': 'Daniel',
+    'JL': 'José Luis',
+    'J': 'Juani',
+    'EMILIO': 'Emilio',
+    'ROBERT': 'Robert',
+}
+
+
+def nombre_explotacion(label):
+    """Nombre legible de la explotación a partir de la etiqueta de prefijo."""
+    return NOMBRES.get(label, label)
+
 
 def detectar(nombre):
     """Devuelve (etiqueta_prefijo, nombre_limpio) o (None, nombre) si no hay prefijo."""
@@ -63,24 +79,25 @@ def detectar(nombre):
 
 
 def get_or_create_explotacion(conn, uid, label, dry_run, cache):
-    """Devuelve el id de la explotación (user_id, nombre_corto=label), creándola si falta."""
+    """Devuelve el id de la explotación (nombre real derivado de `label`), creándola si falta."""
     if label in cache:
         return cache[label]
-    row = one(conn, "SELECT id FROM explotacion WHERE user_id=? AND nombre_corto=?", (uid, label))
+    nombre = nombre_explotacion(label)
+    row = one(conn, "SELECT id FROM explotacion WHERE user_id=? AND nombre_corto=?", (uid, nombre))
     if row:
         cache[label] = row['id']
         return row['id']
     if dry_run:
-        cache[label] = f"(nueva:{label})"
+        cache[label] = f"(nueva:{nombre})"
         return cache[label]
     # orden = número de explotaciones actuales (para ordenar el selector)
     n = one(conn, "SELECT COUNT(*) AS n FROM explotacion WHERE user_id=?", (uid,))
     orden = n['n'] if n else 0
     c = conn.cursor()
     c.execute("INSERT INTO explotacion (user_id, nombre_corto, titular, campana_activa, orden) VALUES (?,?,?,?,?)",
-              (uid, label, label, '2025/2026', orden))
+              (uid, nombre, nombre, '2025/2026', orden))
     conn.commit()
-    new = one(conn, "SELECT id FROM explotacion WHERE user_id=? AND nombre_corto=?", (uid, label))
+    new = one(conn, "SELECT id FROM explotacion WHERE user_id=? AND nombre_corto=?", (uid, nombre))
     cache[label] = new['id']
     return new['id']
 
@@ -135,13 +152,13 @@ def main():
     for _pid, _orig, _limpio, label, _eid in cambios:
         por_label.setdefault(label, 0)
         por_label[label] += 1
-    print("\nExplotaciones a crear/usar (nombre_corto → nº parcelas):")
+    print("\nExplotaciones a crear/usar (nombre → nº parcelas):")
     for label, n in sorted(por_label.items()):
-        print(f"  · {label:10s} → {n} parcelas")
+        print(f"  · {nombre_explotacion(label):12s} (prefijo {label}) → {n} parcelas")
 
     print("\nEjemplos de renombrado (nombre original → nombre limpio | explotación):")
     for _pid, orig, limpio, label, _eid in cambios[:15]:
-        print(f"  '{orig}'  →  '{limpio}'   [{label}]")
+        print(f"  '{orig}'  →  '{limpio}'   [{nombre_explotacion(label)}]")
     if len(cambios) > 15:
         print(f"  … y {len(cambios) - 15} más")
 
