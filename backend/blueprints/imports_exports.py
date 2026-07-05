@@ -8,7 +8,7 @@ import os
 import requests as req_lib
 from flask import Blueprint, jsonify, request, send_file
 from flask_login import login_required
-from helpers import get_uid, admin_required, requires_active_plan
+from helpers import get_uid, admin_required, requires_active_plan, get_active_explotacion_id
 from blueprints.sigpac import _sigpac_get, SIGPAC_BASE
 
 bp = Blueprint('imports_exports', __name__)
@@ -55,6 +55,7 @@ def _importar_parcelas_wb(wb, uid):
     # Cache de códigos provincia/municipio para no consultar SIGPAC en cada fila
     conn = get_db()
     cur = conn.cursor()
+    exp_id = get_active_explotacion_id(conn)
     _cache_prov = {}; _cache_mun = {}
 
     def _get_prov_cod(nombre_prov):
@@ -108,11 +109,11 @@ def _importar_parcelas_wb(wb, uid):
                 pass
 
         cur.execute('''INSERT INTO parcelas
-            (user_id, nombre_finca, comunidad, poligono, parcela_num, recinto,
+            (user_id, explotacion_id, nombre_finca, comunidad, poligono, parcela_num, recinto,
              provincia_cod, provincia_nombre, municipio_cod, municipio_nombre,
              superficie_ha, uso_sigpac, activa)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)''',
-            (uid, nombre, comunidad or None, poligono, parcela, recinto or None,
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1)''',
+            (uid, exp_id, nombre, comunidad or None, poligono, parcela, recinto or None,
              prov_cod, prov_nom, mun_cod, mun_nom, sup_ha, uso_sigpac))
         n_ok += 1
 
@@ -193,8 +194,9 @@ def route_export_excel():
     from exports import export_excel
     uid = get_uid()
     campana = request.args.get('campana', '2025/2026')
+    exp_id = get_active_explotacion_id()
     try:
-        return export_excel(uid, campana)
+        return export_excel(uid, campana, exp_id)
     except Exception as e:
         import traceback
         logger.error("export_excel uid=%s campana=%s error: %s\n%s", uid, campana, e, traceback.format_exc())
@@ -208,7 +210,8 @@ def route_export_pdf():
     from export_pdf import export_pdf
     uid = get_uid()
     campana = request.args.get('campana', '2025/2026')
-    return export_pdf(uid, campana)
+    exp_id = get_active_explotacion_id()
+    return export_pdf(uid, campana, exp_id)
 
 
 @bp.route('/api/backup/export')

@@ -47,6 +47,15 @@ def compute_plan_status(plan, trial_ends_at, role):
     return label, active
 
 
+def plan_allows_multi(plan, role):
+    """True si el usuario puede tener varias explotaciones (feature del plan `pro`).
+
+    El plan `basic` (9,99 €) es mono-explotación; `pro` (14,99 €) es multi.
+    `trial` se queda en mono para forzar el upsell. Admin siempre multi.
+    """
+    return role == 'admin' or plan == 'pro'
+
+
 class User(UserMixin):
     def __init__(self, id, email, nombre, role, active,
                  plan='trial', trial_ends_at=None, subscription_ends_at=None):
@@ -68,6 +77,10 @@ class User(UserMixin):
         """Estado legible para el frontend."""
         label, _ = compute_plan_status(self.plan, self.trial_ends_at, self.role)
         return label
+
+    def plan_allows_multi(self):
+        """True si el plan permite varias explotaciones (feature `pro`)."""
+        return plan_allows_multi(self.plan, self.role)
 
 
 @login_manager.user_loader

@@ -87,6 +87,7 @@ function ExplotacionModal({ data, onSave, onClose }) {
     };
 
     const FIELDS = [
+        ['nombre_corto','Nombre corto','text','Ej: Emilio, Robert…', 'Etiqueta breve para distinguir esta explotación en el selector superior.'],
         ['titular','Titular','text','Nombre completo'],
         ['nif','NIF / CIF','text','12345678A'],
         ['rega','Código REGA','text','ej: ES-CM-12345', 'Número de Registro de Explotaciones Agrícolas. Lo facilita la Consejería de Agricultura de tu comunidad autónoma.'],
@@ -305,6 +306,7 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
     const [showApModal, setShowApModal]   = useState(false);
     const [editingEq, setEditingEq] = useState(null);
     const [editingAp, setEditingAp] = useState(null);
+    const [showQuickStart, setShowQuickStart] = useState(false);
 
     useEffect(() => {
         fetch('/api/equipos').then(r => r.json()).then(d => setEquipos(Array.isArray(d) ? d : []));
@@ -381,8 +383,23 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
                 ))}
             </div>
 
-            {/* ── Botón soporte permanente ── */}
-            <div style={{ padding: '12px 16px 0' }}>
+            {/* ── Botones soporte + ayuda permanentes ── */}
+            <div style={{ padding: '12px 16px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <button
+                    onClick={() => setShowQuickStart(true)}
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        background: 'linear-gradient(135deg,#eff6ff,#dbeafe)',
+                        border: '1.5px solid #93c5fd',
+                        borderRadius: 12, padding: '10px 14px',
+                        color: '#1e40af', fontSize: '0.85rem', fontWeight: 600,
+                        cursor: 'pointer', textAlign: 'left', width: '100%',
+                    }}
+                >
+                    <span style={{ fontSize: 20 }}>📖</span>
+                    <span style={{ flex: 1 }}>Ver guía de inicio</span>
+                    <span style={{ fontSize: 16, opacity: 0.6 }}>→</span>
+                </button>
                 <a
                     href={`mailto:soporte@tualiado.es?subject=${encodeURIComponent('[Cuaderno] Problema — ' + (currentUser?.nombre || currentUser?.email || ''))}&body=${encodeURIComponent('Hola,\n\nTengo un problema con...\n\n\n--- Datos técnicos (no borres) ---\nUsuario: ' + (currentUser?.email || '') + '\nPlan: ' + (currentUser?.plan || 'trial') + '\nFecha: ' + new Date().toLocaleDateString('es-ES'))}`}
                     style={{
@@ -637,6 +654,13 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
                     aplicador={editingAp ? aplicadores.find(a => a.id === editingAp) : {}}
                     onSave={saveAplicador}
                     onClose={() => { setShowApModal(false); setEditingAp(null); }}
+                />
+            )}
+
+            {showQuickStart && (
+                <QuickStartModal
+                    onClose={() => setShowQuickStart(false)}
+                    onNavigate={onNavigate}
                 />
             )}
         </div>
