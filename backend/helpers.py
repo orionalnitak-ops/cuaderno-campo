@@ -4,6 +4,7 @@ helpers.py — Decoradores y funciones de utilidad compartidas entre blueprints.
 from functools import wraps
 from flask import jsonify, session
 from flask_login import current_user
+from db import get_db, one
 
 
 def admin_required(f):
@@ -42,3 +43,33 @@ def _to_real(v):
         return float(str(v).replace(',', '.'))
     except (ValueError, TypeError):
         return None
+
+
+def resolve_default_explotacion(conn, uid):
+    """Devuelve el id de la explotación por defecto del usuario (menor orden/id), o None."""
+    row = one(conn, "SELECT id FROM explotacion WHERE user_id=? ORDER BY orden, id LIMIT 1", (uid,))
+    return row['id'] if row else None
+
+
+def get_active_explotacion_id(conn=None):
+    """Devuelve el id de la explotación activa para el usuario efectivo.
+
+    - Lee `session['active_explotacion_id']` y valida que pertenece al usuario.
+    - Si no hay selección válida (o el usuario es mono-explotación), devuelve la
+      explotación por defecto del usuario.
+    - Devuelve None si el usuario aún no tiene ninguna explotación.
+    """
+    uid = get_uid()
+    own_conn = conn is None
+    if own_conn:
+        conn = get_db()
+    try:
+        sel = session.get('active_explotacion_id')
+        if sel:
+            valid = one(conn, "SELECT id FROM explotacion WHERE id=? AND user_id=?", (sel, uid))
+            if valid:
+                return valid['id']
+        return resolve_default_explotacion(conn, uid)
+    finally:
+        if own_conn:
+            conn.close()

@@ -4,7 +4,7 @@ blueprints/parcelas.py — /api/parcelas/* y /api/cultivos-campana/*
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, one, dicts, is_pac_eligible
-from helpers import get_uid, _to_real
+from helpers import get_uid, _to_real, get_active_explotacion_id
 from blueprints.ia import _recalcular_patrones
 
 bp = Blueprint('parcelas', __name__)
@@ -17,7 +17,8 @@ def manage_parcelas():
     conn = get_db()
 
     if request.method == 'GET':
-        all_p = dicts(conn, "SELECT * FROM parcelas WHERE user_id=? AND activa=1 ORDER BY nombre_finca", (uid,))
+        exp_id = get_active_explotacion_id(conn)
+        all_p = dicts(conn, "SELECT * FROM parcelas WHERE user_id=? AND explotacion_id=? AND activa=1 ORDER BY nombre_finca", (uid, exp_id))
         pac_only = request.args.get('pac_only', 'false').lower() == 'true'
         if pac_only:
             all_p = [p for p in all_p if is_pac_eligible(p.get('uso_sigpac', ''))]
@@ -36,16 +37,17 @@ def manage_parcelas():
         conn.close()
         return jsonify({"error": "La superficie debe ser mayor que cero"}), 400
 
+    exp_id = get_active_explotacion_id(conn)
     c = conn.cursor()
     c.execute('''
         INSERT INTO parcelas (
-            user_id, comunidad, provincia_cod, provincia_nombre,
+            user_id, explotacion_id, comunidad, provincia_cod, provincia_nombre,
             municipio_cod, municipio_nombre, nombre_finca,
             poligono, parcela_num, recinto, superficie_ha, uso_sigpac,
             sistema_explotacion, masa_agua_cercana, notas
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
-        uid, data.get('comunidad'), data.get('provincia_cod'), data.get('provincia_nombre'),
+        uid, exp_id, data.get('comunidad'), data.get('provincia_cod'), data.get('provincia_nombre'),
         data.get('municipio_cod'), data.get('municipio_nombre'), data.get('nombre_finca'),
         data.get('poligono'), data.get('parcela_num'), data.get('recinto'),
         sup, data.get('uso_sigpac'),
