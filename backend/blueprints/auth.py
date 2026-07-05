@@ -91,6 +91,7 @@ def auth_register():
         "plan": user.plan_label(), "plan_raw": user.plan,
         "trial_ends_at": (te.isoformat() if hasattr(te, 'isoformat') else str(te)) if te else None,
         "plan_active": user.plan_is_active(), "impersonating": None,
+        "allows_multi": user.plan_allows_multi(),
     }), 201
 
 
@@ -127,6 +128,7 @@ def auth_me():
         "plan_raw": current_user.plan,
         "trial_ends_at": trial_ends,
         "plan_active": current_user.plan_is_active(),
+        "allows_multi": current_user.plan_allows_multi(),
     })
 
 
