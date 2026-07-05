@@ -11,6 +11,7 @@ COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
+COPY scripts/ ./scripts/
 # Reemplazar JSX originales con JS pre-compilados
 COPY --from=js-build /build/dist/ ./frontend/dist/
 WORKDIR /app/backend
