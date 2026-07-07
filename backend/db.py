@@ -662,7 +662,8 @@ def init_db():
             trial_ends_at TIMESTAMP,
             subscription_ends_at TIMESTAMP,
             stripe_customer_id TEXT,
-            stripe_subscription_id TEXT
+            stripe_subscription_id TEXT,
+            unlimited_explotaciones INTEGER DEFAULT 0
         )
     ''')
     for col, typ in [
@@ -671,6 +672,7 @@ def init_db():
         ('subscription_ends_at', 'TIMESTAMP'),
         ('stripe_customer_id', 'TEXT'),
         ('stripe_subscription_id', 'TEXT'),
+        ('unlimited_explotaciones', 'INTEGER DEFAULT 0'),
     ]:
         _add_col(c, 'users', col, typ)
     # Admin accounts never expire

@@ -80,10 +80,16 @@ def explotaciones():
     # POST → crear nueva explotación
     count = one(conn, "SELECT COUNT(*) AS n FROM explotacion WHERE user_id=?", (uid,))
     n = count['n'] if count else 0
-    if n >= 1 and not current_user.plan_allows_multi():
+    limit = current_user.explotaciones_limit()
+    if limit is not None and n >= limit:
         conn.close()
-        return jsonify({"error": "upgrade_required", "feature": "multi_explotacion",
-                        "message": "El plan Multi-explotación permite gestionar varios titulares. Sube a Pro (14,99 €)."}), 403
+        if limit <= 1:
+            # basic/trial: mono-explotación → upsell a Pro
+            return jsonify({"error": "upgrade_required", "feature": "multi_explotacion",
+                            "message": "El plan Multi-explotación permite gestionar varios titulares. Sube a Pro (14,99 €)."}), 403
+        # pro en su tope: no hay upsell, es límite del plan
+        return jsonify({"error": "limit_reached", "feature": "multi_explotacion", "limit": limit,
+                        "message": f"Has alcanzado el máximo de {limit} explotaciones de tu plan. Contacta con soporte si necesitas más."}), 403
 
     data = request.json or {}
     cols = ['user_id'] + _EXPL_FIELDS + ['orden']

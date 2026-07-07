@@ -85,6 +85,32 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
         loadUsers();
     };
 
+    const handleToggleUnlimited = async (uid, nuevoValor) => {
+        try {
+            await fetch(`/api/admin/users/${uid}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ unlimited_explotaciones: nuevoValor }),
+                credentials: 'include',
+            });
+            showToast(nuevoValor ? '⭐ Súper usuario: explotaciones ilimitadas' : 'Explotaciones limitadas al plan');
+            loadUsers();
+        } catch { showToast('Error al cambiar el permiso'); }
+    };
+
+    const handleChangePlan = async (uid, nuevoPlan) => {
+        try {
+            await fetch(`/api/admin/users/${uid}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ plan: nuevoPlan }),
+                credentials: 'include',
+            });
+            showToast(`Plan cambiado a ${nuevoPlan}`);
+            loadUsers();
+        } catch { showToast('Error al cambiar el plan'); }
+    };
+
     const handlePurgeUser = async (uid, nombre) => {
         try {
             const res = await fetch(`/api/admin/users/${uid}/delete-permanent`, {
@@ -123,6 +149,7 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
     const ROLE_BG    = { admin: 'rgba(120,53,15,0.10)', agricultor: 'rgba(6,95,70,0.10)' };
 
     const PLAN_CHIP = {
+        premium: { bg:'#fef3c7', color:'#92400e', label:'🟠 PREMIUM' },
         pro:     { bg:'#ede9fe', color:'#5b21b6', label:'🟣 PRO' },
         basic:   { bg:'#dcfce7', color:'#065f46', label:'🟢 BÁSICO' },
         trial:   { bg:'#fef3c7', color:'#78350f', label:'🟡 PRUEBA' },
@@ -364,6 +391,35 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
                                         onClick={() => handleExportPdf(u.id, u.nombre)}
                                     >
                                         📄 PDF
+                                    </button>
+                                )}
+                                {u.active && u.role !== 'admin' && (
+                                    <select
+                                        value={u.plan || 'trial'}
+                                        onChange={e => handleChangePlan(u.id, e.target.value)}
+                                        title="Cambiar plan del usuario"
+                                        style={{ fontSize:'0.82rem', minHeight:40, padding:'8px 12px',
+                                            borderRadius:'var(--radius-lg)', border:'1px solid var(--outline-variant)',
+                                            background:'var(--surface-container-lowest)', color:'var(--on-background)',
+                                            fontFamily:'var(--font-body)', cursor:'pointer' }}
+                                    >
+                                        <option value="trial">🟡 Prueba</option>
+                                        <option value="basic">🟢 Básico</option>
+                                        <option value="pro">🟣 Pro</option>
+                                        <option value="premium">🟠 Premium</option>
+                                    </select>
+                                )}
+                                {u.active && u.role !== 'admin' && (
+                                    <button
+                                        className="btn-ghost"
+                                        style={{ fontSize:'0.82rem', minHeight:40, padding:'10px 14px',
+                                            color: u.unlimited_explotaciones ? '#b45309' : 'var(--on-surface-variant)',
+                                            borderColor: u.unlimited_explotaciones ? 'rgba(180,83,9,0.4)' : undefined,
+                                            fontWeight: u.unlimited_explotaciones ? 700 : 500 }}
+                                        onClick={() => handleToggleUnlimited(u.id, u.unlimited_explotaciones ? 0 : 1)}
+                                        title="Súper usuario: explotaciones ilimitadas (exento del tope del plan)"
+                                    >
+                                        {u.unlimited_explotaciones ? '⭐ Ilimitado' : '☆ Limitar expl.'}
                                     </button>
                                 )}
                                 {u.active && u.role !== 'admin' && (

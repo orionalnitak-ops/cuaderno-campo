@@ -28,7 +28,7 @@ def compute_plan_status(plan, trial_ends_at, role):
     def _is_active():
         if role == 'admin':
             return True
-        if plan in ('basic', 'pro'):
+        if plan in ('basic', 'pro', 'premium'):
             return True
         if plan == 'trial' and trial_ends_at:
             ends = trial_ends_at
@@ -38,7 +38,7 @@ def compute_plan_status(plan, trial_ends_at, role):
         return False
 
     active = _is_active()
-    if plan in ('basic', 'pro'):
+    if plan in ('basic', 'pro', 'premium'):
         label = plan
     elif plan == 'trial':
         label = 'trial' if active else 'expired'
@@ -47,18 +47,40 @@ def compute_plan_status(plan, trial_ends_at, role):
     return label, active
 
 
-def plan_allows_multi(plan, role):
-    """True si el usuario puede tener varias explotaciones (feature del plan `pro`).
+# Nº máximo de explotaciones por plan. Basic/trial → 1 (mono).
+# Admin, plan `premium` y súper usuarios (unlimited_explotaciones) → sin tope.
+PRO_EXPLOTACIONES_LIMIT = 5
 
-    El plan `basic` (9,99 €) es mono-explotación; `pro` (14,99 €) es multi.
-    `trial` se queda en mono para forzar el upsell. Admin siempre multi.
+
+def explotaciones_limit(plan, role, unlimited=False):
+    """Nº máximo de explotaciones permitidas, o None si es ilimitado.
+
+    - Admin, plan `premium` y súper usuarios (`unlimited_explotaciones`) → None (sin tope).
+    - `pro` (14,99 €) → PRO_EXPLOTACIONES_LIMIT titulares.
+    - `basic` (9,99 €) y `trial` → 1 (mono-explotación, fuerza el upsell).
     """
-    return role == 'admin' or plan == 'pro'
+    if role == 'admin' or unlimited or plan == 'premium':
+        return None
+    if plan == 'pro':
+        return PRO_EXPLOTACIONES_LIMIT
+    return 1
+
+
+def plan_allows_multi(plan, role, unlimited=False):
+    """True si el usuario puede tener más de una explotación.
+
+    El plan `basic` (9,99 €) es mono-explotación; `pro` (14,99 €) es multi
+    (hasta PRO_EXPLOTACIONES_LIMIT). `trial` se queda en mono para forzar el
+    upsell. Admin y súper usuarios siempre multi.
+    """
+    limit = explotaciones_limit(plan, role, unlimited)
+    return limit is None or limit > 1
 
 
 class User(UserMixin):
     def __init__(self, id, email, nombre, role, active,
-                 plan='trial', trial_ends_at=None, subscription_ends_at=None):
+                 plan='trial', trial_ends_at=None, subscription_ends_at=None,
+                 unlimited_explotaciones=0):
         self.id = id
         self.email = email
         self.nombre = nombre
@@ -67,6 +89,7 @@ class User(UserMixin):
         self.plan = plan
         self.trial_ends_at = trial_ends_at
         self.subscription_ends_at = subscription_ends_at
+        self.unlimited_explotaciones = bool(unlimited_explotaciones)
 
     def plan_is_active(self):
         """True si el usuario puede escribir datos (trial vigente, basic o pro)."""
@@ -80,7 +103,11 @@ class User(UserMixin):
 
     def plan_allows_multi(self):
         """True si el plan permite varias explotaciones (feature `pro`)."""
-        return plan_allows_multi(self.plan, self.role)
+        return plan_allows_multi(self.plan, self.role, self.unlimited_explotaciones)
+
+    def explotaciones_limit(self):
+        """Nº máximo de explotaciones para este usuario, o None si ilimitado."""
+        return explotaciones_limit(self.plan, self.role, self.unlimited_explotaciones)
 
 
 @login_manager.user_loader
@@ -91,7 +118,8 @@ def load_user(user_id):
     if not u:
         return None
     return User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
-                u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'))
+                u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
+                u.get('unlimited_explotaciones', 0))
 
 
 @login_manager.unauthorized_handler

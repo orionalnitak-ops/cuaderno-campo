@@ -13,11 +13,17 @@ bp = Blueprint('stripe_bp', __name__)
 STRIPE_SECRET_KEY      = os.environ.get('STRIPE_SECRET_KEY', '')
 STRIPE_WEBHOOK_SECRET  = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
 STRIPE_PRICES = {
-    ('basic', 'monthly'): os.environ.get('STRIPE_PRICE_BASIC_MONTHLY', ''),
-    ('basic', 'yearly'):  os.environ.get('STRIPE_PRICE_BASIC_YEARLY', ''),
-    ('pro',   'monthly'): os.environ.get('STRIPE_PRICE_PRO_MONTHLY', ''),
-    ('pro',   'yearly'):  os.environ.get('STRIPE_PRICE_PRO_YEARLY', ''),
+    ('basic',   'monthly'): os.environ.get('STRIPE_PRICE_BASIC_MONTHLY', ''),
+    ('basic',   'yearly'):  os.environ.get('STRIPE_PRICE_BASIC_YEARLY', ''),
+    ('pro',     'monthly'): os.environ.get('STRIPE_PRICE_PRO_MONTHLY', ''),
+    ('pro',     'yearly'):  os.environ.get('STRIPE_PRICE_PRO_YEARLY', ''),
+    # Premium es solo anual (200 €/año de momento). Crear el Price en Stripe
+    # y exponerlo en STRIPE_PRICE_PREMIUM_YEARLY.
+    ('premium', 'yearly'):  os.environ.get('STRIPE_PRICE_PREMIUM_YEARLY', ''),
 }
+
+# Planes que conceden acceso de pago (usados para validar metadata del webhook).
+_PLANES_PAGO = ('basic', 'pro', 'premium')
 
 
 def _stripe():
@@ -30,7 +36,7 @@ def _stripe():
 
 
 def _plan_from_price(stripe_price_id):
-    """Identifica el plan ('basic'/'pro') a partir del Price ID de Stripe."""
+    """Identifica el plan ('basic'/'pro'/'premium') a partir del Price ID de Stripe."""
     for (plan, _), pid in STRIPE_PRICES.items():
         if pid and pid == stripe_price_id:
             return plan
@@ -180,7 +186,7 @@ def stripe_webhook():
             plan_meta   = session_obj.get('metadata', {}).get('plan')
             sub_id      = session_obj.get('subscription')
             if uid_meta and customer:
-                if plan_meta in ('basic', 'pro'):
+                if plan_meta in _PLANES_PAGO:
                     import datetime as _dt
                     sub_end = (_dt.datetime.utcnow() + _dt.timedelta(days=365)).strftime('%Y-%m-%d %H:%M:%S')
                     conn.execute(

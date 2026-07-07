@@ -35,7 +35,13 @@ function NuevaExplotacionModal({ onClose, onCreated, onUpsell, showToast }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ nombre_corto: nombreCorto.trim(), titular: titular.trim() }),
             });
-            if (r.status === 403) { onClose(); onUpsell && onUpsell(); return; }
+            if (r.status === 403) {
+                const err = await r.json().catch(() => ({}));
+                onClose();
+                if (err.error === 'limit_reached') { showToast && showToast(err.message || 'Has alcanzado el máximo de explotaciones de tu plan.'); }
+                else { onUpsell && onUpsell(); }
+                return;
+            }
             const data = await r.json();
             if (data && data.id) { onCreated && onCreated(data.id); onClose(); }
             else { showToast && showToast(data.error || 'No se pudo crear'); }
