@@ -124,6 +124,7 @@ function ExplotacionBar({ explotaciones, currentUser, onSwitch, onReload, onNavi
                     borderRadius:'var(--radius-full, 999px)', padding:'7px 14px', fontSize:'0.8rem', fontWeight:700, cursor:'pointer',
                 }}>⭐ Multi-explotación</button>
             )}
+            <HelpButton screenId="explotacion" style={{ background:'rgba(0,0,0,0.06)', color:'var(--primary, #00694c)', width:28, height:28, fontSize:'0.8rem' }} />
             {showNew && (
                 <NuevaExplotacionModal
                     onClose={() => setShowNew(false)}
