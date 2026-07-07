@@ -35,6 +35,10 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
 
     // ── Estado principal ──
     const [explot, setExplot]           = useState(null);
+    // Municipio del TITULAR de la cuenta (explotación principal): el tiempo local
+    // se ancla siempre aquí, no a la explotación activa del selector.
+    const [ownerMun, setOwnerMun]       = useState(null);   // null = aún cargando
+    const [ownerLoaded, setOwnerLoaded] = useState(false);
     const [weather, setWeather]         = useState(null);
     const [wxState, setWxState]         = useState('idle');   // idle|loading|ok|error
     const [wxView, setWxView]           = useState('dias');   // 'dias' | 'horas'
@@ -100,6 +104,21 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
             .then(r => r.ok ? r.json() : {})
             .then(d => setExplot(d || {}))
             .catch(() => setExplot({}));
+    }, []);
+
+    // ── Municipio del titular de la cuenta (explotación principal) ──
+    // /api/explotaciones ordena por (orden, id): la primera fila es la explotación
+    // por defecto del titular. El tiempo local se ancla aquí, sea cual sea la
+    // explotación activa en el selector.
+    useEffect(() => {
+        fetch('/api/explotaciones', { credentials: 'include' })
+            .then(r => r.ok ? r.json() : [])
+            .then(list => {
+                const principal = Array.isArray(list) && list.length ? list[0] : null;
+                setOwnerMun((principal?.municipio || '').trim() || null);
+            })
+            .catch(() => setOwnerMun(null))
+            .finally(() => setOwnerLoaded(true));
     }, []);
 
     // ── Meteorología (Open-Meteo) ──
@@ -253,12 +272,12 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     }, []);
 
     useEffect(() => {
-        if (explot === null) return;           // aún cargando
-        if (!explot?.municipio?.trim()) { setWxState('error'); return; }
-        loadWeather(explot.municipio);
-        const id = setInterval(() => loadWeather(explot.municipio), 10 * 60 * 1000);
+        if (!ownerLoaded) return;              // aún cargando explotación principal
+        if (!ownerMun) { setWxState('error'); return; }
+        loadWeather(ownerMun);
+        const id = setInterval(() => loadWeather(ownerMun), 10 * 60 * 1000);
         return () => clearInterval(id);
-    }, [explot, loadWeather]);
+    }, [ownerLoaded, ownerMun, loadWeather]);
 
     // ── Helpers meteorología ──
     const wxIcon = (code) => {
@@ -1024,7 +1043,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                                 <span style={{ fontSize: '0.62rem', fontWeight: 600, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                                     📍 {weather.municipio}
                                 </span>
-                                <button onClick={() => loadWeather(explot?.municipio)} style={{
+                                <button onClick={() => loadWeather(ownerMun)} style={{
                                     background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)',
                                     fontSize: '0.65rem', cursor: 'pointer', padding: '2px 4px',
                                     fontFamily: 'var(--font-body)',
