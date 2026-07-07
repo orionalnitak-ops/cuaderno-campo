@@ -330,13 +330,15 @@ function App() {
     const handleSwitchBack = useCallback(async () => {
         await fetch('/api/admin/switch-back', { method: 'POST', credentials: 'include' });
         setCurrentUser(u => ({ ...u, impersonating: null }));
+        reloadExplotaciones();   // volver a las (vacías) del admin
         setScreen('admin');
-    }, []);
+    }, [reloadExplotaciones]);
 
     const handleSwitchUser = useCallback((targetUser) => {
         setCurrentUser(u => ({ ...u, impersonating: { id: targetUser.id, email: targetUser.email, nombre: targetUser.nombre } }));
+        reloadExplotaciones();   // la sesión ya tiene impersonate_id → trae las del agricultor
         setScreen('inicio');
-    }, []);
+    }, [reloadExplotaciones]);
 
     const handleManualSync = useCallback(async () => {
         if (!navigator.onLine) { showMsg('Sin conexión — conéctate a internet para sincronizar'); return; }
@@ -653,7 +655,7 @@ function App() {
 
                 {/* Screen content */}
                 <main id="main-content" className={isTrialActive ? 'with-trial-strip' : ''}>
-                    {authState === 'authenticated' && !isAdmin && (
+                    {authState === 'authenticated' && (!isAdmin || isImpersonating) && (
                         <ExplotacionBar
                             explotaciones={explotaciones}
                             currentUser={currentUser}
