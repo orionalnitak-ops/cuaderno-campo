@@ -30,7 +30,8 @@ def auth_login():
         return jsonify({"error": "Email o contraseña incorrectos"}), 401
 
     user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
-                u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'))
+                u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
+                u.get('unlimited_explotaciones', 0))
     login_user(user, remember=True)
     try:
         from blueprints.ia import _generar_alertas
@@ -83,7 +84,8 @@ def auth_register():
     u = one(conn, "SELECT * FROM users WHERE id=?", (new_id,))
     conn.close()
     user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
-                u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'))
+                u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
+                u.get('unlimited_explotaciones', 0))
     login_user(user, remember=True)
     te = user.trial_ends_at
     return jsonify({
@@ -92,6 +94,7 @@ def auth_register():
         "trial_ends_at": (te.isoformat() if hasattr(te, 'isoformat') else str(te)) if te else None,
         "plan_active": user.plan_is_active(), "impersonating": None,
         "allows_multi": user.plan_allows_multi(),
+        "explotaciones_limit": user.explotaciones_limit(),
     }), 201
 
 
@@ -129,6 +132,7 @@ def auth_me():
         "trial_ends_at": trial_ends,
         "plan_active": current_user.plan_is_active(),
         "allows_multi": current_user.plan_allows_multi(),
+        "explotaciones_limit": current_user.explotaciones_limit(),
     })
 
 

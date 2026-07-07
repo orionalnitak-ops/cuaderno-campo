@@ -12,16 +12,16 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
 
     const planLabel    = currentUser?.plan;
     const planActive   = currentUser?.plan_active !== false;
-    const hasActiveSub = planLabel === 'basic' || planLabel === 'pro';
+    const hasActiveSub = planLabel === 'basic' || planLabel === 'pro' || planLabel === 'premium';
 
-    const checkout = async (plan) => {
+    const checkout = async (plan, billingOverride) => {
         setLoading(plan);
         try {
             const r = await fetch('/api/stripe/checkout', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify({ plan, billing }),
+                body: JSON.stringify({ plan, billing: billingOverride || billing }),
             });
             const d = await r.json();
             if (d.url) { window.location.href = d.url; }
@@ -72,7 +72,28 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                 'Todo lo del plan Básico incluido',
                 'Integración SIEX — API FEGA, obligatoria desde 2027',
                 'Panel asesor — gestiona todos tus clientes',
+                'Hasta 5 explotaciones',
                 'Soporte prioritario',
+            ],
+            missing: [],
+        },
+        {
+            id: 'premium',
+            name: 'Premium',
+            tagline: 'Para asesores y grandes explotaciones',
+            popular: false,
+            annualOnly: true,
+            // De momento 200 €/año. Ajusta el precio y crea el Price en Stripe
+            // (STRIPE_PRICE_PREMIUM_YEARLY).
+            monthly: { price: '200', unit: '/año', original: null },
+            yearly:  { price: '200', unit: '/año', original: null },
+            color: '#b45309',
+            gradient: 'linear-gradient(135deg, #92400e, #b45309)',
+            // TODO: detallar las ventajas exactas del plan Premium.
+            features: [
+                'Todo lo del plan Pro incluido',
+                'Explotaciones ilimitadas',
+                '(Próximamente: más ventajas Premium)',
             ],
             missing: [],
         },
@@ -117,7 +138,7 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
                     boxSizing: 'border-box',
                 }}>
-                    <span>✅ Plan {planLabel === 'basic' ? 'Básico' : 'Pro'} activo. Gestiona facturación y cancelación desde el portal.</span>
+                    <span>✅ Plan {planLabel === 'basic' ? 'Básico' : planLabel === 'premium' ? 'Premium' : 'Pro'} activo. Gestiona facturación y cancelación desde el portal.</span>
                     <button onClick={openPortal} disabled={!!loading} style={{
                         background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8,
                         padding: '7px 14px', fontWeight: 700, fontSize: '0.78rem',
@@ -184,7 +205,8 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                 alignItems: isWide ? 'flex-start' : 'stretch',
             }}>
                 {PLANS.map(plan => {
-                    const info = billing === 'yearly' ? plan.yearly : plan.monthly;
+                    const info = plan.annualOnly ? plan.yearly : (billing === 'yearly' ? plan.yearly : plan.monthly);
+                    const showDiscount = billing === 'yearly' && !plan.annualOnly;
                     const active = planLabel === plan.id;
                     const isPopular = plan.popular;
 
@@ -226,13 +248,20 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                                         <div style={{ fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#9ca3af', marginBottom: 4 }}>Plan</div>
                                         <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.65rem', fontWeight: 800, color: '#111827', lineHeight: 1 }}>{plan.name}</div>
                                     </div>
-                                    {billing === 'yearly' && (
+                                    {showDiscount && (
                                         <div style={{
                                             background: plan.id === 'basic' ? '#dcfce7' : '#ede9fe',
                                             color: plan.color,
                                             borderRadius: 100, padding: '4px 11px',
                                             fontSize: '0.72rem', fontWeight: 800,
                                         }}>−17 %</div>
+                                    )}
+                                    {plan.annualOnly && (
+                                        <div style={{
+                                            background: '#fef3c7', color: plan.color,
+                                            borderRadius: 100, padding: '4px 11px',
+                                            fontSize: '0.72rem', fontWeight: 800,
+                                        }}>Solo anual</div>
                                     )}
                                 </div>
 
@@ -263,7 +292,7 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                                 {/* Botón CTA */}
                                 {!active ? (
                                     <button
-                                        onClick={() => checkout(plan.id)}
+                                        onClick={() => checkout(plan.id, plan.annualOnly ? 'yearly' : undefined)}
                                         disabled={!!loading}
                                         style={{
                                             width: '100%', minHeight: 50,
