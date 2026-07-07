@@ -57,7 +57,7 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                 'Exportación Excel y PDF oficial',
                 'Widget meteorológico',
             ],
-            missing: ['Integración SIEX (disponible en Pro)'],
+            missing: ['Compatibilidad SIEX avanzada (disponible en Pro)'],
         },
         {
             id: 'pro',
@@ -70,7 +70,7 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
             gradient: 'linear-gradient(135deg, #3730a3, #4f46e5)',
             features: [
                 'Todo lo del plan Básico incluido',
-                'Integración SIEX — API FEGA, obligatoria desde 2027',
+                'Compatible con SIEX — preparado para la obligatoriedad de 2027',
                 'Panel asesor — gestiona todos tus clientes',
                 'Hasta 5 explotaciones',
                 'Soporte prioritario',
