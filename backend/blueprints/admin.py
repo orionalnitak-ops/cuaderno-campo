@@ -8,6 +8,7 @@ import bcrypt
 logger = logging.getLogger(__name__)
 
 _ROLES_VALIDOS = frozenset({'agricultor', 'admin'})
+_PLANES_VALIDOS = frozenset({'trial', 'basic', 'pro', 'premium'})
 _INVALIDO = object()  # centinela único — distinguible de None y de valores legítimos
 
 from flask import Blueprint, jsonify, request, session
@@ -25,7 +26,7 @@ bp = Blueprint('admin', __name__)
 def admin_users():
     conn = get_db()
     if request.method == 'GET':
-        users = dicts(conn, "SELECT id,email,nombre,role,active,created_at,plan,trial_ends_at,subscription_ends_at FROM users ORDER BY created_at DESC")
+        users = dicts(conn, "SELECT id,email,nombre,role,active,created_at,plan,trial_ends_at,subscription_ends_at,unlimited_explotaciones FROM users ORDER BY created_at DESC")
         for u in users:
             uid = u['id']
             t = one(conn, "SELECT COUNT(*) as n FROM tratamientos WHERE user_id=?", (uid,))
@@ -90,6 +91,8 @@ def admin_user(uid):
         'nombre': ('nombre=?', lambda v: str(v).strip()[:255] if isinstance(v, str) and str(v).strip() else _INVALIDO),
         'role':   ('role=?',   lambda v: v if v in _ROLES_VALIDOS else _INVALIDO),
         'active': ('active=?', lambda v: 1 if v else 0),
+        'plan':   ('plan=?',   lambda v: v if v in _PLANES_VALIDOS else _INVALIDO),
+        'unlimited_explotaciones': ('unlimited_explotaciones=?', lambda v: 1 if v else 0),
     }
     sets, vals = [], []
     for campo, (fragmento_sql, sanitizar) in _CAMPOS.items():
