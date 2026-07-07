@@ -22,6 +22,16 @@ const HELP_SCREENS = {
                 desc: 'Muestra la previsión de los próximos días según tu municipio. Muy útil para planificar tratamientos y riegos.',
             },
             {
+                icon: '⚠️',
+                title: 'Alertas y avisos meteorológicos',
+                desc: 'El cuaderno cruza la previsión con los avisos oficiales de AEMET/METEOALARM y te marca en rojo, naranja o amarillo los días con tormenta, granizo, lluvia intensa, calor extremo, heladas o viento fuerte. Los avisos verdes (💨 viento, 🌧️ lluvia) te indican cuándo NO conviene tratar. Pulsa una alerta para ver el detalle.',
+            },
+            {
+                icon: '🏡',
+                title: 'Cambiar de explotación',
+                desc: 'Si gestionas varias explotaciones (plan Pro), en la barra superior "Explotación" eliges con cuál estás trabajando. Todo lo que registres —parcelas, tratamientos, cuaderno— queda asociado a la explotación activa.',
+            },
+            {
                 icon: '📋',
                 title: 'Últimas actividades',
                 desc: 'Aparecen los últimos registros para que veas de un vistazo qué has hecho recientemente. Pulsa en uno para editarlo.',
@@ -77,17 +87,12 @@ const HELP_SCREENS = {
     },
     mas: {
         title: '⚙️ Ajustes',
-        intro: 'Configura los datos de tu explotación, los equipos y descarga el cuaderno oficial.',
+        intro: 'Todo está organizado en pestañas: Explotación, Equipos, Aplicadores, Datos y exportación, Mi cuenta, Suscripción y Legal.',
         steps: [
             {
                 icon: '🏡',
-                title: 'Datos de la explotación (obligatorio)',
-                desc: 'Rellena el nombre del titular, NIF, municipio y provincia. Son datos legales obligatorios que aparecen en el PDF oficial.',
-            },
-            {
-                icon: '📄',
-                title: 'Descargar PDF oficial',
-                desc: 'En la pestaña "Datos y exportación" encontrarás el botón para descargar el Cuaderno de Explotación en PDF. Es el documento válido para inspecciones.',
+                title: 'Explotación (obligatorio)',
+                desc: 'Rellena el nombre del titular, NIF, REGA, municipio y provincia. Son datos legales obligatorios que aparecen en el PDF oficial. Aquí también fijas la campaña activa.',
             },
             {
                 icon: '🚜',
@@ -98,6 +103,47 @@ const HELP_SCREENS = {
                 icon: '👤',
                 title: 'Aplicadores ROPO',
                 desc: 'Añade los aplicadores con su número ROPO. Cada tratamiento debe tener un aplicador registrado con carnet vigente.',
+            },
+            {
+                icon: '📄',
+                title: 'Descargar PDF y Excel',
+                desc: 'En "Datos y exportación" descargas el Cuaderno de Explotación en PDF oficial (válido para inspecciones, conforme al RD 1311/2012) o en Excel con 7 hojas: portada, parcelas, cultivos, tratamientos, abono, labores y cosecha.',
+            },
+            {
+                icon: '💳',
+                title: 'Suscripción y cuenta',
+                desc: 'En "Suscripción" ves tu plan actual y puedes cambiarlo. En "Mi cuenta" cambias la contraseña o cierras sesión. En "Legal y privacidad" tienes la normativa aplicable y tus derechos RGPD.',
+            },
+            {
+                icon: '📖',
+                title: 'Volver a ver la guía',
+                desc: 'Arriba del todo tienes el botón "Ver guía de inicio" para repasar los primeros pasos cuando quieras, y "¿Tienes un problema? Escríbenos" para contactar con soporte.',
+            },
+        ],
+    },
+    explotacion: {
+        title: '🏡 Explotaciones',
+        intro: 'La barra superior te permite trabajar con una o varias explotaciones desde la misma cuenta.',
+        steps: [
+            {
+                icon: '🔄',
+                title: 'Explotación activa',
+                desc: 'El selector "Explotación" de la barra superior indica con cuál estás trabajando. Todo lo que registres —parcelas, tratamientos, cuaderno, exportaciones— pertenece a la explotación activa. Cambia de una a otra en cualquier momento.',
+            },
+            {
+                icon: '＋',
+                title: 'Añadir otra explotación',
+                desc: 'Con el plan Pro puedes gestionar varias explotaciones (por ejemplo, la tuya y la de un familiar) sin duplicar cuentas. Pulsa "＋ Nueva" para dar de alta otra con su propio titular, NIF y REGA.',
+            },
+            {
+                icon: '🏷️',
+                title: 'Nombre corto',
+                desc: 'En los datos de cada explotación puedes ponerle un "nombre corto" (ej: "Emilio", "Robert"…). Es la etiqueta que aparece en el selector para distinguirlas de un vistazo.',
+            },
+            {
+                icon: '⭐',
+                title: '¿Solo tienes el plan Básico?',
+                desc: 'El plan Básico gestiona una única explotación. Si necesitas más de una, el botón "⭐ Multi-explotación" te lleva a los planes para pasarte a Pro.',
             },
         ],
     },
@@ -369,9 +415,18 @@ const QUICKSTART_SLIDES = [
     },
     {
         id: 5,
+        emoji: '⚠️',
+        gradient: 'linear-gradient(160deg, #7c2d12 0%, #ea580c 100%)',
+        title: '4. Vigila el tiempo',
+        desc: 'En la pantalla de inicio verás alertas de AEMET (tormenta, granizo, calor, heladas, viento) y avisos que te dicen cuándo NO conviene tratar. Todo cruzado con tu municipio.',
+        preview: 'alertas',
+        action: null,
+    },
+    {
+        id: 6,
         emoji: '📄',
         gradient: 'linear-gradient(160deg, #78350f 0%, #b45309 100%)',
-        title: '4. Descarga el PDF oficial',
+        title: '5. Descarga el PDF oficial',
         desc: 'Cuando necesites el cuaderno para inspección, ve a Ajustes → Datos y exportación → Descargar PDF.',
         preview: 'pdf',
         action: 'mas',
@@ -452,6 +507,27 @@ function SlidePreview({ type }) {
                     ))}
                 </div>
                 <div style={{ background: '#dc2626', borderRadius: '50%', width: 50, height: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, boxShadow: '0 4px 16px rgba(220,38,38,0.55)' }}>🎤</div>
+            </div>
+        );
+    }
+
+    if (type === 'alertas') {
+        const rows = [
+            { icon: '🔴', bg: 'rgba(120,20,20,0.92)', bc: '#f87171', tc: '#fca5a5', txt: 'Calor extremo (42°C) — mañana' },
+            { icon: '🟠', bg: 'rgba(110,50,0,0.92)', bc: '#fb923c', tc: '#fdba74', txt: 'Lluvia intensa (35mm) — jueves' },
+            { icon: '💨', bg: 'rgba(30,58,95,0.92)', bc: '#60a5fa', tc: '#93c5fd', txt: 'Viento fuerte — no tratar hoy' },
+        ];
+        return (
+            <div style={{ ...cardStyle, background: 'linear-gradient(135deg,#111827,#1f2937)' }}>
+                <div style={{ padding: '10px 12px' }}>
+                    <div style={{ color: '#fff', fontFamily: 'Manrope', fontWeight: 800, fontSize: '0.74rem', marginBottom: 8 }}>⚠️ Avisos de tu zona</div>
+                    {rows.map((r, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, background: r.bg, border: `1px solid ${r.bc}`, borderRadius: 9, padding: '7px 9px', marginBottom: 6 }}>
+                            <span style={{ fontSize: 13 }}>{r.icon}</span>
+                            <span style={{ color: r.tc, fontSize: '0.6rem', fontWeight: 700, lineHeight: 1.25 }}>{r.txt}</span>
+                        </div>
+                    ))}
+                </div>
             </div>
         );
     }
