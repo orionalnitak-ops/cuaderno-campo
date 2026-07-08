@@ -164,6 +164,22 @@ def admin_switch_back():
     return jsonify({"status": "ok"})
 
 
+@bp.route('/api/admin/users/<int:uid>/reparar-sigpac', methods=['POST'])
+@login_required
+@admin_required
+def admin_reparar_sigpac(uid):
+    """Corrige los códigos de municipio (INE → SIGPAC) de TODAS las parcelas del
+    usuario. `?dry_run=false` aplica; por defecto solo informa (previsualización)."""
+    from blueprints.sigpac import _reparar_municipios_core
+    dry = request.args.get('dry_run', 'true').lower() != 'false'
+    conn = get_db()
+    try:
+        res = _reparar_municipios_core(conn, uid, None, dry)
+    finally:
+        conn.close()
+    return jsonify(res)
+
+
 @bp.route('/api/admin/users/<int:uid>/reset-cuaderno', methods=['POST'])
 @login_required
 @admin_required

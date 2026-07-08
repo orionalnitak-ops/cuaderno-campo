@@ -362,8 +362,8 @@ const HELP_SCREENS = {
             },
             {
                 icon: '⚡',
-                title: 'Plan Pro — SIEX incluido',
-                desc: 'Añade la integración con el SIEX (Sistema de Información de Explotaciones), obligatoria para todos los agricultores desde el 1 de enero de 2027. Si necesitas cumplir con esa obligación, elige Pro.',
+                title: 'Plan Pro — compatible con SIEX',
+                desc: 'Tu cuaderno es compatible con el SIEX (Sistema de Información de Explotaciones) y con lo que exige la ley, preparado para la obligatoriedad del 1 de enero de 2027. Si necesitas cumplir con esa obligación, elige Pro.',
             },
             {
                 icon: '📅',

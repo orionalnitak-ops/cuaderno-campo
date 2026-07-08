@@ -15,6 +15,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 App web SaaS para digitalizar el **Cuaderno de Explotación Agrícola** (CUE) obligatorio por ley en España (RD 1311/2012). Dirigida a agricultores sin conocimientos informáticos de Castilla-La Mancha.
 
+> ## 🔥 REGLA DURA — Compatibilidad SIEX (no negociable, hasta nueva orden)
+>
+> El cuaderno debe mantener **SIEMPRE plena compatibilidad con SIEX y con lo que la ley pide** (RD 1311/2012, catálogos IACS/FEGA, deadline 01/01/2027). Cualquier feature nueva o cambio de modelo de datos **debe preservar** esa compatibilidad.
+>
+> **Lenguaje obligatorio:** decir **"compatible con SIEX"**, NUNCA "integración con SIEX" ni "subida/envío a SIEX". Motivo: aún no se sabe qué hace falta para obtener **autorización** de subida a SIEX; hasta tenerlo claro no se promete integración/envío que no se puede cumplir. Sí se garantiza compatibilidad (datos, catálogos, exportaciones alineados con SIEX). Aplica a UI, marketing, ayuda y specs.
+
 **Piloto activo:** Lourdes (finca familiar, ~50+ parcelas SIGPAC).  
 **Deadline legal:** 1 enero 2027 — fitosanitarios digitales obligatorios e interoperables con SIEX.  
 **Versión actual:** `v0.9.0` (tag en GitHub).
