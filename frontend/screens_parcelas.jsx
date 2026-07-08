@@ -737,6 +737,28 @@ function ScreenParcelas({ campana, showToast }) {
                                         );
                                     })}
                                 </div>
+                                {selected.provincia_cod && selected.municipio_cod && selected.poligono && selected.parcela_num && (() => {
+                                    const q = new URLSearchParams({
+                                        provincia: String(selected.provincia_cod),
+                                        municipio: String(selected.municipio_cod),
+                                        agregado: '0', zona: '0',
+                                        poligono: String(selected.poligono),
+                                        parcela: String(selected.parcela_num),
+                                    });
+                                    if (selected.recinto) q.set('recinto', String(selected.recinto));
+                                    const visorUrl = `https://sigpac.mapa.gob.es/fega/visor/?${q.toString()}`;
+                                    return (
+                                        <a href={visorUrl} target="_blank" rel="noopener noreferrer"
+                                            style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, minHeight:48, background:'#16a34a', color:'#fff', borderRadius:10, padding:'12px', marginBottom:12, fontWeight:700, fontSize:'0.9rem', textDecoration:'none' }}>
+                                            🗺️ Ver mi parcela en el mapa
+                                        </a>
+                                    );
+                                })()}
+                                {selected.provincia_cod && selected.municipio_cod && selected.poligono && selected.parcela_num && (
+                                    <div style={{ fontSize:'0.68rem', color:'#6b7280', textAlign:'center', marginTop:-6, marginBottom:12 }}>
+                                        Se abre el visor oficial de SIGPAC (Ministerio de Agricultura) en una pestaña nueva.
+                                    </div>
+                                )}
                                 {selected.superficie_ha && (
                                     <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:10, padding:'10px 12px', marginBottom:12, display:'flex', gap:8, alignItems:'flex-start' }}>
                                         <span style={{ fontSize:'0.9rem', flexShrink:0 }}>ℹ️</span>
