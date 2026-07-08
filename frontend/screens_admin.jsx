@@ -11,6 +11,8 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
     const [confirmReset, setConfirmReset] = useState(null); // user id a resetear cuaderno
     const [confirmPurge, setConfirmPurge] = useState(null); // user id a borrar permanentemente
     const [pdfCampana, setPdfCampana] = useState('2025/2026');
+    const [sigpacBusy, setSigpacBusy]   = useState(null); // user id en proceso de verificación
+    const [sigpacReport, setSigpacReport] = useState(null); // { uid, nombre, data, applying }
 
     const CAMPANAS = ['2023/2024', '2024/2025', '2025/2026', '2026/2027'];
 
@@ -135,6 +137,33 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
         } catch { showToast('Error de conexión'); }
         setConfirmReset(null);
         loadUsers();
+    };
+
+    // Verificar/corregir códigos de municipio SIGPAC. Primero dry-run (informe), luego aplicar.
+    const handleVerificarSigpac = async (u) => {
+        setSigpacBusy(u.id);
+        try {
+            const res = await fetch(`/api/admin/users/${u.id}/reparar-sigpac?dry_run=true`, {
+                method: 'POST', credentials: 'include',
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) { showToast('Error al verificar SIGPAC'); }
+            else { setSigpacReport({ uid: u.id, nombre: u.nombre || u.email, data, applying: false }); }
+        } catch { showToast('Error de conexión'); }
+        setSigpacBusy(null);
+    };
+
+    const handleAplicarSigpac = async () => {
+        if (!sigpacReport) return;
+        setSigpacReport(r => ({ ...r, applying: true }));
+        try {
+            const res = await fetch(`/api/admin/users/${sigpacReport.uid}/reparar-sigpac?dry_run=false`, {
+                method: 'POST', credentials: 'include',
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) { showToast('Error al aplicar correcciones'); setSigpacReport(r => ({ ...r, applying: false })); }
+            else { showToast(`✅ ${data.cambios} parcela(s) corregida(s)`); setSigpacReport(null); loadUsers(); }
+        } catch { showToast('Error de conexión'); setSigpacReport(r => ({ ...r, applying: false })); }
     };
 
     const handleSwitchUser = async (user) => {
@@ -394,6 +423,17 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
                                     </button>
                                 )}
                                 {u.active && u.role !== 'admin' && (
+                                    <button
+                                        className="btn-ghost"
+                                        style={{ fontSize:'0.82rem', minHeight:40, padding:'10px 14px' }}
+                                        disabled={sigpacBusy === u.id}
+                                        onClick={() => handleVerificarSigpac(u)}
+                                        title="Verifica y corrige los códigos de municipio contra SIGPAC (INE → SIGPAC)"
+                                    >
+                                        {sigpacBusy === u.id ? '⏳ Verificando…' : '🛰️ Verificar SIGPAC'}
+                                    </button>
+                                )}
+                                {u.active && u.role !== 'admin' && (
                                     <select
                                         value={u.plan || 'trial'}
                                         onChange={e => handleChangePlan(u.id, e.target.value)}
@@ -494,6 +534,70 @@ function ScreenAdmin({ currentUser, onSwitchUser, showToast }) {
                     </div>
                 ))}
             </div>
+
+            {/* ── Modal informe SIGPAC ── */}
+            {sigpacReport && (() => {
+                const r = sigpacReport.data;
+                const nCorregir = (r.resumen && r.resumen.corregido) || 0;
+                const nNoResuelto = (r.resumen && r.resumen.no_resuelto) || 0;
+                const nOk = (r.resumen && r.resumen.ya_correcto) || 0;
+                const revisar = (r.detalle || []).filter(d => d.estado === 'corregido' || d.estado === 'no_resuelto');
+                return (
+                    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+                        onClick={() => !sigpacReport.applying && setSigpacReport(null)}>
+                        <div onClick={e => e.stopPropagation()} style={{ background:'var(--surface-container-lowest)', borderRadius:'var(--radius-xl)', maxWidth:520, width:'100%', maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:'var(--shadow-card)' }}>
+                            <div style={{ padding:'18px 20px', borderBottom:'1px solid var(--outline-variant)' }}>
+                                <h3 style={{ fontFamily:'var(--font-heading)', fontWeight:800, fontSize:'1.05rem', margin:0 }}>🛰️ Verificación SIGPAC</h3>
+                                <p style={{ fontSize:'0.8rem', color:'var(--on-surface-variant)', margin:'4px 0 0' }}>
+                                    {sigpacReport.nombre} · {r.total} parcela(s)
+                                </p>
+                            </div>
+                            <div style={{ padding:'16px 20px', overflowY:'auto' }}>
+                                <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14 }}>
+                                    <span style={{ background:'#dcfce7', color:'#065f46', borderRadius:8, padding:'6px 10px', fontSize:'0.78rem', fontWeight:700 }}>✅ {nCorregir} a corregir</span>
+                                    <span style={{ background:'#eff6ff', color:'#1e40af', borderRadius:8, padding:'6px 10px', fontSize:'0.78rem', fontWeight:700 }}>✔️ {nOk} ya correctas</span>
+                                    <span style={{ background:'#fef3c7', color:'#92400e', borderRadius:8, padding:'6px 10px', fontSize:'0.78rem', fontWeight:700 }}>⚠️ {nNoResuelto} sin resolver</span>
+                                </div>
+                                {nCorregir === 0 && nNoResuelto === 0 && (
+                                    <p style={{ fontSize:'0.85rem', color:'var(--on-surface-variant)' }}>Todas las parcelas ya tienen el código de municipio correcto. No hay nada que cambiar.</p>
+                                )}
+                                {revisar.length > 0 && (
+                                    <div style={{ border:'1px solid var(--outline-variant)', borderRadius:10, overflow:'hidden' }}>
+                                        {revisar.map((d, i) => (
+                                            <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, padding:'8px 12px', borderTop: i ? '1px solid var(--outline-variant)' : 'none', fontSize:'0.8rem' }}>
+                                                <div style={{ minWidth:0 }}>
+                                                    <div style={{ fontWeight:700, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{d.finca || '(sin nombre)'}</div>
+                                                    <div style={{ color:'var(--on-surface-variant)', fontSize:'0.72rem' }}>{d.municipio}</div>
+                                                </div>
+                                                {d.estado === 'corregido' ? (
+                                                    <span style={{ color:'#065f46', fontWeight:700, whiteSpace:'nowrap' }}>{d.antes} → {d.despues}</span>
+                                                ) : (
+                                                    <span style={{ color:'#92400e', fontWeight:700, whiteSpace:'nowrap' }} title="No se pudo verificar el polígono/parcela en SIGPAC">⚠️ sin resolver</span>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {nNoResuelto > 0 && (
+                                    <p style={{ fontSize:'0.72rem', color:'var(--on-surface-variant)', marginTop:10, marginBottom:0 }}>
+                                        Las "sin resolver" no se tocan: su polígono/parcela no existe en SIGPAC bajo ese municipio y hay que revisarlas a mano.
+                                    </p>
+                                )}
+                            </div>
+                            <div style={{ padding:'14px 20px', borderTop:'1px solid var(--outline-variant)', display:'flex', gap:10, justifyContent:'flex-end' }}>
+                                <button className="btn-ghost" style={{ minHeight:44, padding:'10px 16px' }} disabled={sigpacReport.applying}
+                                    onClick={() => setSigpacReport(null)}>Cerrar</button>
+                                {nCorregir > 0 && (
+                                    <button className="btn-primary" style={{ minHeight:44, padding:'10px 18px' }} disabled={sigpacReport.applying}
+                                        onClick={handleAplicarSigpac}>
+                                        {sigpacReport.applying ? '⏳ Aplicando…' : `Aplicar ${nCorregir} corrección(es)`}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 }

@@ -3,12 +3,14 @@ blueprints/sigpac.py — /api/sigpac/*
 """
 import re
 import logging
+import unicodedata
 
 import requests as req_lib
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from extensions import limiter
-from helpers import admin_required
+from helpers import admin_required, get_uid, get_active_explotacion_id
+from db import get_db, dicts
 
 bp = Blueprint('sigpac', __name__)
 logger = logging.getLogger(__name__)
@@ -46,6 +48,18 @@ def _sigpac_param(val, default=''):
     if not re.fullmatch(r'\d{1,6}', s):
         return None
     return s
+
+
+def _norm_nombre(s):
+    """Normaliza un nombre de municipio para comparar: sin acentos, mayúsculas, espacios colapsados."""
+    s = unicodedata.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode()
+    return re.sub(r'\s+', ' ', s).strip().upper()
+
+
+def _parcela_resuelve(prov, mun, pol, par):
+    """True si el pol/par existe en SIGPAC bajo ese código de municipio (≥1 recinto)."""
+    d = _sigpac_get(f"{SIGPAC_BASE}/recintos/{prov}/{mun}/0/0/{pol}/{par}")
+    return isinstance(d, dict) and bool(d.get('features'))
 
 
 # Mapa de código cultivo Catastro → uso SIGPAC
@@ -278,6 +292,111 @@ def sigpac_recintos_detalle():
         resultado.append(item)
 
     return jsonify(resultado)
+
+
+def _reparar_municipios_core(conn, uid, exp_id, dry):
+    """Corrige el municipio_cod de las parcelas de un usuario cuando está guardado
+    como código INE (u otro) en lugar del código interno de SIGPAC.
+
+    Estrategia a prueba de errores: traduce municipio_nombre → código SIGPAC casando
+    por nombre, y SOLO acepta un código si el polígono/parcela de la parcela existe
+    de verdad en SIGPAC bajo ese código (verificación real, no solo el nombre).
+
+    - `exp_id` None → todas las parcelas activas del usuario (todas sus explotaciones).
+    - `dry` True → solo informa, no escribe.
+
+    Devuelve el dict de resultado (no cierra la conexión).
+    """
+    if exp_id is None:
+        rows = dicts(conn,
+                     "SELECT id, nombre_finca, provincia_cod, municipio_cod, municipio_nombre, "
+                     "poligono, parcela_num FROM parcelas WHERE user_id=? AND activa=1",
+                     (uid,))
+    else:
+        rows = dicts(conn,
+                     "SELECT id, nombre_finca, provincia_cod, municipio_cod, municipio_nombre, "
+                     "poligono, parcela_num FROM parcelas "
+                     "WHERE user_id=? AND explotacion_id=? AND activa=1",
+                     (uid, exp_id))
+
+    muni_cache = {}   # prov -> lista [{codigo, nombre}]
+    cand_cache = {}   # (prov, nombre_norm) -> [códigos SIGPAC que casan por nombre]
+
+    def _municipios(prov):
+        if prov not in muni_cache:
+            data = _sigpac_list(f"{SIGPAC_BASE}/municipios/{prov}")
+            muni_cache[prov] = data if isinstance(data, list) else []
+        return muni_cache[prov]
+
+    def _candidatos(prov, nom):
+        """Códigos SIGPAC cuyo nombre casa (solo por nombre, sin verificar parcela)."""
+        key = (prov, nom)
+        if key not in cand_cache:
+            cand_cache[key] = [
+                mc for m in _municipios(prov)
+                if _norm_nombre(m['nombre']) == nom and (mc := _sigpac_param(m['codigo']))
+            ]
+        return cand_cache[key]
+
+    detalle = []
+    cambios = 0
+    for p in rows:
+        prov = _sigpac_param(p['provincia_cod'])
+        pol  = _sigpac_param(p['poligono'])
+        par  = _sigpac_param(p['parcela_num'])
+        cur  = _sigpac_param(p['municipio_cod'])
+        nuevo = None
+
+        if not (prov and pol and par):
+            estado = 'sin_datos'
+        elif cur and _parcela_resuelve(prov, cur, pol, par):
+            estado = 'ya_correcto'
+        else:
+            # El código de municipio depende solo del nombre; la validez de ESTA
+            # parcela (pol/par) se comprueba aparte contra cada candidato.
+            nom = _norm_nombre(p['municipio_nombre'])
+            for mc in _candidatos(prov, nom):
+                if _parcela_resuelve(prov, mc, pol, par):
+                    nuevo = mc
+                    break
+            if nuevo and nuevo != cur:
+                estado = 'corregido'
+                if not dry:
+                    conn.execute("UPDATE parcelas SET municipio_cod=? WHERE id=? AND user_id=?",
+                                 (nuevo, p['id'], uid))
+                    cambios += 1
+            elif nuevo:
+                estado = 'ya_correcto'
+            else:
+                estado = 'no_resuelto'
+
+        detalle.append({
+            'id': p['id'], 'finca': p['nombre_finca'], 'municipio': p['municipio_nombre'],
+            'antes': p['municipio_cod'], 'despues': nuevo, 'estado': estado,
+        })
+
+    if not dry and cambios:
+        conn.commit()
+    resumen = {}
+    for d in detalle:
+        resumen[d['estado']] = resumen.get(d['estado'], 0) + 1
+    return {'ok': True, 'dry_run': dry, 'total': len(rows),
+            'cambios': cambios, 'resumen': resumen, 'detalle': detalle}
+
+
+@bp.route('/api/sigpac/reparar-municipios', methods=['POST'])
+@login_required
+@limiter.limit("6 per hour")
+def sigpac_reparar_municipios():
+    """Repara los códigos de municipio de la explotación activa del usuario efectivo.
+    `?dry_run=false` aplica; por defecto solo informa."""
+    dry = request.args.get('dry_run', 'true').lower() != 'false'
+    conn = get_db()
+    try:
+        res = _reparar_municipios_core(conn, get_uid(), get_active_explotacion_id(conn), dry)
+    finally:
+        conn.close()
+    return jsonify(res)
 
 
 @bp.route('/api/sigpac/debug')
