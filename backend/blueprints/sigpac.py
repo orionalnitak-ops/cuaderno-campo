@@ -5,6 +5,7 @@ import re
 import time
 import logging
 import unicodedata
+from collections import OrderedDict
 
 import requests as req_lib
 from flask import Blueprint, jsonify, request
@@ -44,17 +45,26 @@ def _sigpac_get(url, timeout=10, retries=1):
 # Estos datos apenas cambian, así que se cachean por worker con TTL. Además, si una
 # petición fresca a SIGPAC falla, se sirve el último valor bueno aunque haya caducado
 # ("stale-on-error"): la app sigue respondiendo aunque el servicio de FEGA esté caído.
-_CACHE = {}  # key -> (expires_at, value)
+#
+# La caché está ACOTADA (LRU): un usuario autenticado podría pedir muchas combinaciones
+# prov/municipio/polígono válidas; sin tope, el diccionario crecería sin límite (riesgo
+# de agotar memoria del worker). Al superar _CACHE_MAX se evicta la entrada más antigua.
+_CACHE = OrderedDict()  # key -> (expires_at, value)
+_CACHE_MAX = 512
 
 
 def _cache_get_or_fetch(key, ttl, fetch, is_valid):
     now = time.time()
     entry = _CACHE.get(key)
     if entry and entry[0] > now:
+        _CACHE.move_to_end(key)         # LRU: marcar como usada recientemente
         return entry[1]                 # todavía fresco
     fresh = fetch()
     if is_valid(fresh):
         _CACHE[key] = (now + ttl, fresh)
+        _CACHE.move_to_end(key)
+        while len(_CACHE) > _CACHE_MAX:
+            _CACHE.popitem(last=False)  # evicta la entrada más antigua
         return fresh
     if entry:                           # fetch falló → servir stale si lo hay
         logger.warning("SIGPAC caché: sirviendo valor stale para %s (fetch falló)", key)

@@ -1,6 +1,8 @@
 """
 blueprints/parcelas.py — /api/parcelas/* y /api/cultivos-campana/*
 """
+import re
+
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, one, dicts, is_pac_eligible
@@ -8,6 +10,33 @@ from helpers import get_uid, _to_real, get_active_explotacion_id
 from blueprints.ia import _recalcular_patrones
 
 bp = Blueprint('parcelas', __name__)
+
+# Allowlist de columnas actualizables en parcelas. Estos nombres se interpolan en el
+# SQL del UPDATE (los placeholders `?` no parametrizan identificadores de columna), así
+# que DEBEN provenir siempre de esta constante y nunca de input del usuario.
+_PARCELA_UPDATE_FIELDS = (
+    'comunidad', 'provincia_cod', 'provincia_nombre', 'municipio_cod', 'municipio_nombre',
+    'nombre_finca', 'poligono', 'parcela_num', 'recinto', 'superficie_ha', 'uso_sigpac',
+    'referencia_cat', 'sistema_explotacion', 'masa_agua_cercana', 'notas',
+)
+_PARCELA_UPDATE_ALLOWED = frozenset(_PARCELA_UPDATE_FIELDS)
+
+# Referencia catastral: hasta 20 caracteres alfanuméricos (formato oficial español).
+_REF_CAT_RE = re.compile(r'^[A-Z0-9]{1,20}$')
+
+
+def _clean_ref_cat(v):
+    """Normaliza y valida la referencia catastral.
+
+    Devuelve (valor, error): valor '' si viene vacío (campo opcional), la RC en
+    mayúsculas si es válida, o (None, mensaje) si el formato no encaja.
+    """
+    if v is None or str(v).strip() == '':
+        return '', None
+    v = str(v).strip().upper()
+    if not _REF_CAT_RE.match(v):
+        return None, "Formato de referencia catastral inválido"
+    return v, None
 
 
 @bp.route('/api/parcelas', methods=['GET', 'POST'])
@@ -37,6 +66,11 @@ def manage_parcelas():
         conn.close()
         return jsonify({"error": "La superficie debe ser mayor que cero"}), 400
 
+    ref_cat, ref_err = _clean_ref_cat(data.get('referencia_cat'))
+    if ref_err:
+        conn.close()
+        return jsonify({"error": ref_err}), 400
+
     exp_id = get_active_explotacion_id(conn)
     c = conn.cursor()
     c.execute('''
@@ -50,7 +84,7 @@ def manage_parcelas():
         uid, exp_id, data.get('comunidad'), data.get('provincia_cod'), data.get('provincia_nombre'),
         data.get('municipio_cod'), data.get('municipio_nombre'), data.get('nombre_finca'),
         data.get('poligono'), data.get('parcela_num'), data.get('recinto'),
-        sup, data.get('uso_sigpac'), data.get('referencia_cat'),
+        sup, data.get('uso_sigpac'), ref_cat,
         data.get('sistema_explotacion', 'Secano'),
         1 if data.get('masa_agua_cercana') else 0,
         data.get('notas'),
@@ -100,15 +134,20 @@ def manage_parcela(pid):
         conn.close()
         return jsonify({"error": "La superficie debe ser mayor que cero"}), 400
 
+    ref_cat, ref_err = _clean_ref_cat(data.get('referencia_cat'))
+    if ref_err:
+        conn.close()
+        return jsonify({"error": ref_err}), 400
+
     def _field_val(f):
         v = data.get(f)
         if f == 'superficie_ha': return sup_put
+        if f == 'referencia_cat': return ref_cat
         if f == 'masa_agua_cercana': return 1 if v else 0
         return v
 
-    fields = ['comunidad', 'provincia_cod', 'provincia_nombre', 'municipio_cod', 'municipio_nombre',
-              'nombre_finca', 'poligono', 'parcela_num', 'recinto', 'superficie_ha', 'uso_sigpac',
-              'referencia_cat', 'sistema_explotacion', 'masa_agua_cercana', 'notas']
+    # Solo columnas de la allowlist: sus nombres se interpolan en el SQL.
+    fields = [f for f in _PARCELA_UPDATE_FIELDS if f in _PARCELA_UPDATE_ALLOWED]
     sets = ', '.join(f"{f}=?" for f in fields)
     vals = [_field_val(f) for f in fields] + [pid, uid]
     conn.execute(f"UPDATE parcelas SET {sets} WHERE id=? AND user_id=?", vals)
