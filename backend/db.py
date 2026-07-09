@@ -821,6 +821,36 @@ def _seed_if_needed(conn):
         )
     ''')
 
+    # ── ÍNDICES ──────────────────────────────────────────────────────────
+    # Toda query filtra por user_id (aislamiento entre agricultores) y los
+    # módulos suelen filtrar además por parcela_id. Sin índices, SQLite/PG
+    # escanean la tabla entera en cada listado. CREATE INDEX IF NOT EXISTS
+    # es válido y seguro en ambos motores (SQLite y PostgreSQL >= 9.5).
+    _indexes = [
+        ('idx_parcelas_user',        'parcelas',           'user_id'),
+        ('idx_tratamientos_user',    'tratamientos',       'user_id'),
+        ('idx_tratamientos_parcela', 'tratamientos',       'parcela_id'),
+        ('idx_fertilizacion_user',   'fertilizacion',      'user_id'),
+        ('idx_fertilizacion_parc',   'fertilizacion',      'parcela_id'),
+        ('idx_labores_user',         'labores',            'user_id'),
+        ('idx_labores_parcela',      'labores',            'parcela_id'),
+        ('idx_riego_user',           'riego',              'user_id'),
+        ('idx_abonado_user',         'abonado',            'user_id'),
+        ('idx_compras_user',         'compras',            'user_id'),
+        ('idx_cultivos_parcela',     'cultivos_campana',   'parcela_id'),
+        ('idx_cosecha_user',         'cosecha',            'user_id'),
+        ('idx_uhc_user',             'unidades_homogeneas','user_id'),
+        ('idx_uhc_parcelas_uhc',     'uhc_parcelas',       'uhc_id'),
+        ('idx_push_subs_user',       'push_subscriptions', 'user_id'),
+        ('idx_ia_alertas_user',      'ia_alertas',         'user_id'),
+    ]
+    for idx_name, table, cols in _indexes:
+        try:
+            c.execute(f'CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({cols})')
+        except Exception:
+            # Tabla o columna aún no presente en algún entorno: no bloquear init_db
+            pass
+
     conn.commit()
 
 
