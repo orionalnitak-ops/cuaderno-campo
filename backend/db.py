@@ -1,4 +1,22 @@
 import os
+import re
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Los identificadores SQL (tabla/índice/columna) NO se pueden parametrizar con
+# ?/%s: los drivers no los admiten. La única defensa frente a interpolación es
+# una allowlist estricta. Un identificador válido empieza por letra/_ y solo
+# contiene letras, números y guiones bajos (máx. 63, límite de PostgreSQL).
+_SAFE_IDENTIFIER = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$')
+
+
+def _safe_sql_identifier(value, context):
+    """Valida que `value` sea un identificador SQL seguro antes de interpolarlo."""
+    if not _SAFE_IDENTIFIER.match(value):
+        raise ValueError(f"Identificador SQL no válido en '{context}': {value!r}")
+    return value
+
 
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
 DATABASE_NAME = os.environ.get('DB_PATH', 'cuaderno.db')
@@ -845,11 +863,24 @@ def _seed_if_needed(conn):
         ('idx_ia_alertas_user',      'ia_alertas',         'user_id'),
     ]
     for idx_name, table, cols in _indexes:
+        # Validar cada identificador contra la allowlist ANTES de interpolar.
+        # cols puede ser "col1, col2": se valida parte a parte.
+        safe_idx = _safe_sql_identifier(idx_name, 'index name')
+        safe_table = _safe_sql_identifier(table, 'table name')
+        safe_cols = ', '.join(
+            _safe_sql_identifier(col.strip(), 'column name')
+            for col in cols.split(',')
+        )
         try:
-            c.execute(f'CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({cols})')
-        except Exception:
-            # Tabla o columna aún no presente en algún entorno: no bloquear init_db
-            pass
+            c.execute(
+                f'CREATE INDEX IF NOT EXISTS {safe_idx} ON {safe_table} ({safe_cols})'
+            )
+        except Exception as e:
+            # Un índice es no-crítico (solo rendimiento): si falla por causa de
+            # entorno, se registra y se sigue, para no tumbar el arranque.
+            # Un ValueError de _safe_sql_identifier NO llega aquí: se lanza antes
+            # del try y aborta ruidosamente (error de programación).
+            logger.warning("No se pudo crear el índice %s en %s: %s", idx_name, table, e)
 
     conn.commit()
 
