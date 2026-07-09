@@ -294,6 +294,47 @@ def sigpac_recintos_detalle():
     return jsonify(resultado)
 
 
+@bp.route('/api/sigpac/recinto-bbox')
+@login_required
+@limiter.limit("120 per minute")
+def sigpac_recinto_bbox():
+    """Devuelve el bounding box (WGS84) de cada recinto de un pol/par.
+
+    Sirve para centrar el mapa embebido de la ficha (Leaflet + fitBounds) sin
+    depender del visor externo de SIGPAC. El contorno real del recinto lo pinta
+    la capa WMS oficial de SIGPAC; aquí solo necesitamos las coordenadas para
+    encuadrar. El bbox viene en las properties (x1,y1,x2,y2) de la consulta de
+    recintos, así que es una sola llamada rápida (no usa el endpoint de
+    geometría, que es lento e intermitente).
+    """
+    prov = _sigpac_param(request.args.get('provincia'), '')
+    mun  = _sigpac_param(request.args.get('municipio'), '')
+    pol  = _sigpac_param(request.args.get('poligono'), '')
+    par  = _sigpac_param(request.args.get('parcela'), '')
+    if not all([prov, mun, pol, par]):
+        return jsonify({"error": "Parámetros inválidos"}), 400
+
+    data = _sigpac_get(f"{SIGPAC_BASE}/recintos/{prov}/{mun}/0/0/{pol}/{par}")
+    if not isinstance(data, dict) or 'features' not in data:
+        return jsonify({"error": "SIGPAC no devolvió datos para esta parcela"}), 404
+
+    recintos = []
+    for f in data.get('features', []):
+        p = f.get('properties') or {}
+        try:
+            recintos.append({
+                'recinto': p.get('nombre'),
+                'bbox': [float(p['x1']), float(p['y1']), float(p['x2']), float(p['y2'])],
+            })
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    if not recintos:
+        return jsonify({"error": "SIGPAC no devolvió coordenadas para esta parcela"}), 404
+
+    return jsonify({'recintos': recintos})
+
+
 def _reparar_municipios_core(conn, uid, exp_id, dry):
     """Corrige el municipio_cod de las parcelas de un usuario cuando está guardado
     como código INE (u otro) en lugar del código interno de SIGPAC.
