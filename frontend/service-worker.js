@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cuaderno-cache-v28';
+const CACHE_NAME = 'cuaderno-cache-v29';
 
 const APP_SHELL = [
   '/',
@@ -19,6 +19,8 @@ const APP_SHELL = [
   '/dist/app.js',
   'https://unpkg.com/react@18/umd/react.production.min.js',
   'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
 ];
 
 self.addEventListener('install', event => {
