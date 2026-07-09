@@ -98,6 +98,106 @@ const PROVINCIAS_ES = [
     { cod: '50', nombre: 'Zaragoza' },
 ];
 
+// ── Modal: mapa SIGPAC embebido (Leaflet) ──
+// Pinta la parcela DENTRO de la app (ortofoto PNOA + capa recintos SIGPAC +
+// polígono de la parcela). No depende del visor externo → el zoom lo controla
+// nuestro fitBounds, así que funciona igual en PC y en móvil.
+function MapaSigpacModal({ parcela, onClose }) {
+    const mapDivRef = React.useRef(null);
+    const mapRef    = React.useRef(null);
+    const [estado, setEstado] = React.useState('cargando'); // cargando|ok|error
+
+    React.useEffect(() => {
+        if (typeof L === 'undefined' || !mapDivRef.current) {
+            setEstado('error');
+            return;
+        }
+        // Crear el mapa centrado en España; el fitBounds lo ajusta al cargar la geometría.
+        const map = L.map(mapDivRef.current, { zoomControl: true }).setView([40.0, -3.7], 6);
+        mapRef.current = map;
+
+        // Capa base: ortofoto PNOA oficial (IGN) — lo que el agricultor reconoce del SIGPAC.
+        L.tileLayer.wms('https://www.ign.es/wms-inspire/pnoa-ma', {
+            layers: 'OI.OrthoimageCoverage',
+            format: 'image/jpeg',
+            attribution: 'PNOA © Instituto Geográfico Nacional',
+        }).addTo(map);
+
+        // Capa de recintos SIGPAC oficial (FEGA) — dibuja los perímetros de las parcelas.
+        L.tileLayer.wms('https://wms.mapa.gob.es/sigpac/wms', {
+            layers: 'recinto',
+            format: 'image/png',
+            transparent: true,
+            attribution: 'SIGPAC © FEGA',
+        }).addTo(map);
+
+        // Leaflet mide mal el contenedor si se creó dentro del modal; forzar recálculo.
+        setTimeout(() => map.invalidateSize(), 100);
+
+        const q = new URLSearchParams({
+            provincia: String(parcela.provincia_cod),
+            municipio: String(parcela.municipio_cod),
+            poligono:  String(parcela.poligono),
+            parcela:   String(parcela.parcela_num),
+        });
+        fetch(`/api/sigpac/recinto-bbox?${q.toString()}`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(data => {
+                // Combinar los bbox de todos los recintos (Leaflet usa [lat, lng]).
+                const bounds = L.latLngBounds([]);
+                (data.recintos || []).forEach(rc => {
+                    const [x1, y1, x2, y2] = rc.bbox; // x = lon, y = lat
+                    bounds.extend([y1, x1]);
+                    bounds.extend([y2, x2]);
+                });
+                if (!bounds.isValid()) { setEstado('error'); return; }
+                map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
+                // Marcador en el centro de la parcela: la referencia visible siempre,
+                // aunque el overlay WMS de recintos de SIGPAC no responda.
+                const c = bounds.getCenter();
+                L.circleMarker(c, {
+                    radius: 9, color: '#facc15', weight: 3, fillColor: '#eab308', fillOpacity: 0.9,
+                }).addTo(map).bindTooltip('Tu parcela', { permanent: false, direction: 'top' });
+                setEstado('ok');
+            })
+            .catch(() => setEstado('error'));
+
+        return () => { map.remove(); mapRef.current = null; };
+    }, [parcela]);
+
+    return (
+        <div style={{ position:'fixed', inset:0, zIndex:2000, background:'#000', display:'flex', flexDirection:'column' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 16px', background:'#16a34a', color:'#fff', flexShrink:0 }}>
+                <div style={{ minWidth:0 }}>
+                    <div style={{ fontWeight:700, fontSize:'0.95rem', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                        🗺️ {parcela.nombre_finca || 'Mi parcela'}
+                    </div>
+                    <div style={{ fontSize:'0.72rem', opacity:0.9 }}>
+                        Pol. {parcela.poligono} · Parc. {parcela.parcela_num}{parcela.recinto ? ` · Rec. ${parcela.recinto}` : ''}
+                    </div>
+                </div>
+                <button onClick={onClose} aria-label="Cerrar"
+                    style={{ background:'rgba(255,255,255,0.2)', border:'none', color:'#fff', borderRadius:8, minWidth:44, minHeight:44, fontSize:'1.2rem', cursor:'pointer', flexShrink:0 }}>
+                    ✕
+                </button>
+            </div>
+            <div style={{ flex:1, position:'relative' }}>
+                <div ref={mapDivRef} style={{ position:'absolute', inset:0 }} />
+                {estado === 'cargando' && (
+                    <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.4)', color:'#fff', pointerEvents:'none' }}>
+                        Cargando mapa…
+                    </div>
+                )}
+                {estado === 'error' && (
+                    <div style={{ position:'absolute', left:0, right:0, bottom:0, background:'#fef2f2', color:'#991b1b', padding:'10px 14px', fontSize:'0.78rem', textAlign:'center' }}>
+                        No se pudieron obtener las coordenadas de SIGPAC para esta parcela (el servicio puede estar caído). Revisa que el polígono y la parcela sean correctos e inténtalo de nuevo.
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function ScreenParcelas({ campana, showToast }) {
     const { useState, useEffect } = React;
 
@@ -120,6 +220,7 @@ function ScreenParcelas({ campana, showToast }) {
     const [editId, setEditId] = useState(null);
     const [saving, setSaving] = useState(false);
     const [sigpacSyncing, setSigpacSyncing] = useState(false);
+    const [mapaAbierto, setMapaAbierto] = useState(false);
 
     // SIGPAC search (edit form)
     const [provincias, setProvincias]     = useState([]);
@@ -737,26 +838,15 @@ function ScreenParcelas({ campana, showToast }) {
                                         );
                                     })}
                                 </div>
-                                {selected.provincia_cod && selected.municipio_cod && selected.poligono && selected.parcela_num && (() => {
-                                    const q = new URLSearchParams({
-                                        provincia: String(selected.provincia_cod),
-                                        municipio: String(selected.municipio_cod),
-                                        agregado: '0', zona: '0',
-                                        poligono: String(selected.poligono),
-                                        parcela: String(selected.parcela_num),
-                                    });
-                                    if (selected.recinto) q.set('recinto', String(selected.recinto));
-                                    const visorUrl = `https://sigpac.mapa.gob.es/fega/visor/?${q.toString()}`;
-                                    return (
-                                        <a href={visorUrl} target="_blank" rel="noopener noreferrer"
-                                            style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, minHeight:48, background:'#16a34a', color:'#fff', borderRadius:10, padding:'12px', marginBottom:12, fontWeight:700, fontSize:'0.9rem', textDecoration:'none' }}>
-                                            🗺️ Ver mi parcela en el mapa
-                                        </a>
-                                    );
-                                })()}
+                                {selected.provincia_cod && selected.municipio_cod && selected.poligono && selected.parcela_num && (
+                                    <button onClick={() => setMapaAbierto(true)}
+                                        style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%', minHeight:48, background:'#16a34a', color:'#fff', border:'none', borderRadius:10, padding:'12px', marginBottom:12, fontWeight:700, fontSize:'0.9rem', cursor:'pointer', fontFamily:'inherit' }}>
+                                        🗺️ Ver mi parcela en el mapa
+                                    </button>
+                                )}
                                 {selected.provincia_cod && selected.municipio_cod && selected.poligono && selected.parcela_num && (
                                     <div style={{ fontSize:'0.68rem', color:'#6b7280', textAlign:'center', marginTop:-6, marginBottom:12 }}>
-                                        Se abre el visor oficial de SIGPAC (Ministerio de Agricultura) en una pestaña nueva.
+                                        Ortofoto oficial (PNOA) con los recintos de SIGPAC. Se abre dentro de la app.
                                     </div>
                                 )}
                                 {selected.superficie_ha && (
@@ -798,6 +888,11 @@ function ScreenParcelas({ campana, showToast }) {
                         )}
                     </div>
                 </div>
+            )}
+
+            {/* ── Mapa SIGPAC embebido ── */}
+            {mapaAbierto && selected && (
+                <MapaSigpacModal parcela={selected} onClose={() => setMapaAbierto(false)} />
             )}
 
             {/* ── Parcela Form Modal ── */}
