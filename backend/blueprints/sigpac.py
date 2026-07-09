@@ -2,6 +2,7 @@
 blueprints/sigpac.py — /api/sigpac/*
 """
 import re
+import time
 import logging
 import unicodedata
 
@@ -18,14 +19,51 @@ logger = logging.getLogger(__name__)
 SIGPAC_BASE = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/query"
 
 
-def _sigpac_get(url, timeout=10):
-    try:
-        r = req_lib.get(url, timeout=timeout)
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        logger.error("_sigpac_get %s: %s", url, e)
-        return {"error": "Error al contactar con el servicio SIGPAC"}
+def _sigpac_get(url, timeout=10, retries=1):
+    """GET a la API SIGPAC con un reintento por defecto.
+
+    El servicio de FEGA es intermitente (devuelve 502/timeout de forma
+    esporádica). Un reintento corto con backoff convierte en éxito la mayoría
+    de esos fallos transitorios sin penalizar la latencia del caso bueno.
+    """
+    last = None
+    for attempt in range(retries + 1):
+        try:
+            r = req_lib.get(url, timeout=timeout)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            last = e
+            if attempt < retries:
+                time.sleep(0.4 * (attempt + 1))
+    logger.error("_sigpac_get %s: %s", url, last)
+    return {"error": "Error al contactar con el servicio SIGPAC"}
+
+
+# ── Caché en proceso para los catálogos estáticos (provincias/municipios/polígonos) ──
+# Estos datos apenas cambian, así que se cachean por worker con TTL. Además, si una
+# petición fresca a SIGPAC falla, se sirve el último valor bueno aunque haya caducado
+# ("stale-on-error"): la app sigue respondiendo aunque el servicio de FEGA esté caído.
+_CACHE = {}  # key -> (expires_at, value)
+
+
+def _cache_get_or_fetch(key, ttl, fetch, is_valid):
+    now = time.time()
+    entry = _CACHE.get(key)
+    if entry and entry[0] > now:
+        return entry[1]                 # todavía fresco
+    fresh = fetch()
+    if is_valid(fresh):
+        _CACHE[key] = (now + ttl, fresh)
+        return fresh
+    if entry:                           # fetch falló → servir stale si lo hay
+        logger.warning("SIGPAC caché: sirviendo valor stale para %s (fetch falló)", key)
+        return entry[1]
+    return fresh                        # sin stale previo: propaga el error tal cual
+
+
+def _is_featurecollection(d):
+    return isinstance(d, dict) and 'features' in d
 
 
 def _sigpac_list(url):
@@ -127,7 +165,10 @@ _USO_LABELS = {
 @login_required
 @limiter.limit("30 per minute")
 def sigpac_provincias():
-    return jsonify(_sigpac_get(f"{SIGPAC_BASE}/provincias"))
+    return jsonify(_cache_get_or_fetch(
+        'prov', 86400,
+        lambda: _sigpac_get(f"{SIGPAC_BASE}/provincias"),
+        _is_featurecollection))
 
 
 @bp.route('/api/sigpac/municipios')
@@ -136,7 +177,10 @@ def sigpac_provincias():
 def sigpac_municipios():
     prov = _sigpac_param(request.args.get('provincia_cod'), '13')
     if not prov: return jsonify({"error": "Parámetro provincia inválido"}), 400
-    return jsonify(_sigpac_list(f"{SIGPAC_BASE}/municipios/{prov}"))
+    return jsonify(_cache_get_or_fetch(
+        f'muni:{prov}', 21600,
+        lambda: _sigpac_list(f"{SIGPAC_BASE}/municipios/{prov}"),
+        lambda d: isinstance(d, list)))
 
 
 @bp.route('/api/sigpac/poligonos')
@@ -146,7 +190,10 @@ def sigpac_poligonos():
     prov = _sigpac_param(request.args.get('provincia_cod'), '13')
     mun  = _sigpac_param(request.args.get('municipio_cod'), '131')
     if not prov or not mun: return jsonify({"error": "Parámetros SIGPAC inválidos"}), 400
-    return jsonify(_sigpac_get(f"{SIGPAC_BASE}/poligonos/{prov}/{mun}"))
+    return jsonify(_cache_get_or_fetch(
+        f'poli:{prov}:{mun}', 21600,
+        lambda: _sigpac_get(f"{SIGPAC_BASE}/poligonos/{prov}/{mun}"),
+        _is_featurecollection))
 
 
 @bp.route('/api/sigpac/parcelas')

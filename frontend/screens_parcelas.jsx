@@ -213,7 +213,7 @@ function ScreenParcelas({ campana, showToast }) {
         provincia_cod:'', provincia_nombre:'',
         municipio_cod:'', municipio_nombre:'',
         poligono:'', parcela_num:'', recinto:'',
-        superficie_ha:'', uso_sigpac:'', sistema_explotacion:'Secano',
+        superficie_ha:'', uso_sigpac:'', referencia_cat:'', sistema_explotacion:'Secano',
         masa_agua_cercana:false, notas:'',
     };
     const [form, setForm]   = useState(EMPTY_FORM);
@@ -246,6 +246,7 @@ function ScreenParcelas({ campana, showToast }) {
                 municipio_cod: wiz.mun_cod, municipio_nombre: wiz.mun_nombre,
                 poligono: wiz.pol, parcela_num: wiz.par, recinto: '',
                 superficie_ha: wiz.superficie || '', uso_sigpac: wiz.uso || '',
+                referencia_cat: wiz.ref_cat || '',
                 sistema_explotacion: selected.sistema_explotacion || 'Secano',
                 masa_agua_cercana: selected.masa_agua_cercana || false,
                 notas: selected.notas || '',
@@ -338,6 +339,7 @@ function ScreenParcelas({ campana, showToast }) {
             recinto: String(recNum),
             superficie_ha: d.superficie_ha != null ? d.superficie_ha : parcelaObj.superficie_ha,
             uso_sigpac: d.uso_sigpac || parcelaObj.uso_sigpac,
+            referencia_cat: d.referencia_cat || parcelaObj.referencia_cat,
         };
         await fetch(`/api/parcelas/${parcelaObj.id}`, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -576,8 +578,9 @@ function ScreenParcelas({ campana, showToast }) {
             if (d.error) { setSigpacState('error'); showToast(`Error SIGPAC: ${d.error}`); return; }
             const sup = d.superficie_ha ? String(d.superficie_ha) : '';
             const uso = d.uso_sigpac || '';
+            const refCat = d.referencia_cat || '';
             if (sup || uso) {
-                setForm(f => ({ ...f, recinto: rec, superficie_ha: sup || f.superficie_ha, uso_sigpac: uso || f.uso_sigpac }));
+                setForm(f => ({ ...f, recinto: rec, superficie_ha: sup || f.superficie_ha, uso_sigpac: uso || f.uso_sigpac, referencia_cat: refCat || f.referencia_cat }));
                 setSigpacState('ok');
                 showToast(`✅ SIGPAC: ${[sup && `${sup} ha`, uso].filter(Boolean).join(' · ')}`);
             } else {
@@ -626,6 +629,7 @@ function ScreenParcelas({ campana, showToast }) {
             municipio_cod: munCod, municipio_nombre: p.municipio_nombre||'',
             poligono: p.poligono||'', parcela_num: p.parcela_num||'', recinto: p.recinto||'',
             superficie_ha: p.superficie_ha||'', uso_sigpac: p.uso_sigpac||'',
+            referencia_cat: p.referencia_cat||'',
             sistema_explotacion: p.sistema_explotacion||'Secano',
             masa_agua_cercana: !!p.masa_agua_cercana, notas: p.notas||'',
         });
@@ -810,6 +814,7 @@ function ScreenParcelas({ campana, showToast }) {
                                         ['Recinto', selected.recinto, false],
                                         ['Superficie', selected.superficie_ha ? `${selected.superficie_ha} ha` : '', true],
                                         ['Uso SIGPAC', selected.uso_sigpac, true],
+                                        ['Ref. catastral', selected.referencia_cat, false],
                                         ['Sistema explot.', selected.sistema_explotacion, false],
                                         ['Masa agua <50m', selected.masa_agua_cercana ? 'Sí ⚠️' : 'No', false],
                                         ['Municipio', selected.municipio_nombre, false],

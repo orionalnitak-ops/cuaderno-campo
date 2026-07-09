@@ -43,14 +43,14 @@ def manage_parcelas():
         INSERT INTO parcelas (
             user_id, explotacion_id, comunidad, provincia_cod, provincia_nombre,
             municipio_cod, municipio_nombre, nombre_finca,
-            poligono, parcela_num, recinto, superficie_ha, uso_sigpac,
+            poligono, parcela_num, recinto, superficie_ha, uso_sigpac, referencia_cat,
             sistema_explotacion, masa_agua_cercana, notas
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
         uid, exp_id, data.get('comunidad'), data.get('provincia_cod'), data.get('provincia_nombre'),
         data.get('municipio_cod'), data.get('municipio_nombre'), data.get('nombre_finca'),
         data.get('poligono'), data.get('parcela_num'), data.get('recinto'),
-        sup, data.get('uso_sigpac'),
+        sup, data.get('uso_sigpac'), data.get('referencia_cat'),
         data.get('sistema_explotacion', 'Secano'),
         1 if data.get('masa_agua_cercana') else 0,
         data.get('notas'),
@@ -108,7 +108,7 @@ def manage_parcela(pid):
 
     fields = ['comunidad', 'provincia_cod', 'provincia_nombre', 'municipio_cod', 'municipio_nombre',
               'nombre_finca', 'poligono', 'parcela_num', 'recinto', 'superficie_ha', 'uso_sigpac',
-              'sistema_explotacion', 'masa_agua_cercana', 'notas']
+              'referencia_cat', 'sistema_explotacion', 'masa_agua_cercana', 'notas']
     sets = ', '.join(f"{f}=?" for f in fields)
     vals = [_field_val(f) for f in fields] + [pid, uid]
     conn.execute(f"UPDATE parcelas SET {sets} WHERE id=? AND user_id=?", vals)
