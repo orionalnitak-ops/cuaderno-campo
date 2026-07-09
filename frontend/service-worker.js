@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cuaderno-cache-v29';
+const CACHE_NAME = 'cuaderno-cache-v30';
 
 const APP_SHELL = [
   '/',
@@ -17,8 +17,8 @@ const APP_SHELL = [
   '/dist/screens_planes.js',
   '/dist/screens_onboarding.js',
   '/dist/app.js',
-  'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
+  'https://unpkg.com/react@18.3.1/umd/react.production.min.js',
+  'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
 ];
