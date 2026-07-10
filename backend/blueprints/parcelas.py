@@ -2,12 +2,15 @@
 blueprints/parcelas.py — /api/parcelas/* y /api/cultivos-campana/*
 """
 import re
+from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
+from extensions import limiter
 from db import get_db, one, dicts, is_pac_eligible
-from helpers import get_uid, _to_real, get_active_explotacion_id
+from helpers import get_uid, _to_real, get_active_explotacion_id, estado_sigpac
 from blueprints.ia import _recalcular_patrones
+from blueprints.sigpac import superficie_sigpac_parcela
 
 bp = Blueprint('parcelas', __name__)
 
@@ -51,6 +54,10 @@ def manage_parcelas():
         pac_only = request.args.get('pac_only', 'false').lower() == 'true'
         if pac_only:
             all_p = [p for p in all_p if is_pac_eligible(p.get('uso_sigpac', ''))]
+        for p in all_p:
+            estado, diff = estado_sigpac(p)
+            p['sigpac_estado'] = estado
+            p['sigpac_diferencia_pct'] = diff
         conn.close()
         return jsonify(all_p)
 
@@ -102,6 +109,10 @@ def manage_parcela(pid):
     if request.method == 'GET':
         row = one(conn, "SELECT * FROM parcelas WHERE id=? AND user_id=?", (pid, uid))
         conn.close()
+        if row:
+            estado, diff = estado_sigpac(row)
+            row['sigpac_estado'] = estado
+            row['sigpac_diferencia_pct'] = diff
         return jsonify(row or {})
 
     if request.method == 'DELETE':
@@ -153,6 +164,46 @@ def manage_parcela(pid):
     conn.execute(f"UPDATE parcelas SET {sets} WHERE id=? AND user_id=?", vals)
     conn.commit(); conn.close()
     return jsonify({"status": "ok"})
+
+
+@bp.route('/api/parcelas/<int:pid>/verificar-sigpac', methods=['POST'])
+@login_required
+@limiter.limit("60 per minute")
+def verificar_sigpac(pid):
+    """Contrasta la superficie de la parcela con SIGPAC y persiste el resultado."""
+    uid = get_uid()
+    conn = get_db()
+    p = one(conn, "SELECT * FROM parcelas WHERE id=? AND user_id=?", (pid, uid))
+    if not p:
+        conn.close()
+        return jsonify({"ok": False, "error": "Parcela no encontrada"}), 404
+
+    prov, mun = p.get('provincia_cod'), p.get('municipio_cod')
+    pol, par, rec = p.get('poligono'), p.get('parcela_num'), p.get('recinto')
+    if not all([prov, mun, pol, par]):
+        conn.close()
+        return jsonify({"ok": False, "error": "La parcela no tiene datos SIGPAC completos"}), 400
+
+    ha, resultado = superficie_sigpac_parcela(prov, mun, pol, par, rec)
+    if resultado == 'error':
+        conn.close()
+        return jsonify({"ok": False, "error": "SIGPAC no disponible, inténtalo de nuevo"}), 503
+
+    # resultado 'ok' (ha float) o 'no_encontrada' (ha None) -> ambos se persisten con timestamp.
+    now = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    conn.execute(
+        "UPDATE parcelas SET sigpac_superficie_ha=?, sigpac_verificado_en=? WHERE id=? AND user_id=?",
+        (ha, now, pid, uid),
+    )
+    conn.commit()
+    row = one(conn, "SELECT * FROM parcelas WHERE id=? AND user_id=?", (pid, uid))
+    conn.close()
+    estado, diff = estado_sigpac(row)
+    return jsonify({
+        "ok": True, "estado": estado,
+        "sigpac_superficie_ha": ha, "diferencia_pct": diff,
+        "sigpac_verificado_en": now,
+    })
 
 
 @bp.route('/api/cultivos-campana', methods=['GET', 'POST'])

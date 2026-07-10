@@ -73,3 +73,36 @@ def get_active_explotacion_id(conn=None):
     finally:
         if own_conn:
             conn.close()
+
+
+def estado_sigpac(parcela):
+    """Deriva el estado del badge SIGPAC de una parcela (dict). Función pura, sin I/O.
+
+    Devuelve (estado, diferencia_pct):
+      - 'sin_verificar'  -> nunca se verificó (diferencia None)
+      - 'no_encontrada'  -> verificada pero SIGPAC no dio superficie (diferencia None)
+      - 'verde'          -> |declarada - sigpac| / sigpac <= 5%
+      - 'ambar'          -> diferencia > 5% (o sin superficie declarada)
+    diferencia_pct = (declarada - sigpac) / sigpac * 100, redondeada a 1 decimal.
+    """
+    if not parcela.get('sigpac_verificado_en'):
+        return 'sin_verificar', None
+    sig = parcela.get('sigpac_superficie_ha')
+    if sig is None:
+        return 'no_encontrada', None
+    try:
+        sig = float(sig)
+    except (TypeError, ValueError):
+        return 'no_encontrada', None
+    if sig <= 0:
+        return 'no_encontrada', None
+    decl = parcela.get('superficie_ha')
+    if decl in (None, ''):
+        return 'ambar', None
+    try:
+        decl = float(decl)
+    except (TypeError, ValueError):
+        return 'ambar', None
+    ratio = abs(decl - sig) / sig
+    diff_pct = round((decl - sig) / sig * 100, 1)
+    return ('verde' if ratio <= 0.05 else 'ambar'), diff_pct
