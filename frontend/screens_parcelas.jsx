@@ -686,6 +686,7 @@ function ScreenParcelas({ campana, showToast }) {
         setSaving(true);
         const method = editId ? 'PUT' : 'POST';
         const url = editId ? `/api/parcelas/${editId}` : '/api/parcelas';
+        let savedId = editId;
         try {
             const res = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(form), credentials: 'include' });
             if (!res.ok) {
@@ -693,6 +694,10 @@ function ScreenParcelas({ campana, showToast }) {
                 showToast(`❌ Error al guardar: ${err.error || res.status}`);
                 setSaving(false);
                 return;
+            }
+            if (!editId) {
+                const data = await res.json().catch(() => ({}));
+                savedId = data.id;
             }
         } catch {
             showToast('❌ Error de conexión al guardar');
@@ -706,6 +711,12 @@ function ScreenParcelas({ campana, showToast }) {
             setSelected(prev => prev ? { ...prev, ...form, id: prev.id } : prev);
         } else {
             setSelected(null);
+        }
+        // Auto-verificación con SIGPAC (no bloquea; refresca badges al volver).
+        if (savedId && form.poligono && form.parcela_num && navigator.onLine) {
+            fetch(`/api/parcelas/${savedId}/verificar-sigpac`, { method:'POST', credentials:'include' })
+                .then(() => fetchParcelas())
+                .catch(() => {});
         }
     };
 
