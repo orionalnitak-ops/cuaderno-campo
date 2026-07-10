@@ -54,6 +54,10 @@ def manage_parcelas():
         pac_only = request.args.get('pac_only', 'false').lower() == 'true'
         if pac_only:
             all_p = [p for p in all_p if is_pac_eligible(p.get('uso_sigpac', ''))]
+        for p in all_p:
+            estado, diff = estado_sigpac(p)
+            p['sigpac_estado'] = estado
+            p['sigpac_diferencia_pct'] = diff
         conn.close()
         return jsonify(all_p)
 
@@ -105,6 +109,10 @@ def manage_parcela(pid):
     if request.method == 'GET':
         row = one(conn, "SELECT * FROM parcelas WHERE id=? AND user_id=?", (pid, uid))
         conn.close()
+        if row:
+            estado, diff = estado_sigpac(row)
+            row['sigpac_estado'] = estado
+            row['sigpac_diferencia_pct'] = diff
         return jsonify(row or {})
 
     if request.method == 'DELETE':
