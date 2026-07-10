@@ -340,6 +340,8 @@ def init_db():
         ('created_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
         ('updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
         ('explotacion_id', 'INTEGER'),
+        ('sigpac_superficie_ha', 'REAL'),
+        ('sigpac_verificado_en', 'TEXT'),
     ]:
         _add_col(c, 'parcelas', col, typ)
 
