@@ -123,6 +123,7 @@ function MapaSigpacModal({ parcela, onClose }) {
     const mapDivRef = React.useRef(null);
     const mapRef    = React.useRef(null);
     const [estado, setEstado] = React.useState('cargando'); // cargando|ok|error
+    const [sigpacCaido, setSigpacCaido] = React.useState(false); // recintos WMS no responden
 
     React.useEffect(() => {
         if (typeof L === 'undefined' || !mapDivRef.current) {
@@ -141,11 +142,37 @@ function MapaSigpacModal({ parcela, onClose }) {
         }).addTo(map);
 
         // Capa de recintos SIGPAC oficial (FEGA) — dibuja los perímetros de las parcelas.
-        L.tileLayer.wms('https://wms.mapa.gob.es/sigpac/wms', {
-            layers: 'recinto',
+        // Endpoint "SIGPAC en la Nube" (sigpac-hubcloud.es). El WMS antiguo
+        // wms.mapa.gob.es/sigpac/wms quedó deprecado (devolvía 502). GeoServer
+        // exige el nombre de capa cualificado 'AU.Sigpac:recinto', ruta /wms/ows
+        // y version 1.3.0. Si el servicio de FEGA se cae, 'tileerror' activa un
+        // aviso para que el agricultor sepa que es SIGPAC y no un error de su parcela.
+        const capaRecinto = L.tileLayer.wms('https://sigpac-hubcloud.es/wms/ows', {
+            layers: 'AU.Sigpac:recinto',
             format: 'image/png',
             transparent: true,
+            version: '1.3.0',
+            styles: '',
             attribution: 'SIGPAC © FEGA',
+        });
+        capaRecinto.on('tileerror', () => setSigpacCaido(true));
+        capaRecinto.addTo(map);
+
+        // Capa temática Red Natura 2000 (ZEPA + LIC/ZEC) — MITECO/IEPNB.
+        // Relevante para fitosanitarios: hay restricciones de uso de productos
+        // dentro de espacios protegidos. Apagada por defecto para no tapar la
+        // ortofoto; el agricultor la enciende desde el control de capas.
+        const capaRedNatura = L.tileLayer.wms('https://geoserver.iepnb.es/geoserver/RN2000/wms', {
+            layers: 'rn2000_2024',
+            format: 'image/png',
+            transparent: true,
+            opacity: 0.45,
+            attribution: 'Red Natura 2000 © MITECO',
+        });
+
+        // Control de capas: casilla para encender/apagar Red Natura 2000.
+        L.control.layers(null, { '🛡️ Red Natura 2000 (ZEPA)': capaRedNatura }, {
+            collapsed: false, position: 'topright',
         }).addTo(map);
 
         // Leaflet mide mal el contenedor si se creó dentro del modal; forzar recálculo.
@@ -203,6 +230,11 @@ function MapaSigpacModal({ parcela, onClose }) {
                 {estado === 'cargando' && (
                     <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.4)', color:'#fff', pointerEvents:'none' }}>
                         Cargando mapa…
+                    </div>
+                )}
+                {sigpacCaido && estado !== 'error' && (
+                    <div style={{ position:'absolute', top:8, left:8, right:8, background:'#fffbeb', color:'#92400e', border:'1px solid #fcd34d', borderRadius:8, padding:'8px 12px', fontSize:'0.75rem', textAlign:'center', pointerEvents:'none', boxShadow:'0 1px 4px rgba(0,0,0,0.2)' }}>
+                        ⚠️ Los perímetros de SIGPAC no están disponibles ahora mismo (servicio de FEGA). Tu parcela está bien; vuelve a intentarlo más tarde.
                     </div>
                 )}
                 {estado === 'error' && (
