@@ -1557,19 +1557,20 @@ function ScreenParcelas({ campana, showToast }) {
                                         Junta los trozos {g.nums.join(', ')} ({usoLabel(g.uso)})
                                     </div>
                                     <input value={g.nombre} disabled={!g.aceptado || rm.creando}
+                                        aria-label={`Nombre del grupo ${usoLabel(g.uso)}`}
                                         onChange={e => setGrupo(i, { nombre: e.target.value })}
                                         style={{ width:'100%', padding:'12px', borderRadius:8, fontSize:'1rem',
                                             border:'1px solid #d1d5db', marginBottom:10, boxSizing:'border-box' }} />
                                     <div style={{ display:'flex', gap:8 }}>
-                                        <button onClick={() => setGrupo(i, { aceptado: true })} style={{
-                                            flex:1, padding:'12px', borderRadius:10, fontWeight:700, cursor:'pointer',
+                                        <button onClick={() => setGrupo(i, { aceptado: true })} disabled={rm.creando} style={{
+                                            flex:1, padding:'14px 12px', borderRadius:10, fontWeight:700, cursor:'pointer',
                                             border:'2px solid #00694c', fontSize:'0.9rem',
                                             background: g.aceptado ? '#00694c' : '#fff',
                                             color: g.aceptado ? '#fff' : '#00694c' }}>
                                             Sí, agrupar
                                         </button>
-                                        <button onClick={() => setGrupo(i, { aceptado: false })} style={{
-                                            flex:1, padding:'12px', borderRadius:10, fontWeight:700, cursor:'pointer',
+                                        <button onClick={() => setGrupo(i, { aceptado: false })} disabled={rm.creando} style={{
+                                            flex:1, padding:'14px 12px', borderRadius:10, fontWeight:700, cursor:'pointer',
                                             border:'2px solid ' + (!g.aceptado ? '#6b7280' : '#e5e7eb'), fontSize:'0.9rem',
                                             background: !g.aceptado ? '#6b7280' : '#fff',
                                             color: !g.aceptado ? '#fff' : '#9ca3af' }}>
