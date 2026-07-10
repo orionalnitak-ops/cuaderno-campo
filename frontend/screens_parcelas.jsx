@@ -712,10 +712,21 @@ function ScreenParcelas({ campana, showToast }) {
         } else {
             setSelected(null);
         }
-        // Auto-verificación con SIGPAC (no bloquea; refresca badges al volver).
+        // Auto-verificación con SIGPAC (no bloquea; refresca lista y ficha al volver).
         if (savedId && form.poligono && form.parcela_num && navigator.onLine) {
             fetch(`/api/parcelas/${savedId}/verificar-sigpac`, { method:'POST', credentials:'include' })
-                .then(() => fetchParcelas())
+                .then(r => r.ok ? r.json() : null)
+                .then(d => {
+                    if (d && d.ok) {
+                        setSelected(prev => (prev && prev.id === savedId) ? { ...prev,
+                            sigpac_superficie_ha: d.sigpac_superficie_ha,
+                            sigpac_verificado_en: d.sigpac_verificado_en,
+                            sigpac_estado: d.estado,
+                            sigpac_diferencia_pct: d.diferencia_pct,
+                        } : prev);
+                    }
+                    fetchParcelas();
+                })
                 .catch(() => {});
         }
     };

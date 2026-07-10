@@ -192,14 +192,13 @@ def superficie_sigpac_parcela(prov, mun, pol, par, recinto=None):
         objetivo = bboxes
 
     total = 0.0
-    algun_ok = False
     for (n, b) in objetivo:
         ha = _superficie_featureinfo(prov, mun, pol, par, n, b)
-        if ha is not None:
-            total += ha
-            algun_ok = True
-    if not algun_ok:
-        return None, 'error'                      # recintos existen pero FeatureInfo falló
+        if ha is None:
+            # Cualquier recinto que falle invalida la suma: mejor no persistir un
+            # total parcial (daría un badge ámbar falso) y tratarlo como transitorio.
+            return None, 'error'
+        total += ha
     return round(total, 4), 'ok'
 
 
