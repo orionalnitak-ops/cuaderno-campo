@@ -110,6 +110,99 @@ def _parcela_resuelve(prov, mun, pol, par):
     return isinstance(d, dict) and bool(d.get('features'))
 
 
+HUBCLOUD_FEATUREINFO = "https://sigpac-hubcloud.es/wms/ows"
+
+
+def _recinto_bboxes(recintos_data):
+    """Extrae [(num_recinto, (x1,y1,x2,y2)), ...] de la respuesta query/recintos (EPSG:4258)."""
+    out = []
+    for f in (recintos_data.get('features') or []):
+        p = f.get('properties') or {}
+        try:
+            num = int(p.get('nombre'))
+        except (TypeError, ValueError):
+            continue
+        bbox = (p.get('x1'), p.get('y1'), p.get('x2'), p.get('y2'))
+        if all(v is not None for v in bbox):
+            out.append((num, bbox))
+    return out
+
+
+def _superficie_featureinfo(prov, mun, pol, par, rec, bbox):
+    """superficie_ha oficial de un recinto vía GetFeatureInfo en hubcloud, o None si falla."""
+    x1, y1, x2, y2 = bbox
+    cql = (f"provincia={prov} AND municipio={mun} AND poligono={pol} "
+           f"AND parcela={par} AND recinto={rec}")
+    params = {
+        'service': 'WMS', 'version': '1.1.1', 'request': 'GetFeatureInfo',
+        'layers': 'AU.Sigpac:recinto', 'query_layers': 'AU.Sigpac:recinto',
+        'info_format': 'application/json', 'srs': 'EPSG:4258',
+        'bbox': f"{x1},{y1},{x2},{y2}", 'width': 256, 'height': 256, 'x': 128, 'y': 128,
+        'feature_count': 5, 'styles': '', 'CQL_FILTER': cql,
+    }
+    try:
+        # El WAF de hubcloud bloquea el User-Agent por defecto de requests
+        # (devuelve un ServiceExceptionReport XML en vez de JSON). Un UA de
+        # navegador evita el bloqueo sin necesidad de headers adicionales.
+        headers = {'User-Agent': 'Mozilla/5.0 (compatible; CuadernoDeExplotacion/1.0)'}
+        r = req_lib.get(HUBCLOUD_FEATUREINFO, params=params, timeout=10, headers=headers)
+        r.raise_for_status()
+        feats = (r.json() or {}).get('features') or []
+        if not feats:
+            return None
+        val = (feats[0].get('properties') or {}).get('superficie_ha')
+        return float(val) if val is not None else None
+    except Exception as e:
+        logger.warning("featureinfo %s/%s/%s/%s/%s: %s", prov, mun, pol, par, rec, e)
+        return None
+
+
+def superficie_sigpac_parcela(prov, mun, pol, par, recinto=None):
+    """Superficie SIGPAC (ha) para el badge de verificación.
+
+    - recinto informado -> superficie de ese recinto.
+    - recinto vacío -> suma de todos los recintos del pol/par.
+
+    Devuelve (superficie_ha|None, resultado) con resultado en:
+      'ok'            -> superficie_ha es un float válido.
+      'no_encontrada' -> el pol/par (o el recinto declarado) no existe en SIGPAC.
+      'error'         -> fallo transitorio de FEGA (no se debe persistir).
+    """
+    # Validación defensiva: los identificadores van en URLs.
+    for v in (prov, mun, pol, par):
+        if not re.fullmatch(r'\d{1,6}', str(v or '')):
+            return None, 'no_encontrada'
+
+    data = _sigpac_get(f"{SIGPAC_BASE}/recintos/{prov}/{mun}/0/0/{pol}/{par}")
+    if not isinstance(data, dict) or 'error' in data:
+        return None, 'error'                      # FEGA caído / respuesta inválida
+    bboxes = _recinto_bboxes(data)
+    if not bboxes:
+        return None, 'no_encontrada'              # pol/par no resuelve
+
+    if recinto:
+        try:
+            rnum = int(recinto)
+        except (TypeError, ValueError):
+            return None, 'no_encontrada'
+        objetivo = [(n, b) for (n, b) in bboxes if n == rnum]
+        if not objetivo:
+            return None, 'no_encontrada'          # recinto declarado inexistente
+    else:
+        objetivo = bboxes
+
+    total = 0.0
+    algun_ok = False
+    for (n, b) in objetivo:
+        ha = _superficie_featureinfo(prov, mun, pol, par, n, b)
+        if ha is not None:
+            total += ha
+            algun_ok = True
+    if not algun_ok:
+        return None, 'error'                      # recintos existen pero FeatureInfo falló
+    return round(total, 4), 'ok'
+
+
 # Mapa de código cultivo Catastro → uso SIGPAC
 _CATASTRO_A_SIGPAC = {
     # Labor/cereal
