@@ -264,7 +264,7 @@ def alta_multirecinto():
             uhc_id = c.lastrowid
             for num in u['recintos']:
                 c.execute(
-                    "INSERT OR IGNORE INTO uhc_parcelas (uhc_id, parcela_id) VALUES (?,?)",
+                    "INSERT INTO uhc_parcelas (uhc_id, parcela_id) VALUES (?,?)",
                     (uhc_id, ids_por_num[num])
                 )
 
