@@ -459,6 +459,7 @@ function ScreenParcelas({ campana, showToast }) {
             municipio_cod: rm.ctx.munCod, municipio_nombre: form.municipio_nombre,
             poligono: rm.ctx.poligono, parcela_num: rm.ctx.parcela,
             sistema_explotacion: form.sistema_explotacion || 'Secano',
+            campana: campana || '2025/2026',
             recintos: rm.recs.map(r => ({ num: r.num, uso_sigpac: r.uso_sigpac || '', superficie_ha: r.superficie_ha })),
             uhcs: rm.grupos.filter(g => g.aceptado)
                 .map(g => ({ nombre: g.nombre.trim(), cultivo: usoLabel(g.uso), recintos: g.nums })),
