@@ -102,6 +102,23 @@ const PROVINCIAS_ES = [
 // Pinta la parcela DENTRO de la app (ortofoto PNOA + capa recintos SIGPAC +
 // polígono de la parcela). No depende del visor externo → el zoom lo controla
 // nuestro fitBounds, así que funciona igual en PC y en móvil.
+// Pill de verificación SIGPAC. estado: 'verde'|'ambar'|'no_encontrada'|'sin_verificar'.
+function sigpacBadge(estado) {
+    const map = {
+        verde:         { bg:'#dcfce7', fg:'#166534', bd:'#86efac', txt:'✓ Verificado' },
+        ambar:         { bg:'#fef3c7', fg:'#92400e', bd:'#fde68a', txt:'⚠ Revisar' },
+        no_encontrada: { bg:'#fef3c7', fg:'#92400e', bd:'#fde68a', txt:'⚠ No en SIGPAC' },
+        sin_verificar: { bg:'#f3f4f6', fg:'#6b7280', bd:'#e5e7eb', txt:'Sin verificar' },
+    };
+    const s = map[estado];
+    if (!s) return null;
+    return (
+        <span className="chip" style={{ background:s.bg, color:s.fg, border:`1px solid ${s.bd}`, fontSize:'0.7rem' }}>
+            {s.txt}
+        </span>
+    );
+}
+
 function MapaSigpacModal({ parcela, onClose }) {
     const mapDivRef = React.useRef(null);
     const mapRef    = React.useRef(null);
@@ -761,6 +778,7 @@ function ScreenParcelas({ campana, showToast }) {
                                     {p.poligono && !p.superficie_ha && (
                                         <span className="chip" style={{ background:'#fef3c7', color:'#92400e', border:'1px solid #fde68a', fontSize:'0.7rem' }}>⚠ Sin sup.</span>
                                     )}
+                                    {p.poligono && sigpacBadge(p.sigpac_estado)}
                                 </div>
                             </div>
                             <span style={{ color:'#d1d5db', fontSize:18 }}>›</span>
