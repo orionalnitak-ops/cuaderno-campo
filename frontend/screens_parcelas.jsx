@@ -417,6 +417,74 @@ function ScreenParcelas({ campana, showToast }) {
     const [recintosPicker, setRecintosPicker] = useState(null);
     // null | { mode:'detail'|'form', provCod, munCod, poligono, parcela, nums:[1,3,4] }
 
+    const [resumenMulti, setResumenMulti] = useState(null);
+    // null | { ctx, recs, grupos:[{uso, nums, nombre, aceptado}], creando:bool }
+
+    // "OV-Olivar" → "Olivar" (mismo criterio que el picker)
+    const usoLabel = u => ((u || '').split('-').slice(1).join('-').trim() || u || '');
+
+    // Agrupa recintos por uso SIGPAC; solo grupos de 2+ generan UHC propuesta.
+    const abrirResumenMulti = () => {
+        const ctx = recintosPicker;
+        const recs = ctx.recintos || [];
+        const by = new Map();
+        recs.forEach(r => {
+            const uso = (r.uso_sigpac || '').trim();
+            if (!uso) return;
+            if (!by.has(uso)) by.set(uso, []);
+            by.get(uso).push(r.num);
+        });
+        const grupos = [...by.entries()]
+            .filter(([, nums]) => nums.length >= 2)
+            .map(([uso, nums]) => ({
+                uso, nums,
+                nombre: `${usoLabel(uso)} — Pol ${ctx.poligono} Par ${ctx.parcela}`,
+                aceptado: true,
+            }));
+        setRecintosPicker(null);
+        setResumenMulti({ ctx, recs, grupos, creando: false });
+    };
+
+    const confirmarMultirecinto = async () => {
+        const rm = resumenMulti;
+        if (rm.grupos.some(g => g.aceptado && !g.nombre.trim())) {
+            showToast('Ponle un nombre a cada grupo (o desmárcalo)');
+            return;
+        }
+        setResumenMulti(r => ({ ...r, creando: true }));
+        const body = {
+            nombre_base: (form.nombre_finca || '').trim() || `Pol ${rm.ctx.poligono} Par ${rm.ctx.parcela}`,
+            comunidad: form.comunidad,
+            provincia_cod: rm.ctx.provCod, provincia_nombre: form.provincia_nombre,
+            municipio_cod: rm.ctx.munCod, municipio_nombre: form.municipio_nombre,
+            poligono: rm.ctx.poligono, parcela_num: rm.ctx.parcela,
+            sistema_explotacion: form.sistema_explotacion || 'Secano',
+            recintos: rm.recs.map(r => ({ num: r.num, uso_sigpac: r.uso_sigpac || '', superficie_ha: r.superficie_ha })),
+            uhcs: rm.grupos.filter(g => g.aceptado)
+                .map(g => ({ nombre: g.nombre.trim(), cultivo: usoLabel(g.uso), recintos: g.nums })),
+        };
+        try {
+            const res = await fetch('/api/parcelas/alta-multirecinto', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body), credentials: 'include',
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.ok) {
+                showToast(`⚠️ ${d.error || 'No se pudieron crear las parcelas'}`);
+                setResumenMulti(r => r ? { ...r, creando: false } : r);
+                return;
+            }
+            setResumenMulti(null);
+            setShowForm(false);
+            fetchParcelas();
+            const np = d.data?.parcelas || 0, ng = d.data?.uhcs || 0;
+            showToast(`✅ Creadas ${np} parcelas${ng ? ` y ${ng} grupo${ng > 1 ? 's' : ''}` : ''}`);
+        } catch {
+            showToast('Error de conexión');
+            setResumenMulti(r => r ? { ...r, creando: false } : r);
+        }
+    };
+
     // Handler: usuario elige recinto del picker
     const onPickRecinto = async (recNum) => {
         const ctx = recintosPicker;
@@ -1387,6 +1455,15 @@ function ScreenParcelas({ campana, showToast }) {
                                     </button>
                                 ))}
                             </div>
+                            {recintosPicker.mode === 'form' && recs.length > 1 && (
+                                <button onClick={abrirResumenMulti} style={{
+                                    width:'100%', padding:'14px 20px', marginBottom:12,
+                                    background:'#00694c', border:'none', borderRadius:12,
+                                    color:'#fff', fontWeight:800, fontSize:'1rem', cursor:'pointer',
+                                }}>
+                                    ➕ Crear todas ({recs.length} trozos)
+                                </button>
+                            )}
                             {!supIndividual && (
                                 <div style={{ fontSize:'0.72rem', color:'#9ca3af', textAlign:'center', marginBottom:12, lineHeight:1.4 }}>
                                     La API SIGPAC 2026 no devuelve superficie individual por recinto.
