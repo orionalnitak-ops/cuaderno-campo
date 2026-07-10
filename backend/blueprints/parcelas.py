@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from extensions import limiter
 from db import get_db, one, dicts, is_pac_eligible
-from helpers import get_uid, _to_real, get_active_explotacion_id, estado_sigpac
+from helpers import get_uid, _to_real, get_active_explotacion_id, estado_sigpac, validar_alta_multirecinto
 from blueprints.ia import _recalcular_patrones
 from blueprints.sigpac import superficie_sigpac_parcela
 
@@ -204,6 +204,75 @@ def verificar_sigpac(pid):
         "sigpac_superficie_ha": ha, "diferencia_pct": diff,
         "sigpac_verificado_en": now,
     })
+
+
+@bp.route('/api/parcelas/alta-multirecinto', methods=['POST'])
+@login_required
+@limiter.limit("20 per minute")
+def alta_multirecinto():
+    """Crea una parcela por recinto y las UHC aceptadas, todo o nada (commit único)."""
+    data = request.json or {}
+    norm, err = validar_alta_multirecinto(data)
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+
+    poligono = str(data.get('poligono') or '').strip()
+    parcela_num = str(data.get('parcela_num') or '').strip()
+    if not poligono or not parcela_num:
+        return jsonify({"ok": False, "error": "Faltan el polígono y la parcela SIGPAC"}), 400
+
+    uid = get_uid()
+    conn = get_db()
+    try:
+        exp_id = get_active_explotacion_id(conn)
+
+        # Duplicados: si ya existe alguno de los recintos, no se crea nada.
+        for r in norm['recintos']:
+            ya = one(conn, """SELECT id FROM parcelas
+                              WHERE user_id=? AND explotacion_id=? AND poligono=?
+                                AND parcela_num=? AND recinto=? AND activa=1""",
+                     (uid, exp_id, poligono, parcela_num, str(r['num'])))
+            if ya:
+                return jsonify({"ok": False,
+                                "error": f"Ya tienes registrado el trozo {r['num']} de esa parcela"}), 400
+
+        c = conn.cursor()
+        ids_por_num = {}
+        for r in norm['recintos']:
+            c.execute('''
+                INSERT INTO parcelas (
+                    user_id, explotacion_id, comunidad, provincia_cod, provincia_nombre,
+                    municipio_cod, municipio_nombre, nombre_finca,
+                    poligono, parcela_num, recinto, superficie_ha, uso_sigpac, referencia_cat,
+                    sistema_explotacion, masa_agua_cercana, notas
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ''', (
+                uid, exp_id, data.get('comunidad'), data.get('provincia_cod'), data.get('provincia_nombre'),
+                data.get('municipio_cod'), data.get('municipio_nombre'),
+                f"{norm['nombre_base']} — R{r['num']}",
+                poligono, parcela_num, str(r['num']),
+                r['superficie_ha'], r['uso_sigpac'], '',
+                data.get('sistema_explotacion', 'Secano'), 0, '',
+            ))
+            ids_por_num[r['num']] = c.lastrowid
+
+        for u in norm['uhcs']:
+            c.execute(
+                "INSERT INTO unidades_homogeneas (user_id, nombre, cultivo, campana, notas) VALUES (?,?,?,?,?)",
+                (uid, u['nombre'], u['cultivo'], norm['campana'], '')
+            )
+            uhc_id = c.lastrowid
+            for num in u['recintos']:
+                c.execute(
+                    "INSERT OR IGNORE INTO uhc_parcelas (uhc_id, parcela_id) VALUES (?,?)",
+                    (uhc_id, ids_por_num[num])
+                )
+
+        conn.commit()
+        return jsonify({"ok": True, "data": {"parcelas": len(norm['recintos']),
+                                             "uhcs": len(norm['uhcs'])}}), 201
+    finally:
+        conn.close()
 
 
 @bp.route('/api/cultivos-campana', methods=['GET', 'POST'])
