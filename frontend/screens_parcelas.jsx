@@ -102,6 +102,23 @@ const PROVINCIAS_ES = [
 // Pinta la parcela DENTRO de la app (ortofoto PNOA + capa recintos SIGPAC +
 // polígono de la parcela). No depende del visor externo → el zoom lo controla
 // nuestro fitBounds, así que funciona igual en PC y en móvil.
+// Pill de verificación SIGPAC. estado: 'verde'|'ambar'|'no_encontrada'|'sin_verificar'.
+function sigpacBadge(estado) {
+    const map = {
+        verde:         { bg:'#dcfce7', fg:'#166534', bd:'#86efac', txt:'✓ Verificado' },
+        ambar:         { bg:'#fef3c7', fg:'#92400e', bd:'#fde68a', txt:'⚠ Revisar' },
+        no_encontrada: { bg:'#fef3c7', fg:'#92400e', bd:'#fde68a', txt:'⚠ No en SIGPAC' },
+        sin_verificar: { bg:'#f3f4f6', fg:'#6b7280', bd:'#e5e7eb', txt:'Sin verificar' },
+    };
+    const s = map[estado];
+    if (!s) return null;
+    return (
+        <span className="chip" style={{ background:s.bg, color:s.fg, border:`1px solid ${s.bd}`, fontSize:'0.7rem' }}>
+            {s.txt}
+        </span>
+    );
+}
+
 function MapaSigpacModal({ parcela, onClose }) {
     const mapDivRef = React.useRef(null);
     const mapRef    = React.useRef(null);
@@ -252,6 +269,7 @@ function ScreenParcelas({ campana, showToast }) {
     const [editId, setEditId] = useState(null);
     const [saving, setSaving] = useState(false);
     const [sigpacSyncing, setSigpacSyncing] = useState(false);
+    const [verificando, setVerificando] = useState(false);
     const [mapaAbierto, setMapaAbierto] = useState(false);
 
     // SIGPAC search (edit form)
@@ -454,6 +472,29 @@ function ScreenParcelas({ campana, showToast }) {
             showToast('✅ Datos SIGPAC actualizados');
         } catch { showToast('Error al consultar SIGPAC'); }
         finally { setSigpacSyncing(false); }
+    };
+
+    const reVerificarSigpac = async () => {
+        if (!selected || !navigator.onLine) return;
+        setVerificando(true);
+        try {
+            const r = await fetch(`/api/parcelas/${selected.id}/verificar-sigpac`, { method:'POST', credentials:'include' });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok || !d.ok) {
+                showToast(`⚠️ ${d.error || 'No se pudo verificar con SIGPAC'}`);
+            } else {
+                setSelected(prev => prev ? { ...prev,
+                    sigpac_superficie_ha: d.sigpac_superficie_ha,
+                    sigpac_verificado_en: d.sigpac_verificado_en,
+                    sigpac_estado: d.estado,
+                    sigpac_diferencia_pct: d.diferencia_pct,
+                } : prev);
+                fetchParcelas();
+            }
+        } catch {
+            showToast('⚠️ Error de conexión al verificar con SIGPAC');
+        }
+        setVerificando(false);
     };
 
     const syncAll = async () => {
@@ -677,6 +718,7 @@ function ScreenParcelas({ campana, showToast }) {
         setSaving(true);
         const method = editId ? 'PUT' : 'POST';
         const url = editId ? `/api/parcelas/${editId}` : '/api/parcelas';
+        let savedId = editId;
         try {
             const res = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(form), credentials: 'include' });
             if (!res.ok) {
@@ -684,6 +726,10 @@ function ScreenParcelas({ campana, showToast }) {
                 showToast(`❌ Error al guardar: ${err.error || res.status}`);
                 setSaving(false);
                 return;
+            }
+            if (!editId) {
+                const data = await res.json().catch(() => ({}));
+                savedId = data.id;
             }
         } catch {
             showToast('❌ Error de conexión al guardar');
@@ -697,6 +743,23 @@ function ScreenParcelas({ campana, showToast }) {
             setSelected(prev => prev ? { ...prev, ...form, id: prev.id } : prev);
         } else {
             setSelected(null);
+        }
+        // Auto-verificación con SIGPAC (no bloquea; refresca lista y ficha al volver).
+        if (savedId && form.poligono && form.parcela_num && navigator.onLine) {
+            fetch(`/api/parcelas/${savedId}/verificar-sigpac`, { method:'POST', credentials:'include' })
+                .then(r => r.ok ? r.json() : null)
+                .then(d => {
+                    if (d && d.ok) {
+                        setSelected(prev => (prev && prev.id === savedId) ? { ...prev,
+                            sigpac_superficie_ha: d.sigpac_superficie_ha,
+                            sigpac_verificado_en: d.sigpac_verificado_en,
+                            sigpac_estado: d.estado,
+                            sigpac_diferencia_pct: d.diferencia_pct,
+                        } : prev);
+                    }
+                    fetchParcelas();
+                })
+                .catch(() => {});
         }
     };
 
@@ -793,6 +856,7 @@ function ScreenParcelas({ campana, showToast }) {
                                     {p.poligono && !p.superficie_ha && (
                                         <span className="chip" style={{ background:'#fef3c7', color:'#92400e', border:'1px solid #fde68a', fontSize:'0.7rem' }}>⚠ Sin sup.</span>
                                     )}
+                                    {p.poligono && sigpacBadge(p.sigpac_estado)}
                                 </div>
                             </div>
                             <span style={{ color:'#d1d5db', fontSize:18 }}>›</span>
@@ -875,6 +939,31 @@ function ScreenParcelas({ campana, showToast }) {
                                         );
                                     })}
                                 </div>
+                                {selected.poligono && selected.parcela_num && (
+                                    <div style={{ background:'#f8f9fb', border:'1px solid #e5e7eb', borderRadius:10, padding:'12px 14px', marginBottom:12 }}>
+                                        <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                                            <span style={{ fontSize:'0.7rem', fontWeight:700, color:'#6b7280', textTransform:'uppercase', letterSpacing:'0.05em' }}>Verificación SIGPAC</span>
+                                            {sigpacBadge(selected.sigpac_estado)}
+                                            <button onClick={reVerificarSigpac} disabled={verificando || !navigator.onLine}
+                                                title={!navigator.onLine ? 'Necesitas conexión para verificar con SIGPAC' : ''}
+                                                style={{ marginLeft:'auto', background:'#16a34a', border:'none', borderRadius:8, padding:'8px 12px', color:'#fff', cursor:(verificando||!navigator.onLine)?'default':'pointer', fontWeight:700, fontSize:'0.78rem', opacity:(verificando||!navigator.onLine)?0.6:1 }}>
+                                                {verificando ? '…' : '↻ Re-verificar'}
+                                            </button>
+                                        </div>
+                                        {selected.sigpac_superficie_ha != null && (
+                                            <div style={{ fontSize:'0.78rem', color:'#374151', marginTop:8 }}>
+                                                SIGPAC: <strong>{selected.sigpac_superficie_ha} ha</strong>
+                                                {selected.superficie_ha ? <> · tu dato: {selected.superficie_ha} ha</> : null}
+                                                {selected.sigpac_diferencia_pct != null ? <> ({selected.sigpac_diferencia_pct > 0 ? '+' : ''}{selected.sigpac_diferencia_pct}%)</> : null}
+                                            </div>
+                                        )}
+                                        {selected.sigpac_estado === 'no_encontrada' && (
+                                            <div style={{ fontSize:'0.78rem', color:'#92400e', marginTop:8 }}>
+                                                SIGPAC no encuentra esta parcela. Revisa el polígono, la parcela y el recinto.
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                                 {selected.provincia_cod && selected.municipio_cod && selected.poligono && selected.parcela_num && (
                                     <button onClick={() => setMapaAbierto(true)}
                                         style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%', minHeight:48, background:'#16a34a', color:'#fff', border:'none', borderRadius:10, padding:'12px', marginBottom:12, fontWeight:700, fontSize:'0.9rem', cursor:'pointer', fontFamily:'inherit' }}>
