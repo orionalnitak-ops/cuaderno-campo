@@ -206,6 +206,22 @@ def _recinto_layerinfo(prov, mun, pol, par, rec, agr='0', zona='0'):
     }
 
 
+def referencia_catastral_parcela(prov, mun, pol, par):
+    """Referencia catastral de un pol/par, vía el endpoint de intersección.
+
+    Es la misma para todos los recintos de una parcela catastral (ver
+    _recinto_layerinfo), así que basta con consultarla una vez por el
+    recinto 1. Devuelve '' si falla o no existe.
+    """
+    try:
+        INTER = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/intersection"
+        inter = _sigpac_get(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},1")
+        pi = inter.get('parcelaInfo') or {}
+        return pi.get('referencia_cat', '') or ''
+    except Exception:
+        return ''
+
+
 def superficie_sigpac_parcela(prov, mun, pol, par, recinto=None):
     """Superficie SIGPAC (ha) para el badge de verificación.
 
