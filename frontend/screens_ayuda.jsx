@@ -58,6 +58,11 @@ const HELP_SCREENS = {
                 desc: 'Si tu parcela del SIGPAC está dividida en varios trozos (recintos), al buscarla te ofrecemos "➕ Crear todas": se crea una parcela por cada trozo de una sola vez. Y si varios trozos tienen el mismo cultivo, te proponemos juntarlos en un grupo para apuntar las faenas una sola vez. Tú decides si agrupar o no.',
             },
             {
+                icon: '🌱',
+                title: 'Grupos de parcelas (UHC)',
+                desc: 'La franja verde "🌱 Grupos de parcelas" de la parte de arriba te lleva a tus grupos: ahí puedes crearlos, editarlos o deshacerlos cuando quieras.',
+            },
+            {
                 icon: '✅',
                 title: 'Verificado con SIGPAC',
                 desc: 'Al guardar una parcela, el cuaderno comprueba su superficie contra el SIGPAC oficial. Si cuadra, verás la marca verde "✓ Verificado con SIGPAC". Si hay mucha diferencia, un aviso ámbar te lo señala para que revises los datos. También puedes volver a verificar desde la ficha de la parcela.',

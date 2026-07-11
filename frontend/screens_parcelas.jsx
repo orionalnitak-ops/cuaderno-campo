@@ -247,7 +247,7 @@ function MapaSigpacModal({ parcela, onClose }) {
     );
 }
 
-function ScreenParcelas({ campana, showToast }) {
+function ScreenParcelas({ campana, showToast, onNavigate }) {
     const { useState, useEffect } = React;
 
     const [parcelas, setParcelas]   = useState([]);
@@ -891,6 +891,23 @@ function ScreenParcelas({ campana, showToast }) {
                         </div>
                     </div>
                 </div>
+
+                {/* Acceso a Grupos UHC (única entrada en móvil: la barra inferior no tiene hueco) */}
+                {onNavigate && (
+                    <button onClick={() => onNavigate('uhc')} style={{
+                        display:'flex', alignItems:'center', justifyContent:'space-between',
+                        width:'100%', padding:'13px 16px', minHeight:44,
+                        background:'#f0fdf4', border:'none', borderBottom:'1px solid #dcfce7',
+                        cursor:'pointer', textAlign:'left',
+                    }}>
+                        <span style={{ fontSize:'0.85rem', fontWeight:700, color:'#166534' }}>
+                            🌱 Grupos de parcelas (UHC)
+                        </span>
+                        <span style={{ fontSize:'0.78rem', color:'#16a34a', fontWeight:700 }}>
+                            Apunta las faenas una sola vez →
+                        </span>
+                    </button>
+                )}
 
                 {/* List */}
                 <div style={{ flex:1, overflowY:'auto' }}>
