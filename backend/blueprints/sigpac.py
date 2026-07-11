@@ -206,18 +206,29 @@ def _recinto_layerinfo(prov, mun, pol, par, rec, agr='0', zona='0'):
     }
 
 
+# Mismo criterio que _clean_ref_cat en blueprints/parcelas.py: alfanumérico,
+# hasta 20 caracteres (las referencias rústicas no siempre llegan a 20).
+_REF_CAT_RE = re.compile(r'^[A-Z0-9]{1,20}$')
+
+
 def referencia_catastral_parcela(prov, mun, pol, par):
     """Referencia catastral de un pol/par, vía el endpoint de intersección.
 
     Es la misma para todos los recintos de una parcela catastral (ver
     _recinto_layerinfo), así que basta con consultarla una vez por el
-    recinto 1. Devuelve '' si falla o no existe.
+    recinto 1. Devuelve '' si falla, no existe o el formato no es el
+    esperado — mismo criterio que superficie_sigpac_parcela.
     """
+    # Validación defensiva: los identificadores van en la URL.
+    for v in (prov, mun, pol, par):
+        if not re.fullmatch(r'\d{1,6}', str(v or '')):
+            return ''
     try:
         INTER = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/intersection"
         inter = _sigpac_get(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},1")
         pi = inter.get('parcelaInfo') or {}
-        return pi.get('referencia_cat', '') or ''
+        ref = (pi.get('referencia_cat') or '').strip().upper()
+        return ref if _REF_CAT_RE.match(ref) else ''
     except Exception:
         return ''
 
