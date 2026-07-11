@@ -422,14 +422,23 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
 
     // "OV-Olivar" → "Olivar" (mismo criterio que el picker)
     const usoLabel = u => ((u || '').split('-').slice(1).join('-').trim() || u || '');
+    // Código de uso SIGPAC (2 letras): "CA - VIALES" / "CA-VIALES" → "CA"
+    const usoCodigo = u => (u || '').trim().slice(0, 2).toUpperCase();
+    // Usos SIGPAC que no son cultivo (caminos, agua, urbano, edificado, improductivo):
+    // no tiene sentido darlos de alta como parcela de cultivo ni meterlos en un grupo UHC.
+    const USO_NO_AGRICOLA = new Set(['CA', 'AG', 'ZU', 'ED', 'IM']);
+    const esNoAgricola = u => USO_NO_AGRICOLA.has(usoCodigo(u));
 
     // Agrupa recintos por uso SIGPAC; solo grupos de 2+ generan UHC propuesta.
-    // Los recintos sin uso conocido (p.ej. un camino/CA que SIGPAC no clasifica como
-    // agrícola) se marcan sin incluir por defecto: el usuario decide si de verdad
-    // quiere darlos de alta como parcela.
+    // Los recintos sin uso conocido o con uso no agrícola (camino, agua, urbano...) se
+    // marcan sin incluir por defecto: el usuario decide si de verdad quiere darlos de
+    // alta como parcela.
     const abrirResumenMulti = () => {
         const ctx = recintosPicker;
-        const recs = (ctx.recintos || []).map(r => ({ ...r, incluido: !!(r.uso_sigpac || '').trim() }));
+        const recs = (ctx.recintos || []).map(r => {
+            const uso = (r.uso_sigpac || '').trim();
+            return { ...r, incluido: !!uso && !esNoAgricola(uso) };
+        });
         const by = new Map();
         recs.forEach(r => {
             const uso = (r.uso_sigpac || '').trim();
@@ -1544,19 +1553,22 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
 
                             <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
                                 {rm.recs.map(r => {
-                                    const sinUso = !(r.uso_sigpac || '').trim();
+                                    const uso = (r.uso_sigpac || '').trim();
+                                    const sinUso = !uso;
+                                    const noAgricola = uso && esNoAgricola(uso);
+                                    const aviso = sinUso || noAgricola;
                                     return (
                                         <label key={r.num} style={{ display:'flex', alignItems:'center', gap:10,
                                             padding:'10px 14px',
-                                            background: sinUso ? '#fff7ed' : '#f9fafb',
-                                            border: sinUso ? '1px solid #fdba74' : '1px solid transparent',
+                                            background: aviso ? '#fff7ed' : '#f9fafb',
+                                            border: aviso ? '1px solid #fdba74' : '1px solid transparent',
                                             borderRadius:10, fontSize:'0.9rem', cursor:'pointer' }}>
                                             <input type="checkbox" checked={r.incluido} disabled={rm.creando}
                                                 onChange={() => toggleRecIncluido(r.num)}
                                                 style={{ accentColor:'#00694c', width:18, height:18, flexShrink:0 }} />
                                             <span style={{ fontWeight:700, color:'#1a2e1a', flexShrink:0 }}>Trozo {r.num}</span>
-                                            <span style={{ color: sinUso ? '#c2410c' : '#6b7280', flex:1, textAlign:'right' }}>
-                                                {sinUso ? '⚠ Sin uso conocido — revisa antes de incluir' : usoLabel(r.uso_sigpac)} · {fmtSup(r.superficie_ha)}
+                                            <span style={{ color: aviso ? '#c2410c' : '#6b7280', flex:1, textAlign:'right' }}>
+                                                {sinUso ? '⚠ Sin uso conocido' : noAgricola ? `⚠ ${usoLabel(uso)} (no agrícola)` : usoLabel(uso)} · {fmtSup(r.superficie_ha)}
                                             </span>
                                         </label>
                                     );
