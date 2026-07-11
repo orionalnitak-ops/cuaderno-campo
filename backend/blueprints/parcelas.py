@@ -216,22 +216,20 @@ def alta_multirecinto():
     if err:
         return jsonify({"ok": False, "error": err}), 400
 
-    poligono = str(data.get('poligono') or '').strip()
-    parcela_num = str(data.get('parcela_num') or '').strip()
-    if not poligono or not parcela_num:
-        return jsonify({"ok": False, "error": "Faltan el polígono y la parcela SIGPAC"}), 400
-
     uid = get_uid()
     conn = get_db()
     try:
-        exp_id = get_active_explotacion_id(conn)
+        try:
+            exp_id = get_active_explotacion_id(conn)
+        except Exception:
+            return jsonify({"ok": False, "error": "No tienes una explotación activa"}), 400
 
         # Duplicados: si ya existe alguno de los recintos, no se crea nada.
         for r in norm['recintos']:
             ya = one(conn, """SELECT id FROM parcelas
                               WHERE user_id=? AND explotacion_id=? AND poligono=?
                                 AND parcela_num=? AND recinto=? AND activa=1""",
-                     (uid, exp_id, poligono, parcela_num, str(r['num'])))
+                     (uid, exp_id, norm['poligono'], norm['parcela_num'], str(r['num'])))
             if ya:
                 return jsonify({"ok": False,
                                 "error": f"Ya tienes registrado el trozo {r['num']} de esa parcela"}), 400
@@ -247,12 +245,12 @@ def alta_multirecinto():
                     sistema_explotacion, masa_agua_cercana, notas
                 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ''', (
-                uid, exp_id, data.get('comunidad'), data.get('provincia_cod'), data.get('provincia_nombre'),
-                data.get('municipio_cod'), data.get('municipio_nombre'),
+                uid, exp_id, norm['comunidad'], norm['provincia_cod'], norm['provincia_nombre'],
+                norm['municipio_cod'], norm['municipio_nombre'],
                 f"{norm['nombre_base']} — R{r['num']}",
-                poligono, parcela_num, str(r['num']),
+                norm['poligono'], norm['parcela_num'], str(r['num']),
                 r['superficie_ha'], r['uso_sigpac'], '',
-                data.get('sistema_explotacion', 'Secano'), 0, '',
+                norm['sistema_explotacion'], 0, '',
             ))
             ids_por_num[r['num']] = c.lastrowid
 

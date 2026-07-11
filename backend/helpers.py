@@ -110,23 +110,39 @@ def estado_sigpac(parcela):
 
 
 _CAMPANA_RE = re.compile(r'^\d{4}/\d{4}$')
+_POL_PAR_RE = re.compile(r'^\d{1,5}$')
+_SISTEMAS_EXPLOTACION = frozenset({'Invernadero', 'Mixto', 'Regadío', 'Secano'})
+_MAX_LEN_NOMBRE = 120
 
 
 def validar_alta_multirecinto(data):
     """Valida y normaliza el payload de POST /api/parcelas/alta-multirecinto.
 
     Devuelve (norm, None) si es válido o (None, "mensaje legible") si no.
-    norm: {nombre_base, campana, recintos:[{num:int, uso_sigpac:str, superficie_ha:float|None}],
+    norm: {nombre_base, campana, poligono, parcela_num, comunidad, provincia_cod,
+           provincia_nombre, municipio_cod, municipio_nombre, sistema_explotacion,
+           recintos:[{num:int, uso_sigpac:str, superficie_ha:float|None}],
            uhcs:[{nombre:str, cultivo:str, recintos:[int]}]}
     """
     data = data or {}
-    nombre_base = (data.get('nombre_base') or '').strip()
+    nombre_base = (data.get('nombre_base') or '').strip()[:_MAX_LEN_NOMBRE]
     if not nombre_base:
         return None, "El nombre de la finca es obligatorio"
 
     campana = str(data.get('campana') or '2025/2026')
     if not _CAMPANA_RE.match(campana):
         return None, "La campaña debe tener formato YYYY/YYYY (ej: 2025/2026)"
+
+    poligono = str(data.get('poligono') or '').strip()
+    parcela_num = str(data.get('parcela_num') or '').strip()
+    if not poligono or not parcela_num:
+        return None, "Faltan el polígono y la parcela SIGPAC"
+    if not _POL_PAR_RE.match(poligono) or not _POL_PAR_RE.match(parcela_num):
+        return None, "El polígono y la parcela deben ser números"
+
+    sistema = str(data.get('sistema_explotacion') or 'Secano').strip()
+    if sistema not in _SISTEMAS_EXPLOTACION:
+        sistema = 'Secano'
 
     raw = data.get('recintos')
     if not isinstance(raw, list) or not raw:
@@ -175,4 +191,11 @@ def validar_alta_multirecinto(data):
                      'recintos': nums})
 
     return {'nombre_base': nombre_base, 'campana': campana,
+            'poligono': poligono, 'parcela_num': parcela_num,
+            'comunidad': str(data.get('comunidad') or '')[:_MAX_LEN_NOMBRE],
+            'provincia_cod': str(data.get('provincia_cod') or '')[:5],
+            'provincia_nombre': str(data.get('provincia_nombre') or '')[:_MAX_LEN_NOMBRE],
+            'municipio_cod': str(data.get('municipio_cod') or '')[:5],
+            'municipio_nombre': str(data.get('municipio_nombre') or '')[:_MAX_LEN_NOMBRE],
+            'sistema_explotacion': sistema,
             'recintos': recintos, 'uhcs': uhcs}, None
