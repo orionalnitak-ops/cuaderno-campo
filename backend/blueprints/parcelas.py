@@ -235,7 +235,8 @@ def alta_multirecinto():
                                 "error": f"Ya tienes registrado el trozo {r['num']} de esa parcela"}), 400
 
         ref_cat = referencia_catastral_parcela(
-            norm['provincia_cod'], norm['municipio_cod'], norm['poligono'], norm['parcela_num']
+            norm['provincia_cod'], norm['municipio_cod'], norm['poligono'], norm['parcela_num'],
+            recinto=str(norm['recintos'][0]['num'])
         )
 
         c = conn.cursor()
