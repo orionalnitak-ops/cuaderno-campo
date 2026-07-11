@@ -1,10 +1,11 @@
 // screens_uhc.jsx — Gestión de Unidades Homogéneas de Cultivo
 
-function ScreenUHC({ campana, showToast, parcelas }) {
+function ScreenUHC({ campana, showToast }) {
     const [grupos, setGrupos] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
     const [editando, setEditando] = React.useState(null); // null | objeto grupo en edición
     const [parcelasGrupo, setParcelasGrupo] = React.useState([]);
+    const [parcelas, setParcelas] = React.useState([]);
 
     const reload = () => {
         setLoading(true);
@@ -15,6 +16,12 @@ function ScreenUHC({ campana, showToast, parcelas }) {
     };
 
     React.useEffect(() => { reload(); }, [campana]);
+    React.useEffect(() => {
+        fetch('/api/parcelas', { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setParcelas(Array.isArray(d) ? d : []))
+            .catch(() => {});
+    }, []);
 
     const abrirNuevo = () => {
         setParcelasGrupo([]);
