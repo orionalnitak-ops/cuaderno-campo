@@ -424,9 +424,12 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
     const usoLabel = u => ((u || '').split('-').slice(1).join('-').trim() || u || '');
 
     // Agrupa recintos por uso SIGPAC; solo grupos de 2+ generan UHC propuesta.
+    // Los recintos sin uso conocido (p.ej. un camino/CA que SIGPAC no clasifica como
+    // agrícola) se marcan sin incluir por defecto: el usuario decide si de verdad
+    // quiere darlos de alta como parcela.
     const abrirResumenMulti = () => {
         const ctx = recintosPicker;
-        const recs = ctx.recintos || [];
+        const recs = (ctx.recintos || []).map(r => ({ ...r, incluido: !!(r.uso_sigpac || '').trim() }));
         const by = new Map();
         recs.forEach(r => {
             const uso = (r.uso_sigpac || '').trim();
@@ -445,9 +448,23 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
         setResumenMulti({ ctx, recs, grupos, creando: false });
     };
 
+    const toggleRecIncluido = (num) => setResumenMulti(r => ({
+        ...r, recs: r.recs.map(rec => rec.num === num ? { ...rec, incluido: !rec.incluido } : rec),
+    }));
+
     const confirmarMultirecinto = async () => {
         const rm = resumenMulti;
-        if (rm.grupos.some(g => g.aceptado && !g.nombre.trim())) {
+        const recsIncluidos = rm.recs.filter(r => r.incluido);
+        const numsIncluidos = new Set(recsIncluidos.map(r => r.num));
+        if (recsIncluidos.length === 0) {
+            showToast('Selecciona al menos un trozo para crear');
+            return;
+        }
+        // Un grupo solo tiene sentido si le quedan 2+ trozos incluidos tras el filtro.
+        const gruposEfectivos = rm.grupos
+            .map(g => ({ ...g, nums: g.nums.filter(n => numsIncluidos.has(n)) }))
+            .filter(g => g.aceptado && g.nums.length >= 2);
+        if (gruposEfectivos.some(g => !g.nombre.trim())) {
             showToast('Ponle un nombre a cada grupo (o desmárcalo)');
             return;
         }
@@ -460,9 +477,8 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
             poligono: rm.ctx.poligono, parcela_num: rm.ctx.parcela,
             sistema_explotacion: form.sistema_explotacion || 'Secano',
             campana: campana || '2025/2026',
-            recintos: rm.recs.map(r => ({ num: r.num, uso_sigpac: r.uso_sigpac || '', superficie_ha: r.superficie_ha })),
-            uhcs: rm.grupos.filter(g => g.aceptado)
-                .map(g => ({ nombre: g.nombre.trim(), cultivo: usoLabel(g.uso), recintos: g.nums })),
+            recintos: recsIncluidos.map(r => ({ num: r.num, uso_sigpac: r.uso_sigpac || '', superficie_ha: r.superficie_ha })),
+            uhcs: gruposEfectivos.map(g => ({ nombre: g.nombre.trim(), cultivo: usoLabel(g.uso), recintos: g.nums })),
         };
         try {
             const res = await fetch('/api/parcelas/alta-multirecinto', {
@@ -1503,7 +1519,11 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
             {resumenMulti && (() => {
                 const rm = resumenMulti;
                 const fmtSup = s => s != null ? (s >= 1 ? `${s.toFixed(4)} ha` : `${Math.round(s * 10000)} m²`) : '—';
-                const sinGrupos = rm.grupos.length === 0;
+                const numsIncluidos = new Set(rm.recs.filter(r => r.incluido).map(r => r.num));
+                const gruposEfectivos = rm.grupos
+                    .map((g, i) => ({ ...g, nums: g.nums.filter(n => numsIncluidos.has(n)), _i: i }))
+                    .filter(g => g.nums.length >= 2);
+                const sinGrupos = gruposEfectivos.length === 0;
                 const setGrupo = (i, patch) => setResumenMulti(r => ({
                     ...r, grupos: r.grupos.map((g, j) => j === i ? { ...g, ...patch } : g),
                 }));
@@ -1516,22 +1536,31 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
                             onClick={e => e.stopPropagation()}>
 
                             <div style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', color:'#1a2e1a', textAlign:'center' }}>
-                                Vamos a crear {rm.recs.length} parcelas
+                                Vamos a crear {numsIncluidos.size} parcela{numsIncluidos.size !== 1 ? 's' : ''}
                             </div>
                             <div style={{ color:'#6b7280', fontSize:'0.83rem', textAlign:'center', marginTop:4, marginBottom:14 }}>
-                                Pol {rm.ctx.poligono} / Par {rm.ctx.parcela} — una parcela por cada trozo (recinto)
+                                Pol {rm.ctx.poligono} / Par {rm.ctx.parcela} — desmarca los trozos que no quieras dar de alta
                             </div>
 
                             <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
-                                {rm.recs.map(r => (
-                                    <div key={r.num} style={{ display:'flex', justifyContent:'space-between',
-                                        padding:'10px 14px', background:'#f9fafb', borderRadius:10, fontSize:'0.9rem' }}>
-                                        <span style={{ fontWeight:700, color:'#1a2e1a' }}>Trozo {r.num}</span>
-                                        <span style={{ color:'#6b7280' }}>
-                                            {usoLabel(r.uso_sigpac) || 'Sin uso conocido'} · {fmtSup(r.superficie_ha)}
-                                        </span>
-                                    </div>
-                                ))}
+                                {rm.recs.map(r => {
+                                    const sinUso = !(r.uso_sigpac || '').trim();
+                                    return (
+                                        <label key={r.num} style={{ display:'flex', alignItems:'center', gap:10,
+                                            padding:'10px 14px',
+                                            background: sinUso ? '#fff7ed' : '#f9fafb',
+                                            border: sinUso ? '1px solid #fdba74' : '1px solid transparent',
+                                            borderRadius:10, fontSize:'0.9rem', cursor:'pointer' }}>
+                                            <input type="checkbox" checked={r.incluido} disabled={rm.creando}
+                                                onChange={() => toggleRecIncluido(r.num)}
+                                                style={{ accentColor:'#00694c', width:18, height:18, flexShrink:0 }} />
+                                            <span style={{ fontWeight:700, color:'#1a2e1a', flexShrink:0 }}>Trozo {r.num}</span>
+                                            <span style={{ color: sinUso ? '#c2410c' : '#6b7280', flex:1, textAlign:'right' }}>
+                                                {sinUso ? '⚠ Sin uso conocido — revisa antes de incluir' : usoLabel(r.uso_sigpac)} · {fmtSup(r.superficie_ha)}
+                                            </span>
+                                        </label>
+                                    );
+                                })}
                             </div>
 
                             {sinGrupos ? (
@@ -1568,7 +1597,7 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
                                 </div>
                             )}
 
-                            {rm.grupos.map((g, i) => (
+                            {gruposEfectivos.map(g => (
                                 <div key={g.uso} style={{ border:'2px solid ' + (g.aceptado ? '#00694c' : '#e5e7eb'),
                                     borderRadius:12, padding:'14px 16px', marginBottom:12 }}>
                                     <div style={{ fontSize:'0.8rem', color:'#6b7280', marginBottom:6 }}>
@@ -1576,18 +1605,18 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
                                     </div>
                                     <input value={g.nombre} disabled={!g.aceptado || rm.creando}
                                         aria-label={`Nombre del grupo ${usoLabel(g.uso)}`}
-                                        onChange={e => setGrupo(i, { nombre: e.target.value })}
+                                        onChange={e => setGrupo(g._i, { nombre: e.target.value })}
                                         style={{ width:'100%', padding:'12px', borderRadius:8, fontSize:'1rem',
                                             border:'1px solid #d1d5db', marginBottom:10, boxSizing:'border-box' }} />
                                     <div style={{ display:'flex', gap:8 }}>
-                                        <button onClick={() => setGrupo(i, { aceptado: true })} disabled={rm.creando} style={{
+                                        <button onClick={() => setGrupo(g._i, { aceptado: true })} disabled={rm.creando} style={{
                                             flex:1, padding:'14px 12px', borderRadius:10, fontWeight:700, cursor:'pointer',
                                             border:'2px solid #00694c', fontSize:'0.9rem',
                                             background: g.aceptado ? '#00694c' : '#fff',
                                             color: g.aceptado ? '#fff' : '#00694c' }}>
                                             Sí, agrupar
                                         </button>
-                                        <button onClick={() => setGrupo(i, { aceptado: false })} disabled={rm.creando} style={{
+                                        <button onClick={() => setGrupo(g._i, { aceptado: false })} disabled={rm.creando} style={{
                                             flex:1, padding:'14px 12px', borderRadius:10, fontWeight:700, cursor:'pointer',
                                             border:'2px solid ' + (!g.aceptado ? '#6b7280' : '#e5e7eb'), fontSize:'0.9rem',
                                             background: !g.aceptado ? '#6b7280' : '#fff',
