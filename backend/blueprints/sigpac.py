@@ -227,8 +227,10 @@ def referencia_catastral_parcela(prov, mun, pol, par, recinto='1'):
     Devuelve '' si falla, no existe o el formato no es el esperado —
     mismo criterio que superficie_sigpac_parcela.
     """
-    # Validación defensiva: los identificadores van en la URL.
-    for v in (prov, mun, pol, par):
+    # Validación defensiva: los identificadores van en la URL, incluido recinto
+    # (antes era el literal "1"; ahora puede venir del llamador, así que hay que
+    # validarlo igual que el resto en vez de asumir que ya es seguro).
+    for v in (prov, mun, pol, par, recinto):
         if not re.fullmatch(r'\d{1,6}', str(v or '')):
             return ''
     try:
