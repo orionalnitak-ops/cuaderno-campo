@@ -53,6 +53,16 @@ const HELP_SCREENS = {
                 desc: 'Dentro del formulario hay un buscador que conecta con el SIGPAC oficial. Selecciona provincia, municipio, polígono y parcela de los desplegables.',
             },
             {
+                icon: '✂️',
+                title: 'Parcela dividida en varios trozos',
+                desc: 'Si tu parcela del SIGPAC está dividida en varios trozos (recintos), al buscarla te ofrecemos "➕ Crear todas": se crea una parcela por cada trozo de una sola vez. Y si varios trozos tienen el mismo cultivo, te proponemos juntarlos en un grupo para apuntar las faenas una sola vez. Tú decides si agrupar o no.',
+            },
+            {
+                icon: '✅',
+                title: 'Verificado con SIGPAC',
+                desc: 'Al guardar una parcela, el cuaderno comprueba su superficie contra el SIGPAC oficial. Si cuadra, verás la marca verde "✓ Verificado con SIGPAC". Si hay mucha diferencia, un aviso ámbar te lo señala para que revises los datos. También puedes volver a verificar desde la ficha de la parcela.',
+            },
+            {
                 icon: '🌾',
                 title: 'Cultivo de campaña',
                 desc: 'Asigna el cultivo actual a cada parcela. Es obligatorio para el cuaderno oficial — el PDF debe reflejar qué se cultiva en cada recinto.',
@@ -60,7 +70,7 @@ const HELP_SCREENS = {
             {
                 icon: '🗺️',
                 title: 'Vista en el mapa',
-                desc: 'El mapa muestra la ubicación de cada parcela. Pulsa sobre una para ver todos sus detalles y el historial de actividades asociadas.',
+                desc: 'El mapa muestra la ubicación de cada parcela sobre la foto aérea oficial. Puedes activar la capa Red Natura 2000 para ver si tu parcela está en zona protegida (afecta a qué productos puedes aplicar). Pulsa sobre una parcela para ver sus detalles y su historial.',
             },
         ],
     },
@@ -332,12 +342,17 @@ const HELP_SCREENS = {
     },
     uhc: {
         title: '🌱 Grupos UHC',
-        intro: 'Las Unidades Homogéneas de Cultivo (UHC) te permiten registrar un tratamiento fitosanitario una sola vez para varias parcelas a la vez.',
+        intro: 'Un grupo junta parcelas que se trabajan igual (mismo cultivo) para que apuntes las faenas una sola vez. La administración lo llama "Unidad Homogénea de Cultivo (UHC)".',
         steps: [
             {
                 icon: '➕',
                 title: 'Crear un grupo',
                 desc: 'Pulsa "+ Nuevo grupo", dale un nombre (ej: "Olivar norte") y selecciona las parcelas que lo forman. Todas deben tener el mismo cultivo.',
+            },
+            {
+                icon: '✂️',
+                title: 'Grupos al crear la parcela',
+                desc: 'Si das de alta una parcela del SIGPAC dividida en varios trozos (recintos), el cuaderno te propone crear el grupo automáticamente con los trozos que comparten cultivo. Si en ese momento los dejaste sueltos, puedes agruparlos aquí cuando quieras.',
             },
             {
                 icon: '🌿',
@@ -346,8 +361,8 @@ const HELP_SCREENS = {
             },
             {
                 icon: '✏️',
-                title: 'Editar y eliminar',
-                desc: 'Pulsa sobre cualquier grupo para editarlo: cambiar el nombre, añadir o quitar parcelas. Eliminar el grupo no borra los tratamientos ya registrados.',
+                title: 'Editar y deshacer',
+                desc: 'Pulsa sobre cualquier grupo para editarlo: cambiar el nombre, añadir o quitar parcelas. Y si te arrepientes, elimínalo sin miedo: las parcelas no se tocan y las faenas ya apuntadas se quedan en el cuaderno de cada trozo.',
             },
         ],
     },
