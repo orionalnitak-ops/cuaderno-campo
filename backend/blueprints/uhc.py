@@ -58,9 +58,11 @@ def manage_uhc():
     )
     uhc_id = c.lastrowid
 
+    # INSERT normal: _valid_parcela_ids no devuelve duplicados y "OR IGNORE"
+    # es sintaxis solo-SQLite (rompe en PostgreSQL, el wrapper no la traduce).
     for pid in _valid_parcela_ids(conn, uid, data.get('parcela_ids', [])):
         c.execute(
-            "INSERT OR IGNORE INTO uhc_parcelas (uhc_id, parcela_id) VALUES (?,?)",
+            "INSERT INTO uhc_parcelas (uhc_id, parcela_id) VALUES (?,?)",
             (uhc_id, pid)
         )
 
@@ -113,11 +115,12 @@ def manage_one_uhc(uhc_id):
         (nombre, data.get('cultivo', '').strip(), data.get('notas', '').strip(), uhc_id, uid)
     )
 
-    # Reasignar parcelas: borrar y reinsertar
+    # Reasignar parcelas: borrar y reinsertar (INSERT normal: tras el DELETE no
+    # puede haber duplicados y "OR IGNORE" es solo-SQLite, rompe en PostgreSQL)
     c.execute("DELETE FROM uhc_parcelas WHERE uhc_id=?", (uhc_id,))
     for pid in _valid_parcela_ids(conn, uid, data.get('parcela_ids', [])):
         c.execute(
-            "INSERT OR IGNORE INTO uhc_parcelas (uhc_id, parcela_id) VALUES (?,?)",
+            "INSERT INTO uhc_parcelas (uhc_id, parcela_id) VALUES (?,?)",
             (uhc_id, pid)
         )
 
