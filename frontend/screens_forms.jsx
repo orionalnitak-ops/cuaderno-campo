@@ -219,6 +219,56 @@ function ParcelSelect({ parcelas, value, onChange }) {
     );
 }
 
+// ── Selector de parcela individual o grupo UHC (toggle) ──
+function ParcelOrUhcSelect({ modoUHC, setModoUHC, parcelas, uhcList, parcelaId, uhcId, onParcela, onUhc }) {
+    return (
+        <React.Fragment>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <button type="button"
+                    onClick={() => { setModoUHC(false); onUhc(''); }}
+                    style={{
+                        flex: 1, padding: '8px', border: 'none', borderRadius: 'var(--radius-full)',
+                        fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer',
+                        fontFamily: 'var(--font-body)',
+                        background: !modoUHC ? 'var(--primary)' : 'var(--surface-container-low)',
+                        color: !modoUHC ? '#fff' : 'var(--on-surface-variant)',
+                    }}>📍 Parcela individual</button>
+                <button type="button"
+                    onClick={() => { setModoUHC(true); onParcela(''); }}
+                    style={{
+                        flex: 1, padding: '8px', border: 'none', borderRadius: 'var(--radius-full)',
+                        fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer',
+                        fontFamily: 'var(--font-body)',
+                        background: modoUHC ? 'var(--primary)' : 'var(--surface-container-low)',
+                        color: modoUHC ? '#fff' : 'var(--on-surface-variant)',
+                    }}>🌱 Grupo UHC</button>
+            </div>
+            {!modoUHC ? (
+                <FieldGroup label="Parcela *">
+                    <ParcelSelect parcelas={parcelas} value={parcelaId} onChange={onParcela} />
+                </FieldGroup>
+            ) : (
+                <FieldGroup label="Grupo UHC *">
+                    {uhcList.length === 0 ? (
+                        <p style={{ fontSize: '0.82rem', color: 'var(--on-surface-variant)', margin: '4px 0' }}>
+                            No tienes grupos UHC. Ve a "🌱 Grupos UHC" en el menú para crear uno.
+                        </p>
+                    ) : (
+                        <select className="input-field" value={uhcId} onChange={e => onUhc(e.target.value)}>
+                            <option value="">-- Selecciona grupo --</option>
+                            {uhcList.map(g => (
+                                <option key={g.id} value={g.id}>
+                                    {g.nombre}{g.cultivo ? ` (${g.cultivo})` : ''} — {g.num_parcelas} parcelas
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                </FieldGroup>
+            )}
+        </React.Fragment>
+    );
+}
+
 function FieldGroup({ label, children }) {
     return (
         <div style={{ marginBottom: 16 }}>
@@ -392,49 +442,9 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
 
     return (
         <div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                <button type="button"
-                    onClick={() => { setModoUHC(false); set('uhc_id', ''); }}
-                    style={{
-                        flex: 1, padding: '8px', border: 'none', borderRadius: 'var(--radius-full)',
-                        fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer',
-                        fontFamily: 'var(--font-body)',
-                        background: !modoUHC ? 'var(--primary)' : 'var(--surface-container-low)',
-                        color: !modoUHC ? '#fff' : 'var(--on-surface-variant)',
-                    }}>📍 Parcela individual</button>
-                <button type="button"
-                    onClick={() => { setModoUHC(true); set('parcela_id', ''); }}
-                    style={{
-                        flex: 1, padding: '8px', border: 'none', borderRadius: 'var(--radius-full)',
-                        fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer',
-                        fontFamily: 'var(--font-body)',
-                        background: modoUHC ? 'var(--primary)' : 'var(--surface-container-low)',
-                        color: modoUHC ? '#fff' : 'var(--on-surface-variant)',
-                    }}>🌱 Grupo UHC</button>
-            </div>
-
-            {!modoUHC ? (
-                <FieldGroup label="Parcela *">
-                    <ParcelSelect parcelas={parcelas} value={f.parcela_id} onChange={v => set('parcela_id', v)} />
-                </FieldGroup>
-            ) : (
-                <FieldGroup label="Grupo UHC *">
-                    {uhcList.length === 0 ? (
-                        <p style={{ fontSize: '0.82rem', color: 'var(--on-surface-variant)', margin: '4px 0' }}>
-                            No tienes grupos UHC. Ve a "🌱 Grupos UHC" en el menú para crear uno.
-                        </p>
-                    ) : (
-                        <select className="input-field" value={f.uhc_id} onChange={e => set('uhc_id', e.target.value)}>
-                            <option value="">-- Selecciona grupo --</option>
-                            {uhcList.map(g => (
-                                <option key={g.id} value={g.id}>
-                                    {g.nombre}{g.cultivo ? ` (${g.cultivo})` : ''} — {g.num_parcelas} parcelas
-                                </option>
-                            ))}
-                        </select>
-                    )}
-                </FieldGroup>
-            )}
+            <ParcelOrUhcSelect modoUHC={modoUHC} setModoUHC={setModoUHC} parcelas={parcelas} uhcList={uhcList}
+                parcelaId={f.parcela_id} uhcId={f.uhc_id}
+                onParcela={v => set('parcela_id', v)} onUhc={v => set('uhc_id', v)} />
 
             <FieldGroup label="Fecha de aplicación *">
                 <input type="date" className="input-field" value={f.fecha_aplicacion} onChange={e => set('fecha_aplicacion', e.target.value)} />
@@ -583,8 +593,11 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
     const [saving, setSaving] = React.useState(false);
     const [sugerencias, setSugerencias] = React.useState({});
+    const [modoUHC, setModoUHC] = React.useState(false);
+    const [uhcList, setUhcList] = React.useState([]);
     const [f, setF] = React.useState({
         parcela_id: record?.parcela_id || '', parcela_etiqueta: record?.parcela_etiqueta || '',
+        uhc_id: record?.uhc_id || '',
         fecha_aplicacion: record?.fecha_aplicacion || today,
         tipo_fertilizante: record?.tipo_fertilizante || '',
         producto: record?.producto || '', riqueza_npk: record?.riqueza_npk || '',
@@ -600,6 +613,13 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
         const p = parcelas.find(x => String(x.id) === String(f.parcela_id));
         if (p) set('parcela_etiqueta', p.nombre_finca);
     }, [f.parcela_id]);
+
+    React.useEffect(() => {
+        fetch(`/api/uhc?campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setUhcList(Array.isArray(d) ? d : []))
+            .catch(() => {});
+    }, [campana]);
 
     React.useEffect(() => {
         if (isEdit) return;
@@ -633,7 +653,7 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
     };
 
     const save = async () => {
-        if (!f.parcela_id || !f.fecha_aplicacion) { alert('Rellena: parcela y fecha'); return; }
+        if ((!f.parcela_id && !f.uhc_id) || !f.fecha_aplicacion) { alert('Rellena: parcela (o grupo) y fecha'); return; }
         setSaving(true);
         try {
             const url = isEdit ? `/api/fertilizacion/${record.id}` : '/api/fertilizacion';
@@ -669,9 +689,9 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
 
     return (
         <div>
-            <FieldGroup label="Parcela *">
-                <ParcelSelect parcelas={parcelas} value={f.parcela_id} onChange={v => set('parcela_id', v)} />
-            </FieldGroup>
+            <ParcelOrUhcSelect modoUHC={modoUHC} setModoUHC={setModoUHC} parcelas={parcelas} uhcList={uhcList}
+                parcelaId={f.parcela_id} uhcId={f.uhc_id}
+                onParcela={v => set('parcela_id', v)} onUhc={v => set('uhc_id', v)} />
             <div className="responsive-grid cols-2">
                 <FieldGroup label="Fecha de aplicación *">
                     <input type="date" className="input-field" value={f.fecha_aplicacion} onChange={e => set('fecha_aplicacion', e.target.value)} />
@@ -805,8 +825,11 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
     const [saving, setSaving] = React.useState(false);
     const [sugerencias, setSugerencias] = React.useState({});
+    const [modoUHC, setModoUHC] = React.useState(false);
+    const [uhcList, setUhcList] = React.useState([]);
     const [f, setF] = React.useState({
         parcela_id: record?.parcela_id || '', parcela_etiqueta: record?.parcela_etiqueta || '',
+        uhc_id: record?.uhc_id || '',
         fecha: record?.fecha || today,
         tipo_labor: normTipoLabor(record?.tipo_labor),
         producto: record?.producto || '',
@@ -821,6 +844,13 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
         const p = parcelas.find(x => String(x.id) === String(f.parcela_id));
         if (p) set('parcela_etiqueta', p.nombre_finca);
     }, [f.parcela_id]);
+
+    React.useEffect(() => {
+        fetch(`/api/uhc?campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setUhcList(Array.isArray(d) ? d : []))
+            .catch(() => {});
+    }, [campana]);
 
     React.useEffect(() => {
         if (isEdit) return;
@@ -854,7 +884,7 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
     };
 
     const save = async () => {
-        if (!f.parcela_id || !f.fecha) { alert('Rellena: parcela y fecha'); return; }
+        if ((!f.parcela_id && !f.uhc_id) || !f.fecha) { alert('Rellena: parcela (o grupo) y fecha'); return; }
         setSaving(true);
         try {
             const url = isEdit ? `/api/labores/${record.id}` : '/api/labores';
@@ -869,9 +899,9 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
 
     return (
         <div>
-            <FieldGroup label="Parcela *">
-                <ParcelSelect parcelas={parcelas} value={f.parcela_id} onChange={v => set('parcela_id', v)} />
-            </FieldGroup>
+            <ParcelOrUhcSelect modoUHC={modoUHC} setModoUHC={setModoUHC} parcelas={parcelas} uhcList={uhcList}
+                parcelaId={f.parcela_id} uhcId={f.uhc_id}
+                onParcela={v => set('parcela_id', v)} onUhc={v => set('uhc_id', v)} />
             <div className="responsive-grid cols-2">
                 <FieldGroup label="Fecha *">
                     <input type="date" className="input-field" value={f.fecha} onChange={e => set('fecha', e.target.value)} />
@@ -1263,9 +1293,12 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
     const [saving, setSaving] = React.useState(false);
     const [sugerencias, setSugerencias] = React.useState({});
+    const [modoUHC, setModoUHC] = React.useState(false);
+    const [uhcList, setUhcList] = React.useState([]);
     const [f, setF] = React.useState({
         parcela_id:       record?.parcela_id       || '',
         parcela_etiqueta: record?.parcela_etiqueta  || '',
+        uhc_id:           record?.uhc_id            || '',
         fecha:            record?.fecha             || today,
         tipo_riego:       record?.tipo_riego        || '',
         volumen_m3:       record?.volumen_m3        || '',
@@ -1281,6 +1314,13 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
         const p = parcelas.find(x => String(x.id) === String(f.parcela_id));
         if (p) set('parcela_etiqueta', p.nombre_finca);
     }, [f.parcela_id]);
+
+    React.useEffect(() => {
+        fetch(`/api/uhc?campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setUhcList(Array.isArray(d) ? d : []))
+            .catch(() => {});
+    }, [campana]);
 
     React.useEffect(() => {
         if (isEdit) return;
@@ -1314,8 +1354,8 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
     };
 
     const save = async () => {
-        if (!f.parcela_id || !f.fecha || !f.tipo_riego) {
-            alert('Rellena: parcela, fecha y tipo de riego'); return;
+        if ((!f.parcela_id && !f.uhc_id) || !f.fecha || !f.tipo_riego) {
+            alert('Rellena: parcela (o grupo), fecha y tipo de riego'); return;
         }
         if (!f.horas_riego && !f.volumen_m3) {
             alert('Indica al menos las horas de riego o el volumen en m³'); return;
@@ -1334,9 +1374,9 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
 
     return (
         <div>
-            <FieldGroup label="Parcela *">
-                <ParcelSelect parcelas={parcelas} value={f.parcela_id} onChange={v => set('parcela_id', v)} />
-            </FieldGroup>
+            <ParcelOrUhcSelect modoUHC={modoUHC} setModoUHC={setModoUHC} parcelas={parcelas} uhcList={uhcList}
+                parcelaId={f.parcela_id} uhcId={f.uhc_id}
+                onParcela={v => set('parcela_id', v)} onUhc={v => set('uhc_id', v)} />
             <div className="responsive-grid cols-2">
                 <FieldGroup label="Fecha *">
                     <input type="date" className="input-field" value={f.fecha} onChange={e => set('fecha', e.target.value)} />
