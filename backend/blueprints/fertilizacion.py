@@ -21,12 +21,13 @@ def _validate_fertilizacion(data):
     """Devuelve mensaje de error si faltan campos obligatorios (Anexo III S4)."""
     required = {
         'fecha_aplicacion': 'Fecha de aplicación',
-        'parcela_id':       'Parcela SIGPAC (Anexo III S4)',
         'tipo_fertilizante': 'Tipo de fertilizante',
         'producto':          'Nombre del producto',
         'dosis_valor':       'Dosis (cantidad)',
     }
     missing = [label for field, label in required.items() if not data.get(field) and data.get(field) != 0]
+    if not data.get('parcela_id') and not data.get('uhc_id'):
+        missing.append('Parcela SIGPAC o Grupo UHC (Anexo III S4)')
     if missing:
         return f"Campos obligatorios según RD 1311/2012: {', '.join(missing)}"
     try:
@@ -104,13 +105,14 @@ def _calc_npk(riqueza_npk, dosis_valor, dosis_unidad='kg/ha', densidad_g_ml=None
 
 def _validate_riego(data):
     """Valida campos obligatorios del registro de riego (RD 934/2025).
-    Requiere fecha, parcela, tipo y al menos horas o m³."""
+    Requiere fecha, parcela o grupo UHC, tipo y al menos horas o m³."""
     required = {
         'fecha':      'Fecha de riego',
-        'parcela_id': 'Parcela',
         'tipo_riego': 'Tipo de riego',
     }
     missing = [label for field, label in required.items() if not data.get(field)]
+    if not data.get('parcela_id') and not data.get('uhc_id'):
+        missing.append('Parcela o Grupo UHC')
     if missing:
         return f"Campos obligatorios: {', '.join(missing)}"
     if not data.get('horas_riego') and not data.get('volumen_m3'):
@@ -164,6 +166,41 @@ def _validate_abonado(data):
 # FERTILIZACIÓN
 # ─────────────────────────────────────────────
 
+def _insert_fertilizacion(c, uid, data, parcela_id, parcela_etiqueta, n_ap, p_ap, k_ap):
+    """Inserta un único registro de fertilización para la parcela dada."""
+    c.execute('''
+        INSERT INTO fertilizacion (
+            user_id, parcela_id, parcela_etiqueta, fecha_aplicacion,
+            tipo_fertilizante, producto, riqueza_npk,
+            dosis_valor, dosis_unidad, densidad_g_ml, metodo_aplicacion, notas, campana,
+            n_aplicado, p2o5_aplicado, k2o_aplicado
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, parcela_id, parcela_etiqueta, data.get('fecha_aplicacion'),
+          data.get('tipo_fertilizante'), data.get('producto'), data.get('riqueza_npk'),
+          _to_real(data.get('dosis_valor')), data.get('dosis_unidad', 'kg/ha'),
+          _to_real(data.get('densidad_g_ml')),
+          data.get('metodo_aplicacion'), data.get('notas'), data.get('campana', '2025/2026'),
+          n_ap, p_ap, k_ap))
+    return c.lastrowid
+
+
+def _parcelas_uhc(conn, uhc_id, uid):
+    """Parcelas (id, nombre_finca) de un grupo UHC del usuario, o [] si no existe/no tiene."""
+    return dicts(conn, """
+        SELECT p.id, p.nombre_finca
+        FROM uhc_parcelas up
+        JOIN parcelas p ON p.id = up.parcela_id
+        JOIN unidades_homogeneas u ON u.id = up.uhc_id
+        WHERE up.uhc_id = ? AND u.user_id = ? AND u.deleted_at IS NULL
+    """, (uhc_id, uid))
+
+
+def parcela_es_del_usuario(conn, parcela_id, uid):
+    """True si parcela_id existe y pertenece a uid. Evita IDOR: sin esto, cualquier
+    usuario autenticado podría enviar el parcela_id de otro y colgarle registros."""
+    return one(conn, "SELECT id FROM parcelas WHERE id=? AND user_id=?", (parcela_id, uid)) is not None
+
+
 @bp.route('/api/fertilizacion', methods=['GET', 'POST'])
 @login_required
 def manage_fertilizacion():
@@ -182,20 +219,24 @@ def manage_fertilizacion():
     n_ap, p_ap, k_ap = _calc_npk(data.get('riqueza_npk'), data.get('dosis_valor'),
                                   data.get('dosis_unidad', 'kg/ha'), data.get('densidad_g_ml'))
     c = conn.cursor()
-    c.execute('''
-        INSERT INTO fertilizacion (
-            user_id, parcela_id, parcela_etiqueta, fecha_aplicacion,
-            tipo_fertilizante, producto, riqueza_npk,
-            dosis_valor, dosis_unidad, densidad_g_ml, metodo_aplicacion, notas, campana,
-            n_aplicado, p2o5_aplicado, k2o_aplicado
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha_aplicacion'),
-          data.get('tipo_fertilizante'), data.get('producto'), data.get('riqueza_npk'),
-          _to_real(data.get('dosis_valor')), data.get('dosis_unidad', 'kg/ha'),
-          _to_real(data.get('densidad_g_ml')),
-          data.get('metodo_aplicacion'), data.get('notas'), data.get('campana', '2025/2026'),
-          n_ap, p_ap, k_ap))
-    conn.commit(); new_id = c.lastrowid; conn.close()
+
+    if data.get('uhc_id'):
+        parcelas = _parcelas_uhc(conn, data['uhc_id'], uid)
+        if not parcelas:
+            conn.close()
+            return jsonify({"error": "El grupo UHC no existe o no tiene parcelas asignadas"}), 400
+        ids = [_insert_fertilizacion(c, uid, data, p['id'], p['nombre_finca'], n_ap, p_ap, k_ap) for p in parcelas]
+        conn.commit(); conn.close()
+        for p in parcelas:
+            _recalcular_patrones(uid, 'fertilizacion', p['id'], data.get('fecha_aplicacion'))
+        return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
+
+    if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
+
+    new_id = _insert_fertilizacion(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'), n_ap, p_ap, k_ap)
+    conn.commit(); conn.close()
     _recalcular_patrones(uid, 'fertilizacion', data.get('parcela_id'), data.get('fecha_aplicacion'))
     return jsonify({"status": "ok", "id": new_id}), 201
 
@@ -218,6 +259,9 @@ def manage_fertilizacion_one(fid):
     if err:
         conn.close()
         return jsonify({"error": err}), 400
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
     n_ap, p_ap, k_ap = _calc_npk(data.get('riqueza_npk'), data.get('dosis_valor'),
                                   data.get('dosis_unidad', 'kg/ha'), data.get('densidad_g_ml'))
     fields = ['parcela_id', 'parcela_etiqueta', 'fecha_aplicacion', 'tipo_fertilizante',
@@ -237,6 +281,20 @@ def manage_fertilizacion_one(fid):
 # RIEGO
 # ─────────────────────────────────────────────
 
+def _insert_riego(c, uid, data, parcela_id, parcela_etiqueta):
+    """Inserta un único registro de riego para la parcela dada."""
+    c.execute('''
+        INSERT INTO riego (
+            user_id, parcela_id, parcela_etiqueta, fecha,
+            tipo_riego, volumen_m3, horas_riego, fuente_agua, notas, campana
+        ) VALUES (?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, parcela_id, parcela_etiqueta, data.get('fecha'),
+          data.get('tipo_riego'), _to_real(data.get('volumen_m3')),
+          _to_real(data.get('horas_riego')), data.get('fuente_agua'), data.get('notas'),
+          data.get('campana', '2025/2026')))
+    return c.lastrowid
+
+
 @bp.route('/api/riego', methods=['GET', 'POST'])
 @login_required
 def manage_riego():
@@ -254,16 +312,24 @@ def manage_riego():
         return jsonify({"error": err}), 400
 
     c = conn.cursor()
-    c.execute('''
-        INSERT INTO riego (
-            user_id, parcela_id, parcela_etiqueta, fecha,
-            tipo_riego, volumen_m3, horas_riego, fuente_agua, notas, campana
-        ) VALUES (?,?,?,?,?,?,?,?,?,?)
-    ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha'),
-          data.get('tipo_riego'), _to_real(data.get('volumen_m3')),
-          _to_real(data.get('horas_riego')), data.get('fuente_agua'), data.get('notas'),
-          data.get('campana', '2025/2026')))
-    conn.commit(); new_id = c.lastrowid; conn.close()
+
+    if data.get('uhc_id'):
+        parcelas = _parcelas_uhc(conn, data['uhc_id'], uid)
+        if not parcelas:
+            conn.close()
+            return jsonify({"error": "El grupo UHC no existe o no tiene parcelas asignadas"}), 400
+        ids = [_insert_riego(c, uid, data, p['id'], p['nombre_finca']) for p in parcelas]
+        conn.commit(); conn.close()
+        for p in parcelas:
+            _recalcular_patrones(uid, 'riego', p['id'], data.get('fecha'))
+        return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
+
+    if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
+
+    new_id = _insert_riego(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'))
+    conn.commit(); conn.close()
     _recalcular_patrones(uid, 'riego', data.get('parcela_id'), data.get('fecha'))
     return jsonify({"status": "ok", "id": new_id}), 201
 
@@ -286,6 +352,9 @@ def manage_riego_one(rid):
     if err:
         conn.close()
         return jsonify({"error": err}), 400
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
     fields = ['parcela_id', 'parcela_etiqueta', 'fecha', 'tipo_riego', 'volumen_m3',
               'horas_riego', 'fuente_agua', 'notas', 'campana']
     sets = ', '.join(f"{f}=?" for f in fields)

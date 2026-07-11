@@ -8,8 +8,31 @@ from flask_login import login_required
 from db import get_db, one, dicts
 from helpers import get_uid, _to_real
 from blueprints.ia import _recalcular_patrones
+from blueprints.fertilizacion import _parcelas_uhc, parcela_es_del_usuario
 
 bp = Blueprint('labores', __name__)
+
+
+def _validate_labor(data):
+    """Requiere fecha y parcela o grupo UHC (antes no se validaba nada en el backend)."""
+    if not data.get('fecha'):
+        return "La fecha es obligatoria"
+    if not data.get('parcela_id') and not data.get('uhc_id'):
+        return "Se requiere una parcela o un grupo UHC"
+    return None
+
+
+def _insert_labor(c, uid, data, parcela_id, parcela_etiqueta):
+    """Inserta un único registro de labor para la parcela dada."""
+    c.execute('''
+        INSERT INTO labores (user_id, parcela_id, parcela_etiqueta, fecha,
+            tipo_labor, descripcion, producto, maquinaria, horas_trabajadas, operario, notas, campana)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, parcela_id, parcela_etiqueta, data.get('fecha'),
+          data.get('tipo_labor'), data.get('descripcion'), data.get('producto'), data.get('maquinaria'),
+          _to_real(data.get('horas_trabajadas')), data.get('operario'), data.get('notas'),
+          data.get('campana', '2025/2026')))
+    return c.lastrowid
 
 
 @bp.route('/api/labores', methods=['GET', 'POST'])
@@ -21,16 +44,29 @@ def manage_labores():
         rows = dicts(conn, "SELECT * FROM labores WHERE user_id=? ORDER BY fecha DESC", (uid,))
         conn.close(); return jsonify(rows)
     data = request.json or {}
+    err = _validate_labor(data)
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
     c = conn.cursor()
-    c.execute('''
-        INSERT INTO labores (user_id, parcela_id, parcela_etiqueta, fecha,
-            tipo_labor, descripcion, producto, maquinaria, horas_trabajadas, operario, notas, campana)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-    ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha'),
-          data.get('tipo_labor'), data.get('descripcion'), data.get('producto'), data.get('maquinaria'),
-          _to_real(data.get('horas_trabajadas')), data.get('operario'), data.get('notas'),
-          data.get('campana', '2025/2026')))
-    conn.commit(); new_id = c.lastrowid; conn.close()
+
+    if data.get('uhc_id'):
+        parcelas = _parcelas_uhc(conn, data['uhc_id'], uid)
+        if not parcelas:
+            conn.close()
+            return jsonify({"error": "El grupo UHC no existe o no tiene parcelas asignadas"}), 400
+        ids = [_insert_labor(c, uid, data, p['id'], p['nombre_finca']) for p in parcelas]
+        conn.commit(); conn.close()
+        for p in parcelas:
+            _recalcular_patrones(uid, 'labores', p['id'], data.get('fecha'))
+        return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
+
+    if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
+
+    new_id = _insert_labor(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'))
+    conn.commit(); conn.close()
     _recalcular_patrones(uid, 'labores', data.get('parcela_id'), data.get('fecha'))
     return jsonify({"status": "ok", "id": new_id}), 201
 
@@ -47,6 +83,13 @@ def manage_labor(lid):
         row = one(conn, "SELECT * FROM labores WHERE id=? AND user_id=?", (lid, uid))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
+    err = _validate_labor(data)
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
     fields = ['parcela_id', 'parcela_etiqueta', 'fecha', 'tipo_labor', 'descripcion',
               'producto', 'maquinaria', 'horas_trabajadas', 'operario', 'notas', 'campana']
     sets = ', '.join(f"{f}=?" for f in fields)
