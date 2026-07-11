@@ -8,8 +8,22 @@ from flask_login import login_required
 from db import get_db, one, dicts
 from helpers import get_uid, _to_real
 from blueprints.ia import _recalcular_patrones
+from blueprints.fertilizacion import _parcelas_uhc
 
 bp = Blueprint('labores', __name__)
+
+
+def _insert_labor(c, uid, data, parcela_id, parcela_etiqueta):
+    """Inserta un único registro de labor para la parcela dada."""
+    c.execute('''
+        INSERT INTO labores (user_id, parcela_id, parcela_etiqueta, fecha,
+            tipo_labor, descripcion, producto, maquinaria, horas_trabajadas, operario, notas, campana)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, parcela_id, parcela_etiqueta, data.get('fecha'),
+          data.get('tipo_labor'), data.get('descripcion'), data.get('producto'), data.get('maquinaria'),
+          _to_real(data.get('horas_trabajadas')), data.get('operario'), data.get('notas'),
+          data.get('campana', '2025/2026')))
+    return c.lastrowid
 
 
 @bp.route('/api/labores', methods=['GET', 'POST'])
@@ -22,15 +36,20 @@ def manage_labores():
         conn.close(); return jsonify(rows)
     data = request.json or {}
     c = conn.cursor()
-    c.execute('''
-        INSERT INTO labores (user_id, parcela_id, parcela_etiqueta, fecha,
-            tipo_labor, descripcion, producto, maquinaria, horas_trabajadas, operario, notas, campana)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-    ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'), data.get('fecha'),
-          data.get('tipo_labor'), data.get('descripcion'), data.get('producto'), data.get('maquinaria'),
-          _to_real(data.get('horas_trabajadas')), data.get('operario'), data.get('notas'),
-          data.get('campana', '2025/2026')))
-    conn.commit(); new_id = c.lastrowid; conn.close()
+
+    if data.get('uhc_id'):
+        parcelas = _parcelas_uhc(conn, data['uhc_id'], uid)
+        if not parcelas:
+            conn.close()
+            return jsonify({"error": "El grupo UHC no existe o no tiene parcelas asignadas"}), 400
+        ids = [_insert_labor(c, uid, data, p['id'], p['nombre_finca']) for p in parcelas]
+        conn.commit(); conn.close()
+        for p in parcelas:
+            _recalcular_patrones(uid, 'labores', p['id'], data.get('fecha'))
+        return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
+
+    new_id = _insert_labor(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'))
+    conn.commit(); conn.close()
     _recalcular_patrones(uid, 'labores', data.get('parcela_id'), data.get('fecha'))
     return jsonify({"status": "ok", "id": new_id}), 201
 
