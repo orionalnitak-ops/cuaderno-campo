@@ -200,7 +200,7 @@ const HELP_SCREENS = {
             {
                 icon: '🗺️',
                 title: 'Parcela',
-                desc: 'Indica en qué parcela se aplicó el fertilizante.',
+                desc: 'Indica en qué parcela se aplicó el fertilizante. Si tratas varias a la vez, crea un Grupo UHC y selecciónalo aquí en vez de una parcela.',
             },
             {
                 icon: '🧪',
@@ -226,7 +226,7 @@ const HELP_SCREENS = {
             {
                 icon: '🗺️',
                 title: 'Parcela',
-                desc: 'Selecciona la parcela donde realizaste la labor.',
+                desc: 'Selecciona la parcela donde realizaste la labor. Si la hiciste en varias a la vez, crea un Grupo UHC y selecciónalo aquí en vez de una parcela.',
             },
             {
                 icon: '🔧',
@@ -247,7 +247,7 @@ const HELP_SCREENS = {
             {
                 icon: '🗺️',
                 title: 'Parcela',
-                desc: 'Selecciona la parcela regada.',
+                desc: 'Selecciona la parcela regada. Si riegas varias a la vez, crea un Grupo UHC y selecciónalo aquí en vez de una parcela.',
             },
             {
                 icon: '💧',
