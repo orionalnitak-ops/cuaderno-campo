@@ -128,8 +128,17 @@ def _recinto_bboxes(recintos_data):
     return out
 
 
-def _superficie_featureinfo(prov, mun, pol, par, rec, bbox):
-    """superficie_ha oficial de un recinto vía GetFeatureInfo en hubcloud, o None si falla."""
+def _recinto_featureinfo(prov, mun, pol, par, rec, bbox):
+    """Datos oficiales de un recinto (superficie_ha, uso_sigpac) vía GetFeatureInfo en
+    hubcloud, o None si falla o el recinto no está en la capa (p.ej. es un camino/CA
+    que SIGPAC no cataloga como recinto agrícola).
+
+    Esta es la ÚNICA fuente fiable del uso SIGPAC por recinto: el uso vía Catastro
+    (referencia catastral) es incorrecto cuando varios recintos comparten la misma
+    parcela catastral, porque Catastro clasifica a nivel de parcela completa, no de
+    recinto — un recinto que en SIGPAC es "CA-VIALES" (camino) puede heredar el
+    cultivo de la parcela catastral entera (p.ej. "OV-OLIVAR") si solo se usa Catastro.
+    """
     x1, y1, x2, y2 = bbox
     cql = (f"provincia={prov} AND municipio={mun} AND poligono={pol} "
            f"AND parcela={par} AND recinto={rec}")
@@ -150,11 +159,21 @@ def _superficie_featureinfo(prov, mun, pol, par, rec, bbox):
         feats = (r.json() or {}).get('features') or []
         if not feats:
             return None
-        val = (feats[0].get('properties') or {}).get('superficie_ha')
-        return float(val) if val is not None else None
+        props = feats[0].get('properties') or {}
+        sup = props.get('superficie_ha')
+        return {
+            'superficie_ha': float(sup) if sup is not None else None,
+            'uso_sigpac': props.get('uso_sigpac') or '',
+        }
     except Exception as e:
         logger.warning("featureinfo %s/%s/%s/%s/%s: %s", prov, mun, pol, par, rec, e)
         return None
+
+
+def _superficie_featureinfo(prov, mun, pol, par, rec, bbox):
+    """superficie_ha oficial de un recinto, o None si falla. Ver _recinto_featureinfo."""
+    info = _recinto_featureinfo(prov, mun, pol, par, rec, bbox)
+    return info['superficie_ha'] if info else None
 
 
 def superficie_sigpac_parcela(prov, mun, pol, par, recinto=None):
@@ -339,11 +358,13 @@ def sigpac_datos():
     resultado = {'superficie_ha': '', 'uso_sigpac': '', 'referencia_cat': '', 'num_recintos': 0}
 
     try:
-        # Paso 1: contar recintos
+        # Paso 1: contar recintos y localizar el bbox del recinto pedido
         recintos_data = _sigpac_get(f"{SIGPAC_BASE}/recintos/{prov}/{mun}/0/0/{pol}/{par}")
         resultado['num_recintos'] = len(recintos_data.get('features', []))
+        bboxes = _recinto_bboxes(recintos_data)
+        bbox_rec = next((b for (n, b) in bboxes if str(n) == str(rec)), None)
 
-        # Paso 2: detalle del recinto por referencia completa
+        # Paso 2: detalle del recinto por referencia completa (superficie + referencia catastral)
         INTER = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/intersection"
         inter = _sigpac_get(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},{rec}")
         pi = inter.get('parcelaInfo') or {}
@@ -355,8 +376,21 @@ def sigpac_datos():
         ref_cat = pi.get('referencia_cat', '')
         resultado['referencia_cat'] = ref_cat
 
-        # Paso 3: uso SIGPAC via Catastro (parcelaInfo no lo incluye)
-        if ref_cat:
+        # Paso 3: uso SIGPAC real, por recinto, vía GetFeatureInfo (ver _recinto_featureinfo).
+        # OJO: la referencia catastral es la misma para todos los recintos de un mismo
+        # pol/par, así que preguntar a Catastro da el mismo cultivo a TODOS los recintos
+        # (p.ej. "Olivar" a un recinto que en SIGPAC realmente es "CA-VIALES", un camino).
+        # Por eso el uso SIGPAC real (por recinto) tiene prioridad. Catastro solo es
+        # respaldo cuando hay UN ÚNICO recinto (ahí la referencia catastral sí identifica
+        # sin ambigüedad ese recinto); con varios recintos, si SIGPAC no tiene el dato es
+        # casi siempre porque no es agrícola (camino, improductivo...) y NO se debe
+        # inventar un cultivo — mejor dejarlo sin uso conocido que dar un dato falso.
+        info = _recinto_featureinfo(prov, mun, pol, par, rec, bbox_rec) if bbox_rec else None
+        if info and info['uso_sigpac']:
+            resultado['uso_sigpac'] = info['uso_sigpac']
+            if info['superficie_ha'] is not None:
+                resultado['superficie_ha'] = round(info['superficie_ha'], 4)
+        elif ref_cat and resultado['num_recintos'] <= 1:
             try:
                 import xml.etree.ElementTree as ET
                 cat_r = req_lib.get(
@@ -405,19 +439,39 @@ def sigpac_recintos_detalle():
     })
     if not nums:
         return jsonify([])
+    bboxes = dict(_recinto_bboxes(recintos_data))
 
     INTER = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/intersection"
     resultado = []
     for rec_num in nums:
         item = {'num': rec_num, 'superficie_ha': None, 'uso_sigpac': ''}
         try:
+            # Uso SIGPAC real por recinto (ver _recinto_featureinfo): no usar Catastro
+            # como fuente principal porque su referencia catastral es la misma para
+            # todos los recintos de un mismo pol/par y da el mismo cultivo a todos,
+            # aunque alguno sea en realidad un camino (CA) u otro uso no agrícola.
+            info = _recinto_featureinfo(prov, mun, pol, par, rec_num, bboxes[rec_num]) if rec_num in bboxes else None
+            if info and info['superficie_ha'] is not None:
+                item['superficie_ha'] = round(info['superficie_ha'], 4)
+            if info and info['uso_sigpac']:
+                item['uso_sigpac'] = info['uso_sigpac']
+                resultado.append(item)
+                continue
+
+            # Respaldo: recinto no presente en la capa SIGPAC (o WMS falló).
+            # Solo consultamos Catastro para el uso si es EL ÚNICO recinto del pol/par
+            # (ahí su referencia catastral lo identifica sin ambigüedad). Con varios
+            # recintos, la ausencia de dato en SIGPAC suele indicar que no es agrícola
+            # (camino, improductivo...) y Catastro daría el cultivo de la parcela entera
+            # a un trozo que no lo tiene — mejor dejarlo sin uso conocido que inventarlo.
             inter = _sigpac_get(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},{rec_num}")
             pi = inter.get('parcelaInfo') or {}
-            dn = pi.get('dn_surface')
-            if dn:
-                item['superficie_ha'] = round(float(dn) / 10000, 4)
+            if item['superficie_ha'] is None:
+                dn = pi.get('dn_surface')
+                if dn:
+                    item['superficie_ha'] = round(float(dn) / 10000, 4)
             ref_cat = pi.get('referencia_cat', '')
-            if ref_cat:
+            if ref_cat and len(nums) <= 1:
                 try:
                     import xml.etree.ElementTree as ET
                     cat_r = req_lib.get(
