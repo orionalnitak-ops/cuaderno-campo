@@ -211,16 +211,26 @@ def _recinto_layerinfo(prov, mun, pol, par, rec, agr='0', zona='0'):
 _REF_CAT_RE = re.compile(r'^[A-Z0-9]{1,20}$')
 
 
-def referencia_catastral_parcela(prov, mun, pol, par):
+def referencia_catastral_parcela(prov, mun, pol, par, recinto='1'):
     """Referencia catastral de un pol/par, vía el endpoint de intersección.
 
     Es la misma para todos los recintos de una parcela catastral (ver
-    _recinto_layerinfo), así que basta con consultarla una vez por el
-    recinto 1. Devuelve '' si falla, no existe o el formato no es el
-    esperado — mismo criterio que superficie_sigpac_parcela.
+    _recinto_layerinfo), así que basta con consultarla por cualquiera de
+    sus recintos — pero tiene que ser uno que exista de verdad: si la
+    parcela no tiene recinto "1" (numeración que empieza en 2, o el 1 ya
+    no está vigente), la intersección para ese recinto no devuelve
+    parcelaInfo y la referencia queda vacía aunque la parcela sí exista
+    en Catastro. Por eso el llamador debe pasar un recinto real de la
+    parcela (p.ej. el primero de la lista de recintos detectados) en vez
+    de asumir que el "1" siempre está.
+
+    Devuelve '' si falla, no existe o el formato no es el esperado —
+    mismo criterio que superficie_sigpac_parcela.
     """
-    # Validación defensiva: los identificadores van en la URL.
-    for v in (prov, mun, pol, par):
+    # Validación defensiva: los identificadores van en la URL, incluido recinto
+    # (antes era el literal "1"; ahora puede venir del llamador, así que hay que
+    # validarlo igual que el resto en vez de asumir que ya es seguro).
+    for v in (prov, mun, pol, par, recinto):
         if not re.fullmatch(r'\d{1,6}', str(v or '')):
             return ''
     try:
@@ -228,7 +238,7 @@ def referencia_catastral_parcela(prov, mun, pol, par):
         # Dato informativo, no crítico: timeout corto y sin reintento para no
         # bloquear el alta multi-recinto si FEGA está lento o caído — mejor
         # crear las parcelas sin ref. catastral que dejar al usuario esperando.
-        inter = _sigpac_get(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},1",
+        inter = _sigpac_get(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},{recinto}",
                              timeout=4, retries=0)
         pi = inter.get('parcelaInfo') or {}
         ref = (pi.get('referencia_cat') or '').strip().upper()
@@ -273,7 +283,14 @@ def superficie_sigpac_parcela(prov, mun, pol, par, recinto=None):
 
     total = 0.0
     for (n, b) in objetivo:
-        ha = _superficie_featureinfo(prov, mun, pol, par, n, b)
+        # layerinfo/recinto identifica el recinto por sus IDs y es más fiable que el
+        # WMS de hubcloud (que muestrea un píxel y puede fallar en recintos estrechos
+        # o con forma irregular, ver _recinto_featureinfo). Se prueba primero y solo
+        # se cae al WMS de hubcloud si layerinfo no responde.
+        info = _recinto_layerinfo(prov, mun, pol, par, n)
+        ha = info['superficie_ha'] if info else None
+        if ha is None:
+            ha = _superficie_featureinfo(prov, mun, pol, par, n, b)
         if ha is None:
             # Cualquier recinto que falle invalida la suma: mejor no persistir un
             # total parcial (daría un badge ámbar falso) y tratarlo como transitorio.
