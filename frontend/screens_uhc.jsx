@@ -37,7 +37,7 @@ function ScreenUHC({ campana, showToast }) {
     };
 
     const eliminar = async (g) => {
-        if (!confirm(`¿Eliminar el grupo "${g.nombre}"? Los tratamientos ya guardados no se borran.`)) return;
+        if (!confirm(`¿Eliminar el grupo "${g.nombre}"? Los registros ya guardados (tratamientos, abonado, labores, riego) no se borran.`)) return;
         await fetch(`/api/uhc/${g.id}`, { method: 'DELETE', credentials: 'include' });
         showToast('Grupo eliminado');
         reload();
@@ -178,7 +178,7 @@ function ScreenUHC({ campana, showToast }) {
             </div>
 
             <p style={{ fontSize: '0.82rem', color: 'var(--on-surface-variant)', marginTop: 0, marginBottom: 20 }}>
-                Un grupo UHC permite registrar un tratamiento fitosanitario una sola vez para todas las parcelas del grupo.
+                Un grupo UHC permite registrar un tratamiento, abonado, labor o riego una sola vez para todas las parcelas del grupo.
             </p>
 
             {loading ? (
