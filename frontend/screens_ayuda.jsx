@@ -55,7 +55,7 @@ const HELP_SCREENS = {
             {
                 icon: '✂️',
                 title: 'Parcela dividida en varios trozos',
-                desc: 'Si tu parcela del SIGPAC está dividida en varios trozos (recintos), al buscarla te ofrecemos "➕ Crear todas": se crea una parcela por cada trozo de una sola vez. Y si varios trozos tienen el mismo cultivo, te proponemos juntarlos en un grupo para apuntar las faenas una sola vez. Tú decides si agrupar o no.',
+                desc: 'Si tu parcela del SIGPAC está dividida en varios trozos (recintos), al buscarla te ofrecemos "➕ Crear todas": se crea una parcela por cada trozo de una sola vez. Antes de confirmar puedes desmarcar los trozos que no quieras dar de alta (por ejemplo uno marcado "⚠ Sin uso conocido", que suele ser un camino u otro terreno no cultivable). Y si varios trozos tienen el mismo cultivo, te proponemos juntarlos en un grupo para apuntar las faenas una sola vez. Tú decides si agrupar o no.',
             },
             {
                 icon: '🌱',
