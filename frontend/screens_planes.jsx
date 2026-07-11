@@ -56,8 +56,9 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                 'Compras y ventas',
                 'Exportación Excel y PDF oficial',
                 'Widget meteorológico',
+                'Compatible con SIEX',
             ],
-            missing: ['Compatibilidad SIEX avanzada (disponible en Pro)'],
+            missing: [],
         },
         {
             id: 'pro',

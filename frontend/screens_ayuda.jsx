@@ -361,8 +361,8 @@ const HELP_SCREENS = {
             },
             {
                 icon: '🌿',
-                title: 'Usar el grupo en un tratamiento',
-                desc: 'Cuando registres un tratamiento fitosanitario, podrás seleccionar el grupo UHC en vez de una sola parcela. El sistema replica el registro en todas las parcelas del grupo.',
+                title: 'Usar el grupo en una faena',
+                desc: 'Cuando registres un tratamiento, un abonado, una labor o un riego, podrás seleccionar el grupo UHC en vez de una sola parcela. El sistema replica el registro en todas las parcelas del grupo.',
             },
             {
                 icon: '✏️',
