@@ -10,7 +10,7 @@ from extensions import limiter
 from db import get_db, one, dicts, is_pac_eligible
 from helpers import get_uid, _to_real, get_active_explotacion_id, estado_sigpac, validar_alta_multirecinto
 from blueprints.ia import _recalcular_patrones
-from blueprints.sigpac import superficie_sigpac_parcela
+from blueprints.sigpac import superficie_sigpac_parcela, referencia_catastral_parcela
 
 bp = Blueprint('parcelas', __name__)
 
@@ -234,6 +234,10 @@ def alta_multirecinto():
                 return jsonify({"ok": False,
                                 "error": f"Ya tienes registrado el trozo {r['num']} de esa parcela"}), 400
 
+        ref_cat = referencia_catastral_parcela(
+            norm['provincia_cod'], norm['municipio_cod'], norm['poligono'], norm['parcela_num']
+        )
+
         c = conn.cursor()
         ids_por_num = {}
         for r in norm['recintos']:
@@ -249,7 +253,7 @@ def alta_multirecinto():
                 norm['municipio_cod'], norm['municipio_nombre'],
                 f"{norm['nombre_base']} — R{r['num']}",
                 norm['poligono'], norm['parcela_num'], str(r['num']),
-                r['superficie_ha'], r['uso_sigpac'], '',
+                r['superficie_ha'], r['uso_sigpac'], ref_cat,
                 norm['sistema_explotacion'], 0, '',
             ))
             ids_por_num[r['num']] = c.lastrowid
