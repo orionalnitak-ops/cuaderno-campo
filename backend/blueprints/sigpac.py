@@ -225,7 +225,11 @@ def referencia_catastral_parcela(prov, mun, pol, par):
             return ''
     try:
         INTER = "https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/intersection"
-        inter = _sigpac_get(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},1")
+        # Dato informativo, no crítico: timeout corto y sin reintento para no
+        # bloquear el alta multi-recinto si FEGA está lento o caído — mejor
+        # crear las parcelas sin ref. catastral que dejar al usuario esperando.
+        inter = _sigpac_get(f"{INTER}/recinto/recinto/{prov},{mun},0,0,{pol},{par},1",
+                             timeout=4, retries=0)
         pi = inter.get('parcelaInfo') or {}
         ref = (pi.get('referencia_cat') or '').strip().upper()
         return ref if _REF_CAT_RE.match(ref) else ''
