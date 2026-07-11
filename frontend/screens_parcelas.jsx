@@ -417,6 +417,75 @@ function ScreenParcelas({ campana, showToast }) {
     const [recintosPicker, setRecintosPicker] = useState(null);
     // null | { mode:'detail'|'form', provCod, munCod, poligono, parcela, nums:[1,3,4] }
 
+    const [resumenMulti, setResumenMulti] = useState(null);
+    // null | { ctx, recs, grupos:[{uso, nums, nombre, aceptado}], creando:bool }
+
+    // "OV-Olivar" → "Olivar" (mismo criterio que el picker)
+    const usoLabel = u => ((u || '').split('-').slice(1).join('-').trim() || u || '');
+
+    // Agrupa recintos por uso SIGPAC; solo grupos de 2+ generan UHC propuesta.
+    const abrirResumenMulti = () => {
+        const ctx = recintosPicker;
+        const recs = ctx.recintos || [];
+        const by = new Map();
+        recs.forEach(r => {
+            const uso = (r.uso_sigpac || '').trim();
+            if (!uso) return;
+            if (!by.has(uso)) by.set(uso, []);
+            by.get(uso).push(r.num);
+        });
+        const grupos = [...by.entries()]
+            .filter(([, nums]) => nums.length >= 2)
+            .map(([uso, nums]) => ({
+                uso, nums,
+                nombre: `${usoLabel(uso)} — Pol ${ctx.poligono} Par ${ctx.parcela}`,
+                aceptado: true,
+            }));
+        setRecintosPicker(null);
+        setResumenMulti({ ctx, recs, grupos, creando: false });
+    };
+
+    const confirmarMultirecinto = async () => {
+        const rm = resumenMulti;
+        if (rm.grupos.some(g => g.aceptado && !g.nombre.trim())) {
+            showToast('Ponle un nombre a cada grupo (o desmárcalo)');
+            return;
+        }
+        setResumenMulti(r => ({ ...r, creando: true }));
+        const body = {
+            nombre_base: (form.nombre_finca || '').trim() || `Pol ${rm.ctx.poligono} Par ${rm.ctx.parcela}`,
+            comunidad: form.comunidad,
+            provincia_cod: rm.ctx.provCod, provincia_nombre: form.provincia_nombre,
+            municipio_cod: rm.ctx.munCod, municipio_nombre: form.municipio_nombre,
+            poligono: rm.ctx.poligono, parcela_num: rm.ctx.parcela,
+            sistema_explotacion: form.sistema_explotacion || 'Secano',
+            campana: campana || '2025/2026',
+            recintos: rm.recs.map(r => ({ num: r.num, uso_sigpac: r.uso_sigpac || '', superficie_ha: r.superficie_ha })),
+            uhcs: rm.grupos.filter(g => g.aceptado)
+                .map(g => ({ nombre: g.nombre.trim(), cultivo: usoLabel(g.uso), recintos: g.nums })),
+        };
+        try {
+            const res = await fetch('/api/parcelas/alta-multirecinto', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body), credentials: 'include',
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.ok) {
+                showToast(`⚠️ ${d.error || 'No se pudieron crear las parcelas'}`);
+                setResumenMulti(r => r ? { ...r, creando: false } : r);
+                return;
+            }
+            setResumenMulti(null);
+            setShowForm(false);
+            fetchParcelas();
+            const np = d.data?.parcelas || 0, ng = d.data?.uhcs || 0;
+            showToast(`✅ Creadas ${np} parcelas${ng ? ` y ${ng} grupo${ng > 1 ? 's' : ''}` : ''}`);
+        } catch {
+            showToast('Error de conexión');
+            setResumenMulti(r => r ? { ...r, creando: false } : r);
+        }
+    };
+
     // Handler: usuario elige recinto del picker
     const onPickRecinto = async (recNum) => {
         const ctx = recintosPicker;
@@ -1387,6 +1456,15 @@ function ScreenParcelas({ campana, showToast }) {
                                     </button>
                                 ))}
                             </div>
+                            {recintosPicker.mode === 'form' && recs.length > 1 && (
+                                <button onClick={abrirResumenMulti} style={{
+                                    width:'100%', padding:'14px 20px', marginBottom:12,
+                                    background:'#00694c', border:'none', borderRadius:12,
+                                    color:'#fff', fontWeight:800, fontSize:'1rem', cursor:'pointer',
+                                }}>
+                                    ➕ Crear todas ({recs.length} trozos)
+                                </button>
+                            )}
                             {!supIndividual && (
                                 <div style={{ fontSize:'0.72rem', color:'#9ca3af', textAlign:'center', marginBottom:12, lineHeight:1.4 }}>
                                     La API SIGPAC 2026 no devuelve superficie individual por recinto.
@@ -1398,6 +1476,120 @@ function ScreenParcelas({ campana, showToast }) {
                                 border:'none', borderRadius:10, color:'#6b7280',
                                 fontWeight:600, cursor:'pointer', fontSize:'0.9rem',
                             }}>
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {resumenMulti && (() => {
+                const rm = resumenMulti;
+                const fmtSup = s => s != null ? (s >= 1 ? `${s.toFixed(4)} ha` : `${Math.round(s * 10000)} m²`) : '—';
+                const sinGrupos = rm.grupos.length === 0;
+                const setGrupo = (i, patch) => setResumenMulti(r => ({
+                    ...r, grupos: r.grupos.map((g, j) => j === i ? { ...g, ...patch } : g),
+                }));
+                return (
+                    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:9999,
+                        display:'flex', alignItems:'flex-end', justifyContent:'center' }}
+                        onClick={() => !rm.creando && setResumenMulti(null)}>
+                        <div style={{ background:'#fff', borderRadius:'20px 20px 0 0', padding:'24px 20px 32px',
+                            width:'100%', maxWidth:480, maxHeight:'88vh', overflowY:'auto' }}
+                            onClick={e => e.stopPropagation()}>
+
+                            <div style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', color:'#1a2e1a', textAlign:'center' }}>
+                                Vamos a crear {rm.recs.length} parcelas
+                            </div>
+                            <div style={{ color:'#6b7280', fontSize:'0.83rem', textAlign:'center', marginTop:4, marginBottom:14 }}>
+                                Pol {rm.ctx.poligono} / Par {rm.ctx.parcela} — una parcela por cada trozo (recinto)
+                            </div>
+
+                            <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
+                                {rm.recs.map(r => (
+                                    <div key={r.num} style={{ display:'flex', justifyContent:'space-between',
+                                        padding:'10px 14px', background:'#f9fafb', borderRadius:10, fontSize:'0.9rem' }}>
+                                        <span style={{ fontWeight:700, color:'#1a2e1a' }}>Trozo {r.num}</span>
+                                        <span style={{ color:'#6b7280' }}>
+                                            {usoLabel(r.uso_sigpac) || 'Sin uso conocido'} · {fmtSup(r.superficie_ha)}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {sinGrupos ? (
+                                <div style={{ background:'#f0fdf4', borderRadius:12, padding:'14px 16px',
+                                    fontSize:'0.85rem', color:'#374151', lineHeight:1.5, marginBottom:16 }}>
+                                    Cada trozo tiene un cultivo distinto, así que no hay nada que agrupar.
+                                    Se crearán las {rm.recs.length} parcelas por separado.
+                                </div>
+                            ) : (
+                                <div style={{ background:'#f0fdf4', borderRadius:12, padding:'16px', marginBottom:16 }}>
+                                    <div style={{ fontWeight:800, fontSize:'1rem', color:'#1a2e1a', marginBottom:8 }}>
+                                        ¿Juntamos los trozos que se trabajan igual?
+                                    </div>
+                                    <div style={{ fontSize:'0.83rem', color:'#374151', lineHeight:1.55 }}>
+                                        <p style={{ margin:'0 0 8px' }}>
+                                            Los trozos que tienen <b>el mismo cultivo</b> puedes juntarlos en un <b>grupo</b>.
+                                            <b> ¿Qué ganas con eso?</b> Que las faenas se apuntan <b>una sola vez</b>:
+                                        </p>
+                                        <ul style={{ margin:'0 0 8px', paddingLeft:18 }}>
+                                            <li>Si sulfatas el olivar, apuntas el tratamiento <b>una vez</b> y queda
+                                                registrado en todos los trozos del grupo a la vez. Sin grupo, tendrías
+                                                que apuntarlo trozo por trozo.</li>
+                                            <li>Lo mismo con el abonado y las labores: una anotación vale para todo el grupo.</li>
+                                            <li>Tu cuaderno queda igual de completo y correcto ante una inspección:
+                                                cada trozo tiene sus datos, solo que tú escribes menos.</li>
+                                        </ul>
+                                        <p style={{ margin:0 }}>
+                                            A ese grupo la administración lo llama "Unidad Homogénea de Cultivo (UHC)".
+                                            Para ti es, simplemente, un grupo de trozos que se trabajan igual. Tú decides:
+                                            agrúpalos ahora o déjalos sueltos (podrás agruparlos más adelante desde la
+                                            pantalla de Grupos).
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {rm.grupos.map((g, i) => (
+                                <div key={g.uso} style={{ border:'2px solid ' + (g.aceptado ? '#00694c' : '#e5e7eb'),
+                                    borderRadius:12, padding:'14px 16px', marginBottom:12 }}>
+                                    <div style={{ fontSize:'0.8rem', color:'#6b7280', marginBottom:6 }}>
+                                        Junta los trozos {g.nums.join(', ')} ({usoLabel(g.uso)})
+                                    </div>
+                                    <input value={g.nombre} disabled={!g.aceptado || rm.creando}
+                                        aria-label={`Nombre del grupo ${usoLabel(g.uso)}`}
+                                        onChange={e => setGrupo(i, { nombre: e.target.value })}
+                                        style={{ width:'100%', padding:'12px', borderRadius:8, fontSize:'1rem',
+                                            border:'1px solid #d1d5db', marginBottom:10, boxSizing:'border-box' }} />
+                                    <div style={{ display:'flex', gap:8 }}>
+                                        <button onClick={() => setGrupo(i, { aceptado: true })} disabled={rm.creando} style={{
+                                            flex:1, padding:'14px 12px', borderRadius:10, fontWeight:700, cursor:'pointer',
+                                            border:'2px solid #00694c', fontSize:'0.9rem',
+                                            background: g.aceptado ? '#00694c' : '#fff',
+                                            color: g.aceptado ? '#fff' : '#00694c' }}>
+                                            Sí, agrupar
+                                        </button>
+                                        <button onClick={() => setGrupo(i, { aceptado: false })} disabled={rm.creando} style={{
+                                            flex:1, padding:'14px 12px', borderRadius:10, fontWeight:700, cursor:'pointer',
+                                            border:'2px solid ' + (!g.aceptado ? '#6b7280' : '#e5e7eb'), fontSize:'0.9rem',
+                                            background: !g.aceptado ? '#6b7280' : '#fff',
+                                            color: !g.aceptado ? '#fff' : '#9ca3af' }}>
+                                            No, dejar sueltos
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+
+                            <button onClick={confirmarMultirecinto} disabled={rm.creando} style={{
+                                width:'100%', padding:'15px', background: rm.creando ? '#9ca3af' : '#00694c',
+                                border:'none', borderRadius:12, color:'#fff', fontWeight:800,
+                                fontSize:'1.05rem', cursor: rm.creando ? 'wait' : 'pointer', marginBottom:10 }}>
+                                {rm.creando ? 'Creando…' : '✓ Confirmar y crear'}
+                            </button>
+                            <button onClick={() => setResumenMulti(null)} disabled={rm.creando} style={{
+                                width:'100%', padding:'13px', background:'#f3f4f6', border:'none',
+                                borderRadius:10, color:'#6b7280', fontWeight:600, cursor:'pointer', fontSize:'0.9rem' }}>
                                 Cancelar
                             </button>
                         </div>
