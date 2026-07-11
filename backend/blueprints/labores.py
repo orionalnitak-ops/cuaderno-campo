@@ -8,9 +8,18 @@ from flask_login import login_required
 from db import get_db, one, dicts
 from helpers import get_uid, _to_real
 from blueprints.ia import _recalcular_patrones
-from blueprints.fertilizacion import _parcelas_uhc
+from blueprints.fertilizacion import _parcelas_uhc, parcela_es_del_usuario
 
 bp = Blueprint('labores', __name__)
+
+
+def _validate_labor(data):
+    """Requiere fecha y parcela o grupo UHC (antes no se validaba nada en el backend)."""
+    if not data.get('fecha'):
+        return "La fecha es obligatoria"
+    if not data.get('parcela_id') and not data.get('uhc_id'):
+        return "Se requiere una parcela o un grupo UHC"
+    return None
 
 
 def _insert_labor(c, uid, data, parcela_id, parcela_etiqueta):
@@ -35,6 +44,10 @@ def manage_labores():
         rows = dicts(conn, "SELECT * FROM labores WHERE user_id=? ORDER BY fecha DESC", (uid,))
         conn.close(); return jsonify(rows)
     data = request.json or {}
+    err = _validate_labor(data)
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
     c = conn.cursor()
 
     if data.get('uhc_id'):
@@ -47,6 +60,10 @@ def manage_labores():
         for p in parcelas:
             _recalcular_patrones(uid, 'labores', p['id'], data.get('fecha'))
         return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
+
+    if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
 
     new_id = _insert_labor(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'))
     conn.commit(); conn.close()
@@ -66,6 +83,13 @@ def manage_labor(lid):
         row = one(conn, "SELECT * FROM labores WHERE id=? AND user_id=?", (lid, uid))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
+    err = _validate_labor(data)
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
     fields = ['parcela_id', 'parcela_etiqueta', 'fecha', 'tipo_labor', 'descripcion',
               'producto', 'maquinaria', 'horas_trabajadas', 'operario', 'notas', 'campana']
     sets = ', '.join(f"{f}=?" for f in fields)

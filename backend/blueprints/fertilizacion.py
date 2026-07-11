@@ -195,6 +195,12 @@ def _parcelas_uhc(conn, uhc_id, uid):
     """, (uhc_id, uid))
 
 
+def parcela_es_del_usuario(conn, parcela_id, uid):
+    """True si parcela_id existe y pertenece a uid. Evita IDOR: sin esto, cualquier
+    usuario autenticado podría enviar el parcela_id de otro y colgarle registros."""
+    return one(conn, "SELECT id FROM parcelas WHERE id=? AND user_id=?", (parcela_id, uid)) is not None
+
+
 @bp.route('/api/fertilizacion', methods=['GET', 'POST'])
 @login_required
 def manage_fertilizacion():
@@ -225,6 +231,10 @@ def manage_fertilizacion():
             _recalcular_patrones(uid, 'fertilizacion', p['id'], data.get('fecha_aplicacion'))
         return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
 
+    if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
+
     new_id = _insert_fertilizacion(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'), n_ap, p_ap, k_ap)
     conn.commit(); conn.close()
     _recalcular_patrones(uid, 'fertilizacion', data.get('parcela_id'), data.get('fecha_aplicacion'))
@@ -249,6 +259,9 @@ def manage_fertilizacion_one(fid):
     if err:
         conn.close()
         return jsonify({"error": err}), 400
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
     n_ap, p_ap, k_ap = _calc_npk(data.get('riqueza_npk'), data.get('dosis_valor'),
                                   data.get('dosis_unidad', 'kg/ha'), data.get('densidad_g_ml'))
     fields = ['parcela_id', 'parcela_etiqueta', 'fecha_aplicacion', 'tipo_fertilizante',
@@ -311,6 +324,10 @@ def manage_riego():
             _recalcular_patrones(uid, 'riego', p['id'], data.get('fecha'))
         return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
 
+    if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
+
     new_id = _insert_riego(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'))
     conn.commit(); conn.close()
     _recalcular_patrones(uid, 'riego', data.get('parcela_id'), data.get('fecha'))
@@ -335,6 +352,9 @@ def manage_riego_one(rid):
     if err:
         conn.close()
         return jsonify({"error": err}), 400
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
     fields = ['parcela_id', 'parcela_etiqueta', 'fecha', 'tipo_riego', 'volumen_m3',
               'horas_riego', 'fuente_agua', 'notas', 'campana']
     sets = ', '.join(f"{f}=?" for f in fields)

@@ -891,7 +891,7 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
             const res = isEdit
                 ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
                 : await window.OfflineSync.post('/api/labores', f);
-            if (!res.ok) { alert('Error al guardar. Inténtalo de nuevo.'); setSaving(false); return; }
+            if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar. Inténtalo de nuevo.'); setSaving(false); return; }
             postFeedback();
             onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Labor guardada');
         } catch { alert('Error de conexión'); setSaving(false); }
