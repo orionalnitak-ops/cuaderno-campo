@@ -1090,7 +1090,7 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
                                     <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:10, padding:'10px 12px', marginBottom:12, display:'flex', gap:8, alignItems:'flex-start' }}>
                                         <span style={{ fontSize:'0.9rem', flexShrink:0 }}>ℹ️</span>
                                         <div style={{ fontSize:'0.75rem', color:'#1e40af', lineHeight:1.5 }}>
-                                            Si esta parcela tiene varios recintos, la superficie mostrada es la <strong>suma total de la parcela catastral</strong>. SIGPAC no devuelve la superficie desglosada por recinto.
+                                            Si esta parcela tiene varios recintos, la superficie mostrada es la <strong>suma total de la parcela catastral</strong>. El desglose por recinto solo se guarda si diste de alta cada recinto por separado.
                                         </div>
                                     </div>
                                 )}
@@ -1509,7 +1509,7 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
                             )}
                             {!supIndividual && (
                                 <div style={{ fontSize:'0.72rem', color:'#9ca3af', textAlign:'center', marginBottom:12, lineHeight:1.4 }}>
-                                    La API SIGPAC 2026 no devuelve superficie individual por recinto.
+                                    No se ha podido obtener la superficie individual de cada recinto.
                                     Consulta tu ficha SIGPAC para identificar el recinto correcto.
                                 </div>
                             )}
