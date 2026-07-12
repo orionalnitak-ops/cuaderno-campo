@@ -384,6 +384,9 @@ def manage_abonado():
     if err:
         conn.close()
         return jsonify({"error": err}), 400
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
 
     c = conn.cursor()
     c.execute('''
@@ -422,6 +425,9 @@ def manage_abonado_one(aid):
     if err:
         conn.close()
         return jsonify({"error": err}), 400
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
     fields = ['parcela_id', 'parcela_etiqueta', 'cultivo', 'cultivo_anterior',
               'rendimiento_esperado_kg_ha', 'n_necesario_kg_ha', 'p_necesario_kg_ha',
               'k_necesario_kg_ha', 'fecha_preparacion', 'datos_suelo',
