@@ -2,12 +2,14 @@
 blueprints/ia.py — Asistente IA estadístico (patrones pre-calculados, sin LLM)
 """
 import datetime
+import logging
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, dicts, one, USE_PG
 from helpers import get_uid
 
 bp = Blueprint('ia', __name__)
+logger = logging.getLogger(__name__)
 
 # ── Configuración ──────────────────────────────────────────────────────────────
 
@@ -51,6 +53,14 @@ TEMPORADA_MESES = {
 
 _HAS_DELETED_AT = {'tratamientos'}
 
+# Allowlists para defensa en profundidad: campo/tabla/fecha_col se interpolan
+# en f-strings SQL más abajo. Hoy siempre vienen de los diccionarios de arriba,
+# pero se valida explícitamente por si un futuro refactor los hace derivar de
+# input externo sin darse cuenta.
+_CAMPOS_PERMITIDOS = {c for cols in CAMPOS_MODULO.values() for c in cols}
+_TABLAS_PERMITIDAS = set(TABLA_MODULO.values())
+_FECHAS_PERMITIDAS = set(FECHA_MODULO.values())
+
 
 # ── Funciones internas ─────────────────────────────────────────────────────────
 
@@ -85,6 +95,10 @@ def _recalcular_patrones(user_id, modulo, parcela_id, fecha_str):
     campos    = CAMPOS_MODULO[modulo]
     tabla     = TABLA_MODULO[modulo]
     fecha_col = FECHA_MODULO[modulo]
+    if tabla not in _TABLAS_PERMITIDAS or fecha_col not in _FECHAS_PERMITIDAS \
+            or any(c not in _CAMPOS_PERMITIDOS for c in campos):
+        logger.error("Valores fuera de allowlist en _recalcular_patrones: modulo=%s", modulo)
+        return
     temporada = _temporada(fecha_str)
     meses     = TEMPORADA_MESES[temporada]
     mes_expr  = _mes_in_expr(fecha_col, meses)
@@ -147,8 +161,7 @@ def _recalcular_patrones(user_id, modulo, parcela_id, fecha_str):
 
         conn.commit()
     except Exception:
-        import traceback
-        traceback.print_exc()
+        logger.exception("Error recalculando patrones user_id=%s modulo=%s", user_id, modulo)
     finally:
         conn.close()
 
@@ -235,8 +248,7 @@ def _generar_alertas(user_id):
 
         conn.commit()
     except Exception:
-        import traceback
-        traceback.print_exc()
+        logger.exception("Error generando alertas user_id=%s", user_id)
     finally:
         conn.close()
 
@@ -246,12 +258,19 @@ def _generar_alertas(user_id):
 @bp.route('/api/ia/sugerencias', methods=['GET'])
 @login_required
 def get_sugerencias():
-    uid        = get_uid()
-    modulo     = request.args.get('modulo')
-    parcela_id = request.args.get('parcela_id')
+    uid            = get_uid()
+    modulo         = request.args.get('modulo')
+    parcela_id_raw = request.args.get('parcela_id')
 
-    if not modulo:
-        return jsonify({"ok": False, "error": "modulo es obligatorio"}), 400
+    if not modulo or modulo not in CAMPOS_MODULO:
+        return jsonify({"ok": False, "error": "modulo no válido"}), 400
+
+    parcela_id = None
+    if parcela_id_raw:
+        try:
+            parcela_id = int(parcela_id_raw)
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "parcela_id debe ser entero"}), 400
 
     temporada = _temporada()
     conn = get_db()
@@ -315,6 +334,12 @@ def post_feedback():
 
     if not patron_id or accion not in ('aceptada', 'ignorada', 'modificada'):
         return jsonify({"ok": False, "error": "patron_id y accion válida son obligatorios"}), 400
+    try:
+        patron_id = int(patron_id)
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "patron_id debe ser entero"}), 400
+    if valor_final is not None and len(str(valor_final)) > 500:
+        return jsonify({"ok": False, "error": "valor_final demasiado largo"}), 400
 
     conn   = get_db()
     patron = one(conn, "SELECT id FROM ia_patrones WHERE id=? AND user_id=?", (patron_id, uid))
