@@ -10,6 +10,7 @@ from flask import Blueprint, jsonify, request, send_file
 from flask_login import login_required
 from helpers import get_uid, admin_required, requires_active_plan, get_active_explotacion_id
 from blueprints.sigpac import _sigpac_get, SIGPAC_BASE
+from extensions import limiter
 
 bp = Blueprint('imports_exports', __name__)
 logger = logging.getLogger(__name__)
@@ -123,6 +124,7 @@ def _importar_parcelas_wb(wb, uid):
 
 @bp.route('/api/import/excel', methods=['POST'])
 @login_required
+@limiter.limit("10 per minute")
 def route_import_excel():
     if 'file' not in request.files:
         return jsonify({'ok': False, 'error': 'No se recibió ningún archivo'}), 400
@@ -151,6 +153,7 @@ def route_import_excel():
 
 @bp.route('/api/import/gsheet', methods=['POST'])
 @login_required
+@limiter.limit("10 per minute")
 def route_import_gsheet():
     import re, urllib.request
     data = request.get_json() or {}

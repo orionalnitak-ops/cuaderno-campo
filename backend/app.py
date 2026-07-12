@@ -136,6 +136,17 @@ def set_security_headers(response):
     response.headers['X-Frame-Options']        = 'DENY'
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['Referrer-Policy']        = 'strict-origin-when-cross-origin'
+    # CSP — subconjunto seguro. NO se restringen script/style/img/connect porque
+    # la app carga React/Leaflet de unpkg, fuentes de Google, estilos inline y el
+    # mapa SIGPAC trae tiles de servidores externos: un script-src/img-src mal
+    # ajustado dejaría el mapa o la app en blanco. Estas 3 directivas sí son
+    # seguras (la app no usa <base>, ni plugins <object>/<embed>, ni se embebe en
+    # iframes) y aportan defensa real (anti-clickjacking, anti base-tag injection,
+    # anti plugin-XSS). El CSP completo de script-src/style-src queda pendiente de
+    # ajustar y probar en staging (enumerar hosts de tiles + fuentes + unpkg).
+    response.headers['Content-Security-Policy'] = (
+        "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+    )
     if _is_prod:
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     return response
