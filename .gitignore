@@ -17,3 +17,7 @@ frontend/node_modules/
 .worktrees/
 .claude/worktrees/
 .worktrees/
+# MCP config local — puede contener API keys
+.mcp.json
+# Marketing interno — no se publica
+docs/marketing/
