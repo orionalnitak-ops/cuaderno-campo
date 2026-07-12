@@ -1,4 +1,5 @@
 {
+  "enabledMcpjsonServers": ["context7"],
   "permissions": {
     "allow": [
       "Read(//c/Users/valca/**)",
@@ -17,7 +18,11 @@
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2\\)\\)\")",
       "Bash(curl -s -H \"Accept-Encoding: identity\" \"https://sigpac.mapa.gob.es/fega/serviciosvisorsigpac/query/recintos/13/131/0/0/25/1\")",
       "Bash(netsh advfirewall *)",
-      "Bash(powershell -Command \"Start-Process powershell -Verb RunAs -ArgumentList '-Command netsh advfirewall firewall add rule name=\\\\\"Flask 5000\\\\\" dir=in action=allow protocol=TCP localport=5000'\")"
+      "Bash(powershell -Command \"Start-Process powershell -Verb RunAs -ArgumentList '-Command netsh advfirewall firewall add rule name=\\\\\"Flask 5000\\\\\" dir=in action=allow protocol=TCP localport=5000'\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "WebSearch"
     ],
     "additionalDirectories": [
       "\\root\\.claude\\plugins\\cache\\claude-plugins-official\\skill-creator\\unknown\\skills\\cuaderno-explotacion",
