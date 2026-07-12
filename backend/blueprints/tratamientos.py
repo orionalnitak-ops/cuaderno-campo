@@ -83,6 +83,12 @@ def _validate_campana(campana):
 
 # ─────────────────────────────────────────────
 
+def parcela_es_del_usuario(conn, parcela_id, uid):
+    """True si parcela_id existe y pertenece a uid. Evita IDOR: sin esto, cualquier
+    usuario autenticado podría enviar el parcela_id de otro y colgarle registros."""
+    return one(conn, "SELECT id FROM parcelas WHERE id=? AND user_id=?", (parcela_id, uid)) is not None
+
+
 def _insert_tratamiento(c, uid, data, parcela_id, parcela_etiqueta):
     """Inserta un único registro de tratamiento para la parcela dada."""
     c.execute('''
@@ -174,6 +180,10 @@ def manage_tratamientos():
             _recalcular_patrones(uid, 'tratamientos', p['id'], data.get('fecha_aplicacion'))
         return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
 
+    if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
+
     new_id = _insert_tratamiento(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'))
     conn.commit()
     conn.close()
@@ -217,6 +227,9 @@ def manage_tratamiento(tid):
                 "El equipo seleccionado no tiene número ROMA registrado. "
                 "Edita el equipo en Configuración y añade su número de registro ROMA."
             )}), 400
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
     # Calcular siempre en backend, nunca confiar en el cliente
     data['fecha_recoleccion_minima'] = _calc_fecha_recoleccion(
         data.get('fecha_aplicacion'), data.get('plazo_seguridad_dias'))
