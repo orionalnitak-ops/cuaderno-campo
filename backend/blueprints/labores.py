@@ -131,6 +131,10 @@ def manage_cosecha():
         conn.close()
         return jsonify({"error": "Formato de fecha inválido (use YYYY-MM-DD)"}), 400
 
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
+
     # Bloquear cosecha si hay tratamientos con plazo de seguridad no vencido en la misma parcela
     if data.get('parcela_id') and data.get('fecha_inicio'):
         plazo_activos = dicts(conn, """
@@ -179,6 +183,9 @@ def manage_cosecha_one(cid):
         row = one(conn, "SELECT * FROM cosecha WHERE id=? AND user_id=?", (cid, uid))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
     prod = _to_real(data.get('produccion_total_valor')) or 0
     sup  = _to_real(data.get('superficie_cosechada_ha')) or 0
     data['rendimiento_kg_ha'] = round(prod / sup, 2) if sup > 0 else None

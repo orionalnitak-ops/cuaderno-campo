@@ -4,6 +4,7 @@ Formato: A4 vertical, cabecera en cada página, RD 1311/2012 Anexo III
 """
 import io
 import datetime
+from xml.sax.saxutils import escape as _xml_escape
 from flask import send_file
 
 from db import parcela_scope_clause
@@ -98,7 +99,10 @@ def _fmt_date(val):
 def _v(val, default='—'):
     if val is None or val == '':
         return default
-    return str(val)
+    # ReportLab interpreta el texto de Paragraph como mini-XML (<b>, <font>, &…).
+    # Escapamos los datos de usuario para que un '&' o '<' en notas/producto no
+    # rompa el parser y reviente la generación del PDF con un 500.
+    return _xml_escape(str(val))
 
 
 def _yesno(val):
@@ -175,8 +179,12 @@ def _data_table(col_headers, rows, col_widths, header_color, styles):
     table_data = [header]
 
     for _i, row in enumerate(rows):
+        # Las celdas llegan ya procesadas por _v()/_yesno()/_fmt_date() (strings
+        # y, en el caso de _v, ya escapadas para ReportLab). No re-aplicar _v aquí
+        # o el texto se escaparía dos veces ('&' → '&amp;' visible en el PDF).
         table_data.append([
-            Paragraph(_v(cell), s['table_cell']) for cell in row
+            Paragraph(cell if isinstance(cell, str) else _v(cell), s['table_cell'])
+            for cell in row
         ])
 
     t = Table(table_data, colWidths=col_widths, repeatRows=1)

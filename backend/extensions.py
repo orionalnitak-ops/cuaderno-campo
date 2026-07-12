@@ -9,7 +9,12 @@ from flask_limiter.util import get_remote_address
 from flask_login import LoginManager, UserMixin
 from db import get_db, one
 
-limiter = Limiter(get_remote_address, default_limits=[])
+# default_limits es un backstop anti-DoS/scraping para las rutas SIN @limiter.limit
+# propio (las sensibles como login/registro ya tienen límites estrictos que, al ser
+# explícitos, reemplazan a estos defaults para esas rutas). Los valores son holgados
+# a propósito: muy por encima del uso real de un agricultor (incluidas ráfagas
+# legítimas como verificar 50+ parcelas SIGPAC), pero cortan el abuso trivial.
+limiter = Limiter(get_remote_address, default_limits=["3000 per hour", "300 per minute"])
 login_manager = LoginManager()
 
 

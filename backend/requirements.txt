@@ -7,7 +7,7 @@ requests==2.33.1
 openpyxl==3.1.5
 reportlab==4.4.10
 gunicorn==25.3.0
-cryptography==46.0.7
+cryptography==48.0.1
 Flask-Limiter==4.1.1
 psycopg2-binary==2.9.12
 stripe==12.1.0
