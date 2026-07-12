@@ -1,0 +1,40 @@
+# Secretos y entorno — NUNCA en la imagen
+.env
+.env.*
+*.env
+
+# Datos de usuarios (SQLite local) — nunca en la imagen
+*.db
+*.db-wal
+*.db-shm
+*.db.bak*
+database*.db
+
+# Git y metadatos del repo
+.git
+.gitignore
+.github
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+backend/venv/
+.pytest_cache/
+
+# Node / frontend build (el dist se genera en la etapa js-build)
+frontend/node_modules/
+frontend/dist/
+
+# Herramientas de desarrollo / planificación
+.claude/
+.agent/
+.mcp.json
+.worktrees/
+docs/
+spec/
+second-brain/
+
+# Sistema
+.DS_Store
+Thumbs.db
