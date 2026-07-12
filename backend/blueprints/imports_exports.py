@@ -151,6 +151,20 @@ def route_import_excel():
     return jsonify({'ok': True, 'total': n_ok, 'resumen': msg, 'errores': errores})
 
 
+def _validate_gsheet_url(url):
+    """True si la URL es un Google Sheets legítimo (https + host de Google).
+    Defensa en profundidad anti-SSRF: aunque la URL saliente se reconstruye con
+    host fijo (docs.google.com) y solo se extrae el sheet_id acotado a
+    [a-zA-Z0-9_-], validamos también el input para que la seguridad sea explícita
+    y no dependa solo del regex de extracción."""
+    from urllib.parse import urlparse
+    try:
+        p = urlparse(url)
+    except Exception:
+        return False
+    return p.scheme == 'https' and p.netloc in ('docs.google.com', 'spreadsheets.google.com')
+
+
 @bp.route('/api/import/gsheet', methods=['POST'])
 @login_required
 @limiter.limit("10 per minute")
@@ -160,6 +174,8 @@ def route_import_gsheet():
     url = (data.get('url') or '').strip()
     if not url:
         return jsonify({'ok': False, 'error': 'URL vacía'}), 400
+    if not _validate_gsheet_url(url):
+        return jsonify({'ok': False, 'error': 'La URL debe ser un enlace https de Google Sheets'}), 400
     m = re.search(r'/spreadsheets/d/([a-zA-Z0-9_-]+)', url)
     if not m:
         return jsonify({'ok': False, 'error': 'URL de Google Sheets no válida'}), 400

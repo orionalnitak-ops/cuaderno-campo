@@ -147,6 +147,24 @@ def set_security_headers(response):
     response.headers['Content-Security-Policy'] = (
         "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     )
+    # CSP completo en modo Report-Only: NO bloquea nada (solo reporta violaciones
+    # en la consola del navegador), así que es seguro desplegarlo sin poder probar.
+    # Enumera los hosts reales que usa la app: unpkg (React/Leaflet), fuentes de
+    # Google, los 3 WMS del mapa (SIGPAC-hubcloud, Red Natura IEPNB, PNOA IGN) y
+    # Open-Meteo. Cuando se verifique en producción que no hay violaciones
+    # inesperadas en consola, se puede: (1) endurecer script-src sustituyendo
+    # 'unsafe-inline' por el hash del <script> de registro del SW, y (2) mover
+    # esta política a la cabecera Content-Security-Policy (enforcing).
+    response.headers['Content-Security-Policy-Report-Only'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://unpkg.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: blob: https://sigpac-hubcloud.es https://geoserver.iepnb.es https://www.ign.es; "
+        "connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com; "
+        "worker-src 'self'; manifest-src 'self'; "
+        "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+    )
     if _is_prod:
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     return response
