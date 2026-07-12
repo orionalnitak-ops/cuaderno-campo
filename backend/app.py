@@ -136,32 +136,31 @@ def set_security_headers(response):
     response.headers['X-Frame-Options']        = 'DENY'
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['Referrer-Policy']        = 'strict-origin-when-cross-origin'
-    # CSP — subconjunto seguro. NO se restringen script/style/img/connect porque
-    # la app carga React/Leaflet de unpkg, fuentes de Google, estilos inline y el
-    # mapa SIGPAC trae tiles de servidores externos: un script-src/img-src mal
-    # ajustado dejaría el mapa o la app en blanco. Estas 3 directivas sí son
-    # seguras (la app no usa <base>, ni plugins <object>/<embed>, ni se embebe en
-    # iframes) y aportan defensa real (anti-clickjacking, anti base-tag injection,
-    # anti plugin-XSS). El CSP completo de script-src/style-src queda pendiente de
-    # ajustar y probar en staging (enumerar hosts de tiles + fuentes + unpkg).
+    # CSP ENFORCING (bloqueante). Política completa verificada contra el código real:
+    # enumera todos los hosts que la app usa y bloquea el resto.
+    #   - script-src SIN 'unsafe-inline': el único <script> inline (registro del SW)
+    #     se externalizó a /sw-register.js, así que un script inyectado por XSS NO se
+    #     ejecuta (defensa real anti-XSS). unpkg = React/ReactDOM/Leaflet.
+    #   - style-src mantiene 'unsafe-inline' a propósito: React aplica estilos vía
+    #     style={{}} y hay un <style> grande en index.html. El riesgo style-based es
+    #     mucho menor que el de script; endurecerlo rompería la UI.
+    #   - img-src cubre los 3 WMS del mapa (PNOA IGN, SIGPAC-hubcloud, Red Natura
+    #     IEPNB) + data:/blob: (marcadores Leaflet, iconos). Sin capa base OSM.
+    #   - connect-src cubre Open-Meteo (el tiempo). El resto de fetch va a /api (self).
+    #     unpkg se incluye para que el navegador pueda descargar los source maps
+    #     (*.js.map) de React/Leaflet con DevTools abierto — solo afecta a depuración,
+    #     el host ya es de confianza en script-src. La suscripción Web Push nativa
+    #     (pushManager.subscribe) la gestiona el navegador y NO está sujeta a
+    #     connect-src, así que las Alertas AEMET siguen funcionando.
+    #   - object-src/base-uri/frame-ancestors: anti plugin-XSS, anti base-tag, anti
+    #     clickjacking (la app no usa <base>, <object>/<embed>, ni se embebe en iframe).
     response.headers['Content-Security-Policy'] = (
-        "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
-    )
-    # CSP completo en modo Report-Only: NO bloquea nada (solo reporta violaciones
-    # en la consola del navegador), así que es seguro desplegarlo sin poder probar.
-    # Enumera los hosts reales que usa la app: unpkg (React/Leaflet), fuentes de
-    # Google, los 3 WMS del mapa (SIGPAC-hubcloud, Red Natura IEPNB, PNOA IGN) y
-    # Open-Meteo. Cuando se verifique en producción que no hay violaciones
-    # inesperadas en consola, se puede: (1) endurecer script-src sustituyendo
-    # 'unsafe-inline' por el hash del <script> de registro del SW, y (2) mover
-    # esta política a la cabecera Content-Security-Policy (enforcing).
-    response.headers['Content-Security-Policy-Report-Only'] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://unpkg.com; "
+        "script-src 'self' https://unpkg.com; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob: https://sigpac-hubcloud.es https://geoserver.iepnb.es https://www.ign.es; "
-        "connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com; "
+        "connect-src 'self' https://unpkg.com https://api.open-meteo.com https://geocoding-api.open-meteo.com; "
         "worker-src 'self'; manifest-src 'self'; "
         "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     )

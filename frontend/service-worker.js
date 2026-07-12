@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cuaderno-cache-v44';
+const CACHE_NAME = 'cuaderno-cache-v46';
 
 const APP_SHELL = [
   '/',
@@ -6,6 +6,7 @@ const APP_SHELL = [
   '/offline-db.js',
   '/offline-sync.js',
   '/nlp-local.js',
+  '/sw-register.js',
   '/dist/screens_auth.js',
   '/dist/screens_lopd.js',
   '/dist/screens_home.js',
@@ -47,20 +48,27 @@ self.addEventListener('fetch', event => {
   // Nunca interceptar API
   if (url.pathname.startsWith('/api/')) return;
 
-  // CDN (React unpkg): cache-first — el SW pre-cachea estos en install
+  // CDN (React/Leaflet de unpkg): cache-first — el SW los pre-cachea en install.
+  // SOLO unpkg: el resto de peticiones cross-origin (tiles WMS del mapa SIGPAC/IGN,
+  // fuentes de Google, Open-Meteo) NO se interceptan y las carga el navegador de
+  // forma nativa. Interceptarlas convertía cargas <img> (gobernadas por img-src)
+  // en fetch() del SW (gobernadas por connect-src) → el CSP bloqueaba las tiles y
+  // dejaba el mapa en blanco. Además cachear tiles por bbox cache-first era indeseable.
   if (url.origin !== self.location.origin) {
-    event.respondWith(
-      caches.match(event.request).then(cached => {
-        if (cached) return cached;
-        return fetch(event.request).then(response => {
-          if (response.ok) {
-            caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
-          }
-          return response;
-        });
-      })
-    );
-    return;
+    if (url.hostname === 'unpkg.com') {
+      event.respondWith(
+        caches.match(event.request).then(cached => {
+          if (cached) return cached;
+          return fetch(event.request).then(response => {
+            if (response.ok) {
+              caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
+            }
+            return response;
+          });
+        })
+      );
+    }
+    return; // resto cross-origin: el navegador lo gestiona (img-src/font-src)
   }
 
   // Navegación (HTML): network-first, caída a caché del shell

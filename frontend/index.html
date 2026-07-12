@@ -947,13 +947,7 @@
   <script src="/dist/screens_onboarding.js"></script>
   <script src="/dist/app.js"></script>
 
-  <!-- PWA -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () =>
-        navigator.serviceWorker.register('/service-worker.js').catch(() => {})
-      );
-    }
-  </script>
+  <!-- PWA — registro del SW externalizado (CSP sin 'unsafe-inline' en script-src) -->
+  <script src="/sw-register.js"></script>
 </body>
 </html>
