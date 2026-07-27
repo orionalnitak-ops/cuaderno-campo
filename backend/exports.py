@@ -170,17 +170,20 @@ def export_excel(user_id, campana='2025/2026', explotacion_id=None):
               "Sustancia Activa", "Plaga/Objetivo", "Dosis", "Unidad", "Vol. Caldo (L/ha)",
               "Equipo", "Condic. Meteo.", "Plazo Seg. (días)", "Fecha Mín. Cosecha",
               "Eficacia", "Aplicador", "Notas", "Campaña",
-              "Asesor", "Justificación Actuación", "Nº ROMA Equipo", "Fecha ITEAF Equipo"]
+              "Asesor", "Nº ROPO Asesor", "Justificación Actuación",
+              "Nº ROMA Equipo", "Fecha ITEAF Equipo"]
     _header_row(ws4, t_cols, GREEN_FILL)
     _cl, _cp = parcela_scope_clause(explotacion_id, 't')
     trats = dicts(conn, """
         SELECT t.*, p.nombre_finca,
                e.descripcion as equipo_nombre, e.num_registro_roma, e.fecha_iteaf,
-               a.nombre as aplicador_nombre
+               a.nombre as aplicador_nombre,
+               s.nombre as asesor_nombre, s.num_ropo as asesor_ropo
         FROM tratamientos t
         LEFT JOIN parcelas p ON t.parcela_id = p.id
         LEFT JOIN equipos e ON t.equipo_id = e.id
         LEFT JOIN aplicadores a ON t.aplicador_id = a.id
+        LEFT JOIN asesores s ON t.asesor_id = s.id
         WHERE t.user_id=? AND t.campana=?""" + _cl + """
         ORDER BY t.fecha_aplicacion DESC
     """, (user_id, campana) + _cp)
@@ -193,7 +196,9 @@ def export_excel(user_id, campana='2025/2026', explotacion_id=None):
             r.get('equipo_nombre'), r.get('condiciones_meteo'), r.get('plazo_seguridad_dias'),
             r.get('fecha_recoleccion_minima'), r.get('eficacia'), r.get('aplicador_nombre'),
             r.get('notas'), r.get('campana'),
-            r.get('asesor'), r.get('justificacion_actuacion'),
+            # Fallback al texto libre antiguo si el tratamiento no tiene ficha de asesor
+            r.get('asesor_nombre') or r.get('asesor'), r.get('asesor_ropo'),
+            r.get('justificacion_actuacion'),
             r.get('num_registro_roma'), r.get('fecha_iteaf'),
         ]
         for ci, val in enumerate(row_data, 1):

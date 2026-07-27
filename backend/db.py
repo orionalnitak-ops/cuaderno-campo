@@ -472,6 +472,25 @@ def init_db():
         )
     ''')
 
+    # ── ASESORES ──
+    # Asesor fitosanitario (Orden APA/204/2023). Entidad reutilizable, igual que
+    # aplicadores. El nº ROPO es de la sección "asesor" del carnet, distinta de la
+    # de aplicador; aquí NO se bloquea si falta (ver spec/features/010-asesores).
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS asesores (
+            id {_PK},
+            user_id INTEGER DEFAULT 2,
+            nombre TEXT NOT NULL,
+            nif TEXT,
+            num_ropo TEXT,
+            titulacion TEXT,
+            empresa TEXT,
+            telefono TEXT,
+            email TEXT,
+            activo INTEGER DEFAULT 1
+        )
+    ''')
+
     # ── TRATAMIENTOS ──
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS tratamientos (
@@ -511,6 +530,10 @@ def init_db():
         ('deleted_at', 'TEXT'),
         ('asesor', 'TEXT'),
         ('justificacion_actuacion', 'TEXT'),
+        # asesor_id sustituye funcionalmente a `asesor` TEXT, pero esa columna NO se
+        # elimina: los tratamientos ya registrados por los pilotos guardan ahí el
+        # nombre tecleado a mano y deben seguir apareciendo en PDF/Excel.
+        ('asesor_id', 'INTEGER'),
     ]:
         _add_col(c, 'tratamientos', col, typ)
 

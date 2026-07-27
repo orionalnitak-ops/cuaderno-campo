@@ -1,7 +1,9 @@
 // IndexedDB wrapper — exposes window.OfflineDB
 (function () {
   const DB_NAME = 'cuaderno-offline-v1';
-  const DB_VERSION = 2;
+  // v3: añade asesores_cache. Subir SIEMPRE la versión al añadir un objectStore,
+  // o los navegadores que ya tienen la BD abierta no ejecutan onupgradeneeded.
+  const DB_VERSION = 3;
   let _db = null;
   let _dbPromise = null;
 
@@ -29,6 +31,9 @@
         }
         if (!db.objectStoreNames.contains('aplicadores_cache')) {
           db.createObjectStore('aplicadores_cache', { keyPath: 'cache_key' });
+        }
+        if (!db.objectStoreNames.contains('asesores_cache')) {
+          db.createObjectStore('asesores_cache', { keyPath: 'cache_key' });
         }
       };
       req.onsuccess = (e) => {
@@ -146,6 +151,19 @@
       return openDB().then(db => new Promise((resolve) => {
         const t = db.transaction('aplicadores_cache', 'readonly');
         const req = t.objectStore('aplicadores_cache').get('default');
+        req.onsuccess = () => resolve(req.result?.records || []);
+        req.onerror = () => resolve([]);
+      }));
+    },
+
+    // Asesores cache
+    cacheAsesores(records) {
+      return tx('asesores_cache', 'readwrite', s => s.put({ cache_key: 'default', records }));
+    },
+    getCachedAsesores() {
+      return openDB().then(db => new Promise((resolve) => {
+        const t = db.transaction('asesores_cache', 'readonly');
+        const req = t.objectStore('asesores_cache').get('default');
         req.onsuccess = () => resolve(req.result?.records || []);
         req.onerror = () => resolve([]);
       }));

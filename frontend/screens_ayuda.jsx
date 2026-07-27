@@ -102,7 +102,7 @@ const HELP_SCREENS = {
     },
     mas: {
         title: '⚙️ Ajustes',
-        intro: 'Todo está organizado en pestañas: Explotación, Equipos, Aplicadores, Datos y exportación, Mi cuenta, Suscripción y Legal.',
+        intro: 'Todo está organizado en pestañas: Explotación, Equipos, Aplicadores, Asesores, Datos y exportación, Mi cuenta, Suscripción y Legal.',
         steps: [
             {
                 icon: '🏡',
@@ -118,6 +118,11 @@ const HELP_SCREENS = {
                 icon: '👤',
                 title: 'Aplicadores ROPO',
                 desc: 'Añade los aplicadores con su número ROPO. Cada tratamiento debe tener un aplicador registrado con carnet vigente.',
+            },
+            {
+                icon: '🎓',
+                title: 'Asesores fitosanitarios',
+                desc: 'Si tienes un técnico que te asesora en los tratamientos, guárdalo aquí una vez (nombre, NIF, nº ROPO de asesor, titulación y empresa) y después lo eliges de una lista en cada tratamiento, sin volver a escribirlo. La Orden APA/204/2023 obliga a identificar al asesor. Si todavía no sabes su nº ROPO puedes guardarlo igualmente y añadirlo más adelante.',
             },
             {
                 icon: '📄',
