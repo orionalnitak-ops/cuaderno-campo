@@ -367,7 +367,7 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
     useEffect(() => {
         fetch('/api/equipos').then(r => r.json()).then(d => setEquipos(Array.isArray(d) ? d : []));
         fetch('/api/aplicadores').then(r => r.json()).then(d => setAplicadores(Array.isArray(d) ? d : []));
-        fetch('/api/asesores').then(r => r.json()).then(d => setAsesores(Array.isArray(d) ? d : []));
+        fetch('/api/asesores', { credentials: 'include' }).then(r => r.json()).then(d => setAsesores(Array.isArray(d) ? d : []));
     }, []);
 
     const saveEquipo = async (form) => {
@@ -406,16 +406,17 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
         if (!(form.nombre || '').trim()) { showToast('El nombre del asesor es obligatorio'); return; }
         const method = editingAs ? 'PUT' : 'POST';
         const url = editingAs ? `/api/asesores/${editingAs}` : '/api/asesores';
-        const res = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(form) });
+        const res = await fetch(url, { method, headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(form), credentials:'include' });
         if (!res.ok) { showToast('Error al guardar el asesor'); return; }
         showToast(editingAs ? 'Asesor actualizado' : 'Asesor añadido');
-        fetch('/api/asesores').then(r => r.json()).then(d => setAsesores(Array.isArray(d) ? d : []));
+        fetch('/api/asesores', { credentials:'include' }).then(r => r.json()).then(d => setAsesores(Array.isArray(d) ? d : []));
         setShowAsModal(false); setEditingAs(null);
     };
 
     const deleteAsesor = async (id) => {
         if (!confirm('¿Eliminar este asesor? Los tratamientos ya registrados conservarán su nombre.')) return;
-        await fetch(`/api/asesores/${id}`, { method:'DELETE' });
+        await fetch(`/api/asesores/${id}`, { method:'DELETE', credentials:'include' });
         showToast('Asesor eliminado');
         setAsesores(a => a.filter(x => x.id !== id));
     };

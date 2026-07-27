@@ -475,6 +475,9 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
             if (res._savedOffline) { onClose('⏳ Guardado sin conexión — se subirá al conectarte'); return; }
             // El backend devuelve `aviso` cuando el asesor elegido no tiene nº ROPO:
             // el tratamiento se guarda igual, pero el agricultor debe enterarse.
+            // Primera y única lectura del body: OfflineSync.post devuelve la Response
+            // nativa sin consumirla (offline_sync.js:60) y ya hemos salido antes en
+            // el camino offline, así que aquí res.json() nunca falla por body usado.
             const d = await res.json().catch(() => ({}));
             onClose(d.aviso ? `⚠️ ${d.aviso}` : '✅ Tratamiento guardado');
         } catch { alert('Error al guardar el tratamiento'); setSaving(false); }
