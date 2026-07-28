@@ -279,12 +279,12 @@ def _safe_recreate_table(conn, c, table, new_ddl, col_list):
 def _enable_rls_postgres(conn):
     """Activa Row Level Security en toda tabla de `public` que aún no la tenga.
 
-    Por qué: en Supabase el schema `public` puede quedar expuesto a la Data API
-    (PostgREST). Sin RLS, cualquiera con la anon key —que es pública por diseño—
-    leería las tablas enteras, y aquí hay datos personales de agricultores (NIF,
-    teléfono, email, nº ROPO). RLS activado SIN políticas deniega todo a los roles
-    anon/authenticated, mientras que la app no se entera: conecta como owner de las
-    tablas, y el owner hace bypass de RLS.
+    Por qué: el Postgres gestionado de producción puede servir el schema `public`
+    a través de una API REST automática. Sin RLS, cualquiera con la clave pública
+    del cliente leería las tablas enteras, y aquí hay datos personales de
+    agricultores (NIF, teléfono, email, nº ROPO). RLS activado SIN políticas
+    deniega todo a los roles públicos, mientras que la app no se entera: conecta
+    como owner de las tablas, y el owner hace bypass de RLS.
 
     Se recorre pg_class en vez de mantener una lista de tablas a mano,
     precisamente para que una tabla nueva no vuelva a nacer desprotegida.
@@ -294,6 +294,9 @@ def _enable_rls_postgres(conn):
         return
     try:
         c = conn.cursor()
+        # El ALTER de cada tabla va en su propio BEGIN/EXCEPTION: si una falla
+        # (p. ej. una tabla de extensión de la que no somos owner) las demás se
+        # protegen igual, en vez de abortar el bloque entero en la primera.
         c.execute('''
             DO $$
             DECLARE t record;
@@ -306,19 +309,44 @@ def _enable_rls_postgres(conn):
                       AND c.relkind = 'r'
                       AND NOT c.relrowsecurity
                 LOOP
-                    EXECUTE format(
-                        'ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.relname
-                    );
+                    BEGIN
+                        EXECUTE format(
+                            'ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.relname
+                        );
+                    EXCEPTION WHEN OTHERS THEN
+                        RAISE WARNING 'RLS no activado en %: %', t.relname, SQLERRM;
+                    END;
                 END LOOP;
             END $$;
         ''')
         conn.commit()
+
+        # No basta con que el bloque no lance: al capturar por tabla, un fallo
+        # parcial sería invisible desde aquí. Se comprueba la postcondición.
+        c.execute('''
+            SELECT c.relname
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relkind = 'r'
+              AND NOT c.relrowsecurity
+            ORDER BY c.relname
+        ''')
+        pendientes = [r[0] for r in c.fetchall()]
+        if pendientes:
+            logger.error(
+                "[db] RLS NO ACTIVO en %d tabla(s) de public: %s. "
+                "Si el schema estuviera expuesto a la API REST del proveedor, "
+                "esos datos serían legibles con la clave pública. Revisar a mano.",
+                len(pendientes), ', '.join(pendientes)
+            )
     except Exception as e:
-        # Nunca impedir el arranque de la app por esto: si el rol no es owner de
-        # alguna tabla, se registra y se sigue. El aviso queda en el Security
-        # Advisor de Supabase.
+        # No se aborta el arranque: dejar la app caída para todos los agricultores
+        # es peor que quedarse sin la segunda capa de defensa, teniendo la primera
+        # (schema fuera de la API REST) en pie. Se registra como error, no warning:
+        # aquí hay datos personales en juego.
         conn.rollback()
-        logger.warning("[db] No se pudo activar RLS automáticamente: %s", e)
+        logger.error("[db] No se pudo activar RLS automáticamente: %s", e)
 
 
 def init_db():
