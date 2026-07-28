@@ -69,6 +69,20 @@ def run():
     err, aviso = _check_asesor(conn, {}, UID)
     check("tratamiento sin asesor -> sin error", err is None and aviso is None)
 
+    # ── "quitar el asesor": todas las formas de vacío que puede mandar el cliente
+    # deben limpiar el campo, no dar 403. El string '0' es truthy y colaba. ──
+    for vacio in ['', '0', 0, None, 'basura']:
+        data = {'asesor_id': vacio}
+        err, aviso = _check_asesor(conn, data, UID)
+        check(f"asesor_id={vacio!r} -> se limpia, no bloquea",
+              err is None and aviso is None and data['asesor_id'] is None)
+
+    # el id válido en string (lo que manda un <select>) sí debe resolverse
+    data = {'asesor_id': '10'}
+    err, aviso = _check_asesor(conn, data, UID)
+    check("asesor_id='10' (string del select) -> resuelve a int",
+          err is None and data['asesor_id'] == 10)
+
     conn.close()
 
     # ── decisión 3: fallback del texto libre en el PDF ──

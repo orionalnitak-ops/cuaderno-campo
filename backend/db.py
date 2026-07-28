@@ -890,6 +890,7 @@ def _seed_if_needed(conn):
         ('idx_uhc_parcelas_uhc',     'uhc_parcelas',       'uhc_id'),
         ('idx_push_subs_user',       'push_subscriptions', 'user_id'),
         ('idx_ia_alertas_user',      'ia_alertas',         'user_id'),
+        ('idx_asesores_user',        'asesores',           'user_id'),
     ]
     for idx_name, table, cols in _indexes:
         # Validar cada identificador contra la allowlist ANTES de interpolar.

@@ -125,7 +125,18 @@ def _check_asesor(conn, data, uid):
     el agricultor rara vez tiene a mano el carnet de su técnico externo y
     bloquearle el registro en plena parcela deja el módulo inservible.
     Ver spec/features/010-asesores/spec.md (decisión 2).
+
+    Normaliza `asesor_id` in place a int o None antes de validarlo: un `<select>`
+    vacío llega como '' pero un cliente puede mandar el string '0', que es truthy
+    y colaba como id válido — el asesor 0 no existe y el guardado moría con un 403
+    en vez de limpiar el campo.
     """
+    raw = data.get('asesor_id')
+    try:
+        data['asesor_id'] = int(raw) or None
+    except (TypeError, ValueError):
+        data['asesor_id'] = None
+
     if not data.get('asesor_id'):
         return None, None
     asesor = one(conn, "SELECT nombre, num_ropo FROM asesores WHERE id=? AND user_id=?",
