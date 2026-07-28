@@ -295,36 +295,93 @@ function AplicadorModal({ aplicador, onSave, onClose }) {
     );
 }
 
+// ── Asesor form modal ──
+// Asesor fitosanitario (Orden APA/204/2023). El nº ROPO es de la sección "asesor"
+// del carnet, distinta de la de aplicador, y aquí NO es bloqueante.
+function AsesorModal({ asesor, onSave, onClose }) {
+    const { useState } = React;
+    const [form, setForm] = useState(asesor || {});
+    const [zoomField, setZoomField] = useState(null);
+    const AS_FIELDS = [
+        ['nombre','Nombre completo','text'],
+        ['nif','NIF','text'],
+        ['num_ropo','Nº ROPO (sección asesor)','text'],
+        ['titulacion','Titulación / nº colegiado','text'],
+        ['empresa','Empresa asesora','text'],
+        ['telefono','Teléfono','text'],
+        ['email','Email','text'],
+    ];
+    return (
+        <>
+        <div className="overlay" onClick={onClose}>
+            <div className="module-sheet" onClick={e => e.stopPropagation()} style={{ paddingBottom: 40 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
+                    <h3 style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'1.1rem', margin:0 }}>
+                        🎓 {asesor && asesor.id ? 'Editar asesor' : 'Nuevo asesor'}
+                    </h3>
+                    <button onClick={onClose} style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#6b7280' }}>✕</button>
+                </div>
+                {AS_FIELDS.map(([k,l,t]) => (
+                    <div key={k} style={{ marginBottom:14 }}>
+                        <label className="field-label">{l}</label>
+                        <input type={t} className="input-field" value={form[k]||''} readOnly
+                            onClick={() => setZoomField({ key:k, label:l, type:t, placeholder:'' })}
+                            style={{ cursor:'pointer' }} />
+                    </div>
+                ))}
+                <button className="btn-primary" style={{ width:'100%', marginTop:8 }} onClick={() => onSave(form)}>
+                    {asesor && asesor.id ? 'Actualizar asesor' : 'Añadir asesor'}
+                </button>
+            </div>
+        </div>
+        {zoomField && (
+            <FieldZoomOverlay
+                label={zoomField.label}
+                value={form[zoomField.key] || ''}
+                type={zoomField.type}
+                placeholder={zoomField.placeholder}
+                onConfirm={val => { setForm(f => ({ ...f, [zoomField.key]: val })); setZoomField(null); }}
+                onClose={() => setZoomField(null)}
+            />
+        )}
+        </>
+    );
+}
+
 // ── Screen: Ajustes / Más ──
 function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, onNavigate }) {
     const { useState, useEffect } = React;
     const [section, setSection] = useState('explotacion');
     const [equipos, setEquipos] = useState([]);
     const [aplicadores, setAplicadores] = useState([]);
+    const [asesores, setAsesores] = useState([]);
 
     const [showEqModal, setShowEqModal]   = useState(false);
     const [showApModal, setShowApModal]   = useState(false);
+    const [showAsModal, setShowAsModal]   = useState(false);
+    const [editingAs, setEditingAs] = useState(null);
     const [editingEq, setEditingEq] = useState(null);
     const [editingAp, setEditingAp] = useState(null);
     const [showQuickStart, setShowQuickStart] = useState(false);
 
     useEffect(() => {
-        fetch('/api/equipos').then(r => r.json()).then(d => setEquipos(Array.isArray(d) ? d : []));
-        fetch('/api/aplicadores').then(r => r.json()).then(d => setAplicadores(Array.isArray(d) ? d : []));
+        fetch('/api/equipos', { credentials: 'include' }).then(r => r.json()).then(d => setEquipos(Array.isArray(d) ? d : []));
+        fetch('/api/aplicadores', { credentials: 'include' }).then(r => r.json()).then(d => setAplicadores(Array.isArray(d) ? d : []));
+        fetch('/api/asesores', { credentials: 'include' }).then(r => r.json()).then(d => setAsesores(Array.isArray(d) ? d : []));
     }, []);
 
     const saveEquipo = async (form) => {
         const method = editingEq ? 'PUT' : 'POST';
         const url = editingEq ? `/api/equipos/${editingEq}` : '/api/equipos';
-        await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(form) });
+        await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(form), credentials: 'include' });
         showToast(editingEq ? 'Equipo actualizado' : 'Equipo añadido');
-        fetch('/api/equipos').then(r => r.json()).then(d => setEquipos(Array.isArray(d) ? d : []));
+        fetch('/api/equipos', { credentials: 'include' }).then(r => r.json()).then(d => setEquipos(Array.isArray(d) ? d : []));
         setShowEqModal(false); setEditingEq(null);
     };
 
     const deleteEquipo = async (id) => {
         if (!confirm('¿Eliminar este equipo?')) return;
-        await fetch(`/api/equipos/${id}`, { method:'DELETE' });
+        await fetch(`/api/equipos/${id}`, { method:'DELETE', credentials: 'include' });
         showToast('Equipo eliminado');
         setEquipos(e => e.filter(x => x.id !== id));
     };
@@ -332,17 +389,36 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
     const saveAplicador = async (form) => {
         const method = editingAp ? 'PUT' : 'POST';
         const url = editingAp ? `/api/aplicadores/${editingAp}` : '/api/aplicadores';
-        await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(form) });
+        await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(form), credentials: 'include' });
         showToast(editingAp ? 'Aplicador actualizado' : 'Aplicador añadido');
-        fetch('/api/aplicadores').then(r => r.json()).then(d => setAplicadores(Array.isArray(d) ? d : []));
+        fetch('/api/aplicadores', { credentials: 'include' }).then(r => r.json()).then(d => setAplicadores(Array.isArray(d) ? d : []));
         setShowApModal(false); setEditingAp(null);
     };
 
     const deleteAplicador = async (id) => {
         if (!confirm('¿Eliminar este aplicador?')) return;
-        await fetch(`/api/aplicadores/${id}`, { method:'DELETE' });
+        await fetch(`/api/aplicadores/${id}`, { method:'DELETE', credentials: 'include' });
         showToast('Aplicador eliminado');
         setAplicadores(a => a.filter(x => x.id !== id));
+    };
+
+    const saveAsesor = async (form) => {
+        if (!(form.nombre || '').trim()) { showToast('El nombre del asesor es obligatorio'); return; }
+        const method = editingAs ? 'PUT' : 'POST';
+        const url = editingAs ? `/api/asesores/${editingAs}` : '/api/asesores';
+        const res = await fetch(url, { method, headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(form), credentials:'include' });
+        if (!res.ok) { showToast('Error al guardar el asesor'); return; }
+        showToast(editingAs ? 'Asesor actualizado' : 'Asesor añadido');
+        fetch('/api/asesores', { credentials:'include' }).then(r => r.json()).then(d => setAsesores(Array.isArray(d) ? d : []));
+        setShowAsModal(false); setEditingAs(null);
+    };
+
+    const deleteAsesor = async (id) => {
+        if (!confirm('¿Eliminar este asesor? Los tratamientos ya registrados conservarán su nombre.')) return;
+        await fetch(`/api/asesores/${id}`, { method:'DELETE', credentials:'include' });
+        showToast('Asesor eliminado');
+        setAsesores(a => a.filter(x => x.id !== id));
     };
 
     const isAdmin = currentUser?.role === 'admin';
@@ -351,6 +427,7 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
         { id: 'explotacion',  icon: '🏡', label: 'Explotación' },
         { id: 'equipos',      icon: '🚜', label: 'Equipos' },
         { id: 'aplicadores',  icon: '👤', label: 'Aplicadores' },
+        { id: 'asesores',     icon: '🎓', label: 'Asesores' },
         { id: 'datos',        icon: '💾', label: 'Datos y exportación' },
         { id: 'cuenta',       icon: '🔑', label: 'Mi cuenta' },
         ...(!isAdmin ? [{ id: 'suscripcion', icon: '💳', label: 'Suscripción' }] : []),
@@ -482,6 +559,49 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
                                 <button onClick={() => { setEditingAp(ap.id); setShowApModal(true); }}
                                     style={{ background:'none', border:'none', cursor:'pointer', color:'#6b7280', fontSize:18 }}>✏️</button>
                                 <button onClick={() => deleteAplicador(ap.id)}
+                                    style={{ background:'none', border:'none', cursor:'pointer', color:'#d1d5db', fontSize:18 }}
+                                    onMouseEnter={e=>e.currentTarget.style.color='#ef4444'}
+                                    onMouseLeave={e=>e.currentTarget.style.color='#d1d5db'}>🗑</button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {section === 'asesores' && (
+                    <div>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                            <h2 className="section-title" style={{ margin:0 }}>Asesores fitosanitarios</h2>
+                            <button className="btn-primary" style={{ padding:'10px 16px', fontSize:'0.85rem' }}
+                                onClick={() => { setEditingAs(null); setShowAsModal(true); }}>
+                                + Añadir asesor
+                            </button>
+                        </div>
+                        <p style={{ fontSize:'0.8rem', color:'#6b7280', margin:'0 0 20px' }}>
+                            El técnico que te asesora en los tratamientos. Lo guardas una vez y lo
+                            eliges en cada tratamiento, sin volver a escribirlo. Exigido por la Orden APA/204/2023.
+                        </p>
+                        {asesores.length === 0 ? (
+                            <div style={{ textAlign:'center', padding:'40px 0', color:'#9ca3af' }}>
+                                <div style={{ fontSize:40, marginBottom:8 }}>🎓</div>
+                                <p>Sin asesores registrados</p>
+                            </div>
+                        ) : asesores.map(as => (
+                            <div key={as.id} className="card card-p" style={{ marginBottom:10, display:'flex', alignItems:'center', gap:12 }}>
+                                <div style={{ flex:1 }}>
+                                    <div style={{ fontWeight:700, color:'#111827' }}>{as.nombre}</div>
+                                    <div style={{ fontSize:'0.78rem', color:'#6b7280', marginTop:3 }}>
+                                        {[as.nif, as.num_ropo ? `ROPO: ${as.num_ropo}` : '', as.empresa]
+                                            .filter(Boolean).join(' · ')}
+                                    </div>
+                                    {!(as.num_ropo || '').trim() && (
+                                        <div style={{ fontSize:'0.75rem', color:'#92400e', marginTop:4 }}>
+                                            ⚠️ Sin nº ROPO — puedes usarlo igualmente, pero añádelo cuando lo tengas
+                                        </div>
+                                    )}
+                                </div>
+                                <button onClick={() => { setEditingAs(as.id); setShowAsModal(true); }}
+                                    style={{ background:'none', border:'none', cursor:'pointer', color:'#6b7280', fontSize:18 }}>✏️</button>
+                                <button onClick={() => deleteAsesor(as.id)}
                                     style={{ background:'none', border:'none', cursor:'pointer', color:'#d1d5db', fontSize:18 }}
                                     onMouseEnter={e=>e.currentTarget.style.color='#ef4444'}
                                     onMouseLeave={e=>e.currentTarget.style.color='#d1d5db'}>🗑</button>
@@ -654,6 +774,14 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
                     aplicador={editingAp ? aplicadores.find(a => a.id === editingAp) : {}}
                     onSave={saveAplicador}
                     onClose={() => { setShowApModal(false); setEditingAp(null); }}
+                />
+            )}
+
+            {showAsModal && (
+                <AsesorModal
+                    asesor={editingAs ? asesores.find(a => a.id === editingAs) : {}}
+                    onSave={saveAsesor}
+                    onClose={() => { setShowAsModal(false); setEditingAs(null); }}
                 />
             )}
 

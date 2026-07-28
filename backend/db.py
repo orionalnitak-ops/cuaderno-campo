@@ -472,6 +472,27 @@ def init_db():
         )
     ''')
 
+    # ── ASESORES ──
+    # Asesor fitosanitario (Orden APA/204/2023). Entidad reutilizable, igual que
+    # aplicadores. El nº ROPO es de la sección "asesor" del carnet, distinta de la
+    # de aplicador; aquí NO se bloquea si falta (ver spec/features/010-asesores).
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS asesores (
+            id {_PK},
+            -- Sin DEFAULT, a diferencia de las tablas antiguas: un INSERT que olvide
+            -- el user_id debe fallar, no colgarle el asesor al usuario 2.
+            user_id INTEGER NOT NULL,
+            nombre TEXT NOT NULL,
+            nif TEXT,
+            num_ropo TEXT,
+            titulacion TEXT,
+            empresa TEXT,
+            telefono TEXT,
+            email TEXT,
+            activo INTEGER DEFAULT 1
+        )
+    ''')
+
     # ── TRATAMIENTOS ──
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS tratamientos (
@@ -511,6 +532,10 @@ def init_db():
         ('deleted_at', 'TEXT'),
         ('asesor', 'TEXT'),
         ('justificacion_actuacion', 'TEXT'),
+        # asesor_id sustituye funcionalmente a `asesor` TEXT, pero esa columna NO se
+        # elimina: los tratamientos ya registrados por los pilotos guardan ahí el
+        # nombre tecleado a mano y deben seguir apareciendo en PDF/Excel.
+        ('asesor_id', 'INTEGER'),
     ]:
         _add_col(c, 'tratamientos', col, typ)
 
@@ -865,6 +890,7 @@ def _seed_if_needed(conn):
         ('idx_uhc_parcelas_uhc',     'uhc_parcelas',       'uhc_id'),
         ('idx_push_subs_user',       'push_subscriptions', 'user_id'),
         ('idx_ia_alertas_user',      'ia_alertas',         'user_id'),
+        ('idx_asesores_user',        'asesores',           'user_id'),
     ]
     for idx_name, table, cols in _indexes:
         # Validar cada identificador contra la allowlist ANTES de interpolar.

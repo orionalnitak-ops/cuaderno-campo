@@ -109,6 +109,21 @@ def _yesno(val):
     return 'Sí' if val else 'No'
 
 
+def _asesor_text(r):
+    """Texto del asesor para la fila de trazabilidad.
+
+    Prioridad: ficha de asesor (asesor_id) → texto libre antiguo (columna `asesor`)
+    → '—'. El fallback es obligatorio: los tratamientos registrados antes de la
+    ficha de asesor guardan el nombre tecleado a mano y deben seguir saliendo en
+    el PDF oficial. Ver spec/features/010-asesores/spec.md (decisión 3).
+    """
+    nombre = (r.get('asesor_nombre') or '').strip()
+    if nombre:
+        ropo = (r.get('asesor_ropo') or '').strip()
+        return f"{_v(nombre)} (ROPO {_v(ropo)})" if ropo else _v(nombre)
+    return _v(r.get('asesor'))
+
+
 # ─────────────────────────────────────────────────────────
 # PAGE TEMPLATE — header + footer on every page
 # ─────────────────────────────────────────────────────────
@@ -338,7 +353,7 @@ def _trat_table(rows, styles):
             '', '',
             Paragraph(f"Meteo: {_v(r.get('condiciones_meteo'))}", s['table_cell_sub']),  # span 3–4
             '',
-            Paragraph(f"Asesor: {_v(r.get('asesor'))}", s['table_cell_sub']),            # span 5–7
+            Paragraph(f"Asesor: {_asesor_text(r)}", s['table_cell_sub']),                # span 5–7
             '', '',
             Paragraph(f"Justif.: {_v(r.get('justificacion_actuacion'))}", s['table_cell_sub']),  # span 8–11
             '', '', '',
@@ -369,11 +384,13 @@ def _section_tratamientos(conn, user_id, campana, styles, story, explotacion_id=
     c.execute("""
         SELECT t.*, p.nombre_finca,
                e.descripcion as equipo_nombre, e.num_registro_roma, e.fecha_iteaf,
-               a.nombre as aplicador_nombre, a.num_ropo
+               a.nombre as aplicador_nombre, a.num_ropo,
+               s.nombre as asesor_nombre, s.num_ropo as asesor_ropo
         FROM tratamientos t
         LEFT JOIN parcelas p ON t.parcela_id = p.id
         LEFT JOIN equipos e ON t.equipo_id = e.id
         LEFT JOIN aplicadores a ON t.aplicador_id = a.id
+        LEFT JOIN asesores s ON t.asesor_id = s.id
         WHERE t.user_id=? AND t.campana=?""" + clause + """
         ORDER BY t.fecha_aplicacion ASC
     """, (user_id, campana) + cparams)

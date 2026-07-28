@@ -5,6 +5,14 @@ Formato: [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) · Versionado:
 
 ---
 
+## [Sin publicar]
+
+### Añadido
+
+- **Ficha de asesor fitosanitario** — el asesor deja de ser texto libre y pasa a ser una ficha reutilizable (nombre, NIF, nº ROPO de asesor, titulación, empresa, contacto), igual que los aplicadores. Se elige de un desplegable en cada tratamiento y sale en el PDF oficial y en el Excel con su nº ROPO. Petición de un agricultor piloto. A diferencia del aplicador, la falta de ROPO avisa pero no bloquea el guardado. Los tratamientos ya registrados con texto libre siguen mostrándose igual.
+
+---
+
 ## [0.9.0] — 2026-06-27
 
 ### Módulos CUE (Cuaderno de Explotación)

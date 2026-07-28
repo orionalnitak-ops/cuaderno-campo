@@ -75,6 +75,7 @@ from blueprints.tratamientos import bp as tratamientos_bp  # noqa: E402
 from blueprints.fertilizacion import bp as fertilizacion_bp  # noqa: E402
 from blueprints.labores import bp as labores_bp  # noqa: E402
 from blueprints.equipos import bp as equipos_bp  # noqa: E402
+from blueprints.asesores import bp as asesores_bp  # noqa: E402
 from blueprints.compras import bp as compras_bp  # noqa: E402
 from blueprints.sigpac import bp as sigpac_bp  # noqa: E402
 from blueprints.nlp import bp as nlp_bp  # noqa: E402
@@ -93,6 +94,7 @@ app.register_blueprint(tratamientos_bp)
 app.register_blueprint(fertilizacion_bp)
 app.register_blueprint(labores_bp)
 app.register_blueprint(equipos_bp)
+app.register_blueprint(asesores_bp)
 app.register_blueprint(compras_bp)
 app.register_blueprint(sigpac_bp)
 app.register_blueprint(nlp_bp)

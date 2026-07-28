@@ -98,8 +98,8 @@ def _insert_tratamiento(c, uid, data, parcela_id, parcela_etiqueta):
             plaga_objetivo, dosis_valor, dosis_unidad, volumen_caldo,
             equipo_id, condiciones_meteo, plazo_seguridad_dias,
             fecha_recoleccion_minima, eficacia, aplicador_id, notas, campana,
-            asesor, justificacion_actuacion
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            asesor, justificacion_actuacion, asesor_id
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
         uid, parcela_id, parcela_etiqueta, data.get('fecha_aplicacion'),
         data.get('producto_comercial'), data.get('num_registro_mapa'), data.get('sustancia_activa'),
@@ -110,8 +110,46 @@ def _insert_tratamiento(c, uid, data, parcela_id, parcela_etiqueta):
         data.get('eficacia'), data.get('aplicador_id') or None, data.get('notas'),
         data.get('campana', '2025/2026'),
         data.get('asesor'), data.get('justificacion_actuacion'),
+        data.get('asesor_id') or None,
     ))
     return c.lastrowid
+
+
+def _check_asesor(conn, data, uid):
+    """Valida el asesor_id recibido. Devuelve (error, aviso).
+
+    - error: bloquea el guardado. Solo si el asesor no es del usuario (IDOR).
+    - aviso: NO bloquea. Se devuelve al cliente para mostrarlo como advertencia.
+
+    A diferencia del aplicador, la falta de nº ROPO del asesor no impide guardar:
+    el agricultor rara vez tiene a mano el carnet de su técnico externo y
+    bloquearle el registro en plena parcela deja el módulo inservible.
+    Ver spec/features/010-asesores/spec.md (decisión 2).
+
+    Normaliza `asesor_id` in place a int o None antes de validarlo: un `<select>`
+    vacío llega como '' pero un cliente puede mandar el string '0', que es truthy
+    y colaba como id válido — el asesor 0 no existe y el guardado moría con un 403
+    en vez de limpiar el campo.
+    """
+    raw = data.get('asesor_id')
+    try:
+        data['asesor_id'] = int(raw) or None
+    except (TypeError, ValueError):
+        data['asesor_id'] = None
+
+    if not data.get('asesor_id'):
+        return None, None
+    asesor = one(conn, "SELECT nombre, num_ropo FROM asesores WHERE id=? AND user_id=?",
+                 (data['asesor_id'], uid))
+    if not asesor:
+        return "Asesor no encontrado", None
+    if not (asesor.get('num_ropo') or '').strip():
+        return None, (
+            f"Tratamiento guardado. Aviso: el asesor «{asesor.get('nombre')}» no tiene "
+            "nº ROPO registrado. La Orden APA/204/2023 identifica al asesor por ese "
+            "número — añádelo en Configuración → Asesores cuando lo tengas."
+        )
+    return None, None
 
 
 @bp.route('/api/tratamientos', methods=['GET', 'POST'])
@@ -154,6 +192,11 @@ def manage_tratamientos():
                 "Edita el equipo en Configuración y añade su número de registro ROMA."
             )}), 400
 
+    err_asesor, aviso_asesor = _check_asesor(conn, data, uid)
+    if err_asesor:
+        conn.close()
+        return jsonify({"error": err_asesor}), 403
+
     c = conn.cursor()
 
     if data.get('uhc_id'):
@@ -178,7 +221,10 @@ def manage_tratamientos():
         conn.close()
         for p in parcelas:
             _recalcular_patrones(uid, 'tratamientos', p['id'], data.get('fecha_aplicacion'))
-        return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
+        resp = {"status": "ok", "count": len(ids), "ids": ids}
+        if aviso_asesor:
+            resp["aviso"] = aviso_asesor
+        return jsonify(resp), 201
 
     if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid):
         conn.close()
@@ -188,7 +234,10 @@ def manage_tratamientos():
     conn.commit()
     conn.close()
     _recalcular_patrones(uid, 'tratamientos', data.get('parcela_id'), data.get('fecha_aplicacion'))
-    return jsonify({"status": "ok", "id": new_id}), 201
+    resp = {"status": "ok", "id": new_id}
+    if aviso_asesor:
+        resp["aviso"] = aviso_asesor
+    return jsonify(resp), 201
 
 
 @bp.route('/api/tratamientos/<int:tid>', methods=['GET', 'PUT', 'DELETE'])
@@ -227,6 +276,10 @@ def manage_tratamiento(tid):
                 "El equipo seleccionado no tiene número ROMA registrado. "
                 "Edita el equipo en Configuración y añade su número de registro ROMA."
             )}), 400
+    err_asesor, aviso_asesor = _check_asesor(conn, data, uid)
+    if err_asesor:
+        conn.close()
+        return jsonify({"error": err_asesor}), 403
     if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
@@ -237,10 +290,14 @@ def manage_tratamiento(tid):
               'num_registro_mapa', 'sustancia_activa', 'plaga_objetivo', 'dosis_valor', 'dosis_unidad',
               'volumen_caldo', 'equipo_id', 'condiciones_meteo', 'plazo_seguridad_dias',
               'fecha_recoleccion_minima', 'eficacia', 'aplicador_id', 'notas', 'campana',
-              'asesor', 'justificacion_actuacion']
+              'asesor', 'justificacion_actuacion', 'asesor_id']
     sets = ', '.join(f"{f}=?" for f in fields)
     _real_t = {'dosis_valor', 'volumen_caldo'}
-    _int_t  = {'equipo_id', 'plazo_seguridad_dias', 'aplicador_id'}
+    _int_t  = {'equipo_id', 'plazo_seguridad_dias', 'aplicador_id', 'asesor_id'}
     conn.execute(f"UPDATE tratamientos SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
                  [_to_real(data.get(f)) if f in _real_t else (data.get(f) or None if f in _int_t else data.get(f)) for f in fields] + [tid, uid])
-    conn.commit(); conn.close(); return jsonify({"status": "ok"})
+    conn.commit(); conn.close()
+    resp = {"status": "ok"}
+    if aviso_asesor:
+        resp["aviso"] = aviso_asesor
+    return jsonify(resp)

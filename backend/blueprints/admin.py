@@ -134,7 +134,8 @@ def admin_delete_permanent(uid):
         conn.execute("DELETE FROM cultivos_campana WHERE parcela_id IN (SELECT id FROM parcelas WHERE user_id=?)", (uid,))
         # resto de tablas con user_id directo, en orden de dependencia
         for t in ['riego', 'abonado', 'cosecha', 'tratamientos', 'fertilizacion',
-                  'labores', 'compras', 'equipos', 'aplicadores', 'parcelas', 'explotacion']:
+                  'labores', 'compras', 'equipos', 'aplicadores', 'asesores',
+                  'parcelas', 'explotacion']:
             conn.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))  # nosec B608 — tabla viene de lista hardcodeada, no de input externo
         conn.execute("DELETE FROM users WHERE id=?", (uid,))
         conn.commit()
@@ -194,7 +195,7 @@ def admin_reset_cuaderno(uid):
         nombre = row[0]
         conn.execute("DELETE FROM cultivos_campana WHERE parcela_id IN (SELECT id FROM parcelas WHERE user_id=?)", (uid,))
         for t in ['riego', 'abonado', 'cosecha', 'tratamientos', 'fertilizacion',
-                  'labores', 'compras', 'equipos', 'aplicadores', 'parcelas']:
+                  'labores', 'compras', 'equipos', 'aplicadores', 'asesores', 'parcelas']:
             conn.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))
         conn.commit()
         conn.close()

@@ -296,6 +296,9 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
     const [cultivo, setCultivo]         = React.useState({});
     const [showAddAplic, setShowAddAplic] = React.useState(false);
     const [newAplic, setNewAplic]         = React.useState({ nombre: '', num_ropo: '', nif: '' });
+    const [asesores, setAsesores]         = React.useState([]);
+    const [showAddAses, setShowAddAses]   = React.useState(false);
+    const [newAses, setNewAses]           = React.useState({ nombre: '', num_ropo: '', nif: '' });
     const [modoUHC, setModoUHC]   = React.useState(false);
     const [uhcList, setUhcList]   = React.useState([]);
     const [sugerencias, setSugerencias] = React.useState({});
@@ -319,11 +322,19 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
         eficacia:                 record?.eficacia || '',
         aplicador_id:             record?.aplicador_id || '',
         notas:                    record?.notas || '',
+        asesor_id:                record?.asesor_id || '',
         asesor:                   record?.asesor || '',
         justificacion_actuacion:  record?.justificacion_actuacion || '',
         campana,
     });
     const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+
+    // El ROPO del asesor avisa pero no bloquea (spec/features/010-asesores, decisión 2)
+    const asesorSinRopo = React.useMemo(() => {
+        if (!f.asesor_id) return false;
+        const a = asesores.find(x => String(x.id) === String(f.asesor_id));
+        return !!a && !(a.num_ropo || '').trim();
+    }, [f.asesor_id, asesores]);
 
     React.useEffect(() => {
         fetch('/api/equipos', { credentials: 'include' })
@@ -345,6 +356,16 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
             })
             .catch(() => {
                 if (window.OfflineDB) window.OfflineDB.getCachedAplicadores().then(cached => setAplicadores(cached));
+            });
+        fetch('/api/asesores', { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => {
+                const list = Array.isArray(d) ? d : [];
+                setAsesores(list);
+                if (list.length > 0 && window.OfflineDB) window.OfflineDB.cacheAsesores(list);
+            })
+            .catch(() => {
+                if (window.OfflineDB) window.OfflineDB.getCachedAsesores().then(cached => setAsesores(cached));
             });
     }, []);
 
@@ -409,6 +430,21 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
         setShowAddAplic(false);
     };
 
+    const saveNuevoAsesor = async () => {
+        if (!newAses.nombre.trim()) { alert('El nombre del asesor es obligatorio'); return; }
+        const res = await fetch('/api/asesores', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newAses), credentials: 'include'
+        });
+        if (!res.ok) { alert('Error al guardar el asesor'); return; }
+        const d = await res.json();
+        const lista = await fetch('/api/asesores', { credentials: 'include' }).then(r => r.json());
+        setAsesores(Array.isArray(lista) ? lista : []);
+        set('asesor_id', String(d.id));
+        setNewAses({ nombre: '', num_ropo: '', nif: '' });
+        setShowAddAses(false);
+    };
+
     const postFeedback = () => {
         for (const [campo, item] of Object.entries(sugerencias)) {
             const val = f[campo];
@@ -436,7 +472,14 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                 : await window.OfflineSync.post('/api/tratamientos', f);
             if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar el tratamiento'); setSaving(false); return; }
             postFeedback();
-            onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Tratamiento guardado');
+            if (res._savedOffline) { onClose('⏳ Guardado sin conexión — se subirá al conectarte'); return; }
+            // El backend devuelve `aviso` cuando el asesor elegido no tiene nº ROPO:
+            // el tratamiento se guarda igual, pero el agricultor debe enterarse.
+            // Primera y única lectura del body: OfflineSync.post devuelve la Response
+            // nativa sin consumirla (offline_sync.js:60) y ya hemos salido antes en
+            // el camino offline, así que aquí res.json() nunca falla por body usado.
+            const d = await res.json().catch(() => ({}));
+            onClose(d.aviso ? `⚠️ ${d.aviso}` : '✅ Tratamiento guardado');
         } catch { alert('Error al guardar el tratamiento'); setSaving(false); }
     };
 
@@ -557,11 +600,56 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                     </div>
                 )}
                 <FieldGroup label="Asesor fitosanitario">
-                    <ZoomInput label="Asesor fitosanitario" value={f.asesor}
-                        placeholder="Nombre del asesor o empresa asesora"
-                        onConfirm={v => set('asesor', v)} />
+                    {asesores.length > 0 ? (
+                        <>
+                            <select className="input-field" value={f.asesor_id}
+                                onChange={e => set('asesor_id', e.target.value)}>
+                                <option value="">-- Sin asesor --</option>
+                                {asesores.map(a => (
+                                    <option key={a.id} value={a.id}>
+                                        {a.nombre}{a.num_ropo ? ` (ROPO ${a.num_ropo})` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                            {asesorSinRopo && (
+                                <div style={{ marginTop: 6, padding: '8px 10px', background: '#fffbeb',
+                                    border: '1px solid #fde68a', borderRadius: 8, fontSize: '0.78rem', color: '#92400e' }}>
+                                    ⚠️ Este asesor no tiene nº ROPO guardado. Puedes registrar el tratamiento
+                                    igualmente, pero añádelo en Configuración → Asesores cuando lo tengas.
+                                </div>
+                            )}
+                        </>
+                    ) : !showAddAses ? (
+                        <button type="button" className="btn-ghost"
+                            style={{ width: '100%', minHeight: 44, fontSize: '0.85rem' }}
+                            onClick={() => setShowAddAses(true)}>
+                            + Añadir mi asesor
+                        </button>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <input className="input-field" placeholder="Nombre completo *" value={newAses.nombre}
+                                onChange={e => setNewAses(x => ({ ...x, nombre: e.target.value }))} />
+                            <input className="input-field" placeholder="Nº ROPO (sección asesor)" value={newAses.num_ropo}
+                                onChange={e => setNewAses(x => ({ ...x, num_ropo: e.target.value }))} />
+                            <input className="input-field" placeholder="NIF" value={newAses.nif}
+                                onChange={e => setNewAses(x => ({ ...x, nif: e.target.value }))} />
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <button type="button" className="btn-ghost" style={{ flex: 1, minHeight: 44, fontSize: '0.85rem' }}
+                                    onClick={() => setShowAddAses(false)}>Cancelar</button>
+                                <button type="button" className="btn-primary" style={{ flex: 2, minHeight: 44, fontSize: '0.85rem' }}
+                                    onClick={saveNuevoAsesor}>Guardar asesor</button>
+                            </div>
+                        </div>
+                    )}
+                    {/* Tratamientos antiguos guardaban el asesor como texto libre. Se muestra
+                        para no perderlo de vista, pero la ficha tiene prioridad. */}
+                    {!f.asesor_id && f.asesor && (
+                        <div style={{ marginTop: 6, fontSize: '0.78rem', color: 'var(--on-surface-variant)' }}>
+                            Asesor registrado antes como texto: <strong>{f.asesor}</strong>
+                        </div>
+                    )}
                     <div style={{ fontSize: '0.72rem', color: 'var(--on-surface-variant)', marginTop: 3 }}>
-                        Exigido por la Orden APA/204/2023
+                        Exigido por la Orden APA/204/2023. Se guarda una vez y lo reutilizas en cada tratamiento.
                     </div>
                 </FieldGroup>
                 <FieldGroup label="Justificación de la actuación">
