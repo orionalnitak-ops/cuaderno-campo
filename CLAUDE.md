@@ -148,6 +148,17 @@ feature/xxx  →  PR  →  CI pasa  →  merge a main  →  deploy automático
 - **Nunca subir el archivo `.env`** al repositorio. Está en `.gitignore`.
 - **Nunca aprobar a ciegas** el código generado por IA. Leer y entender cada cambio antes de mergear.
 
+### Row Level Security en producción
+
+La BD de producción es un Postgres gestionado que expone una API REST automática sobre el schema `public`. Sin RLS, cualquiera con la clave pública del cliente leería las tablas enteras, y aquí hay datos personales de agricultores (NIF, teléfono, email, nº ROPO).
+
+Defensa en dos capas:
+
+1. El schema `public` **no está expuesto** a esa API REST.
+2. **Todas las tablas llevan RLS activado y ninguna política.** Eso deniega todo a los roles públicos, mientras que la app sigue funcionando porque conecta como owner de las tablas y el owner hace bypass de RLS.
+
+`init_db()` activa el RLS solo (`_enable_rls_postgres` en `db.py`), recorriendo `pg_class` en lugar de una lista fija, para que una tabla nueva no nazca desprotegida. No hace falta acordarse al añadir tablas — pero si alguna vez se crea una tabla fuera de `init_db()`, comprobar el Security Advisor del proveedor.
+
 ---
 
 ## Especificaciones (SDD)

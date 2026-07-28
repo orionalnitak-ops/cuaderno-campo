@@ -276,6 +276,79 @@ def _safe_recreate_table(conn, c, table, new_ddl, col_list):
           f"Tabla antigua guardada como '{backup_name}'.")
 
 
+def _enable_rls_postgres(conn):
+    """Activa Row Level Security en toda tabla de `public` que aún no la tenga.
+
+    Por qué: el Postgres gestionado de producción puede servir el schema `public`
+    a través de una API REST automática. Sin RLS, cualquiera con la clave pública
+    del cliente leería las tablas enteras, y aquí hay datos personales de
+    agricultores (NIF, teléfono, email, nº ROPO). RLS activado SIN políticas
+    deniega todo a los roles públicos, mientras que la app no se entera: conecta
+    como owner de las tablas, y el owner hace bypass de RLS.
+
+    Se recorre pg_class en vez de mantener una lista de tablas a mano,
+    precisamente para que una tabla nueva no vuelva a nacer desprotegida.
+    Idempotente: las que ya lo tienen se ignoran.
+    """
+    if not USE_PG:
+        return
+    try:
+        c = conn.cursor()
+        # El ALTER de cada tabla va en su propio BEGIN/EXCEPTION: si una falla
+        # (p. ej. una tabla de extensión de la que no somos owner) las demás se
+        # protegen igual, en vez de abortar el bloque entero en la primera.
+        c.execute('''
+            DO $$
+            DECLARE t record;
+            BEGIN
+                FOR t IN
+                    SELECT c.relname
+                    FROM pg_class c
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    WHERE n.nspname = 'public'
+                      AND c.relkind = 'r'
+                      AND NOT c.relrowsecurity
+                LOOP
+                    BEGIN
+                        EXECUTE format(
+                            'ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.relname
+                        );
+                    EXCEPTION WHEN OTHERS THEN
+                        RAISE WARNING 'RLS no activado en %: %', t.relname, SQLERRM;
+                    END;
+                END LOOP;
+            END $$;
+        ''')
+        conn.commit()
+
+        # No basta con que el bloque no lance: al capturar por tabla, un fallo
+        # parcial sería invisible desde aquí. Se comprueba la postcondición.
+        c.execute('''
+            SELECT c.relname
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relkind = 'r'
+              AND NOT c.relrowsecurity
+            ORDER BY c.relname
+        ''')
+        pendientes = [r[0] for r in c.fetchall()]
+        if pendientes:
+            logger.error(
+                "[db] RLS NO ACTIVO en %d tabla(s) de public: %s. "
+                "Si el schema estuviera expuesto a la API REST del proveedor, "
+                "esos datos serían legibles con la clave pública. Revisar a mano.",
+                len(pendientes), ', '.join(pendientes)
+            )
+    except Exception as e:
+        # No se aborta el arranque: dejar la app caída para todos los agricultores
+        # es peor que quedarse sin la segunda capa de defensa, teniendo la primera
+        # (schema fuera de la API REST) en pie. Se registra como error, no warning:
+        # aquí hay datos personales en juego.
+        conn.rollback()
+        logger.error("[db] No se pudo activar RLS automáticamente: %s", e)
+
+
 def init_db():
     conn = get_db()
     c = conn.cursor()
@@ -749,6 +822,8 @@ def init_db():
     _seed_admin(conn)
     _seed_if_needed(conn)
     _backfill_explotaciones(conn)
+    # Al final: ya existen todas las tablas, incluidas las que crea _seed_if_needed.
+    _enable_rls_postgres(conn)
     if USE_PG:
         c.execute("SELECT pg_advisory_unlock(7311201201)")
     conn.close()
