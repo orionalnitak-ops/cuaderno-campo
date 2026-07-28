@@ -479,7 +479,9 @@ def init_db():
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS asesores (
             id {_PK},
-            user_id INTEGER DEFAULT 2,
+            -- Sin DEFAULT, a diferencia de las tablas antiguas: un INSERT que olvide
+            -- el user_id debe fallar, no colgarle el asesor al usuario 2.
+            user_id INTEGER NOT NULL,
             nombre TEXT NOT NULL,
             nif TEXT,
             num_ropo TEXT,

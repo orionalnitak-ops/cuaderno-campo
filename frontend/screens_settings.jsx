@@ -365,23 +365,23 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
     const [showQuickStart, setShowQuickStart] = useState(false);
 
     useEffect(() => {
-        fetch('/api/equipos').then(r => r.json()).then(d => setEquipos(Array.isArray(d) ? d : []));
-        fetch('/api/aplicadores').then(r => r.json()).then(d => setAplicadores(Array.isArray(d) ? d : []));
+        fetch('/api/equipos', { credentials: 'include' }).then(r => r.json()).then(d => setEquipos(Array.isArray(d) ? d : []));
+        fetch('/api/aplicadores', { credentials: 'include' }).then(r => r.json()).then(d => setAplicadores(Array.isArray(d) ? d : []));
         fetch('/api/asesores', { credentials: 'include' }).then(r => r.json()).then(d => setAsesores(Array.isArray(d) ? d : []));
     }, []);
 
     const saveEquipo = async (form) => {
         const method = editingEq ? 'PUT' : 'POST';
         const url = editingEq ? `/api/equipos/${editingEq}` : '/api/equipos';
-        await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(form) });
+        await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(form), credentials: 'include' });
         showToast(editingEq ? 'Equipo actualizado' : 'Equipo añadido');
-        fetch('/api/equipos').then(r => r.json()).then(d => setEquipos(Array.isArray(d) ? d : []));
+        fetch('/api/equipos', { credentials: 'include' }).then(r => r.json()).then(d => setEquipos(Array.isArray(d) ? d : []));
         setShowEqModal(false); setEditingEq(null);
     };
 
     const deleteEquipo = async (id) => {
         if (!confirm('¿Eliminar este equipo?')) return;
-        await fetch(`/api/equipos/${id}`, { method:'DELETE' });
+        await fetch(`/api/equipos/${id}`, { method:'DELETE', credentials: 'include' });
         showToast('Equipo eliminado');
         setEquipos(e => e.filter(x => x.id !== id));
     };
@@ -389,15 +389,15 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
     const saveAplicador = async (form) => {
         const method = editingAp ? 'PUT' : 'POST';
         const url = editingAp ? `/api/aplicadores/${editingAp}` : '/api/aplicadores';
-        await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(form) });
+        await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(form), credentials: 'include' });
         showToast(editingAp ? 'Aplicador actualizado' : 'Aplicador añadido');
-        fetch('/api/aplicadores').then(r => r.json()).then(d => setAplicadores(Array.isArray(d) ? d : []));
+        fetch('/api/aplicadores', { credentials: 'include' }).then(r => r.json()).then(d => setAplicadores(Array.isArray(d) ? d : []));
         setShowApModal(false); setEditingAp(null);
     };
 
     const deleteAplicador = async (id) => {
         if (!confirm('¿Eliminar este aplicador?')) return;
-        await fetch(`/api/aplicadores/${id}`, { method:'DELETE' });
+        await fetch(`/api/aplicadores/${id}`, { method:'DELETE', credentials: 'include' });
         showToast('Aplicador eliminado');
         setAplicadores(a => a.filter(x => x.id !== id));
     };
