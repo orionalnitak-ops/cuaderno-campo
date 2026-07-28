@@ -4,7 +4,7 @@
 
 - **Lenguaje:** Python 3.x
 - **Framework:** Flask con blueprints (una ruta por dominio, nunca en `app.py`)
-- **Base de datos:** SQLite (local) / PostgreSQL (producción)
+- **Base de datos:** SQLite (local) / **PostgreSQL alojado en Supabase** (producción) — la app conecta con `psycopg2` vía `DATABASE_URL`, NO usa el SDK `@supabase/supabase-js`
 - **PDF:** ReportLab
 - **Excel:** openpyxl
 - **Auth:** Flask-Login
@@ -20,7 +20,8 @@
 
 ## Infraestructura
 
-- **Hosting:** EasyPanel en VPS Contabo `75.119.149.104`
+- **Hosting de la app (Flask):** EasyPanel en VPS Contabo `75.119.149.104`
+- **Base de datos (Postgres):** Supabase (NO Contabo) — ojo: app y BD están en sitios distintos
 - **Deploy:** push a `main` → webhook GitHub → EasyPanel reconstruye Docker
 - **Arranque local:** `python app.py` en `backend/` → `http://127.0.0.1:5000`
 

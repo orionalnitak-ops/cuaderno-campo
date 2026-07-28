@@ -173,6 +173,7 @@ Resumen rápido: 🔴 Stripe live · 🔴 SIEX (deadline 01/01/2027) · 🟠 Ema
 ## Producción
 
 - **URL:** `https://cuaderno.tualiado.es`
-- **Hosting:** EasyPanel en VPS Contabo `75.119.149.104`
+- **Hosting app (Flask):** EasyPanel en VPS Contabo `75.119.149.104`
+- **Base de datos (Postgres):** alojada en Supabase — conexión `psycopg2` vía `DATABASE_URL`, sin SDK. App y BD en sitios distintos.
 - **Deploy:** push a `main` → webhook GitHub → EasyPanel reconstruye Docker y reinicia
 - **Variables de entorno necesarias:** `DATABASE_URL`, `SECRET_KEY`, `REDIS_URL`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `ALLOWED_ORIGINS`
