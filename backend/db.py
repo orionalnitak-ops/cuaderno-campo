@@ -276,6 +276,51 @@ def _safe_recreate_table(conn, c, table, new_ddl, col_list):
           f"Tabla antigua guardada como '{backup_name}'.")
 
 
+def _enable_rls_postgres(conn):
+    """Activa Row Level Security en toda tabla de `public` que aún no la tenga.
+
+    Por qué: en Supabase el schema `public` puede quedar expuesto a la Data API
+    (PostgREST). Sin RLS, cualquiera con la anon key —que es pública por diseño—
+    leería las tablas enteras, y aquí hay datos personales de agricultores (NIF,
+    teléfono, email, nº ROPO). RLS activado SIN políticas deniega todo a los roles
+    anon/authenticated, mientras que la app no se entera: conecta como owner de las
+    tablas, y el owner hace bypass de RLS.
+
+    Se recorre pg_class en vez de mantener una lista de tablas a mano,
+    precisamente para que una tabla nueva no vuelva a nacer desprotegida.
+    Idempotente: las que ya lo tienen se ignoran.
+    """
+    if not USE_PG:
+        return
+    try:
+        c = conn.cursor()
+        c.execute('''
+            DO $$
+            DECLARE t record;
+            BEGIN
+                FOR t IN
+                    SELECT c.relname
+                    FROM pg_class c
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    WHERE n.nspname = 'public'
+                      AND c.relkind = 'r'
+                      AND NOT c.relrowsecurity
+                LOOP
+                    EXECUTE format(
+                        'ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.relname
+                    );
+                END LOOP;
+            END $$;
+        ''')
+        conn.commit()
+    except Exception as e:
+        # Nunca impedir el arranque de la app por esto: si el rol no es owner de
+        # alguna tabla, se registra y se sigue. El aviso queda en el Security
+        # Advisor de Supabase.
+        conn.rollback()
+        logger.warning("[db] No se pudo activar RLS automáticamente: %s", e)
+
+
 def init_db():
     conn = get_db()
     c = conn.cursor()
@@ -749,6 +794,8 @@ def init_db():
     _seed_admin(conn)
     _seed_if_needed(conn)
     _backfill_explotaciones(conn)
+    # Al final: ya existen todas las tablas, incluidas las que crea _seed_if_needed.
+    _enable_rls_postgres(conn)
     if USE_PG:
         c.execute("SELECT pg_advisory_unlock(7311201201)")
     conn.close()
