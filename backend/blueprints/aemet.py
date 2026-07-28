@@ -76,6 +76,52 @@ def _parse_cap_alert(alert_el, provincia):
     return results
 
 
+# Tipos de aviso de METEOALARM (awareness types) → texto en castellano.
+# El feed publica el evento como "<Severidad> <tipo> warning"
+# (p. ej. "Moderate high-temperature warning"), y el título ATOM como
+# "Yellow High-temperature Warning issued for Spain - <zona>".
+# Orden importante: las claves más específicas van primero para que
+# 'high-temperature' no se resuelva antes por 'temperature'.
+FENOMENOS = (
+    ('extreme-high-temperature', 'Calor extremo'),
+    ('extreme-low-temperature',  'Frío extremo'),
+    ('high-temperature', 'Temperaturas máximas'),
+    ('low-temperature',  'Temperaturas mínimas'),
+    ('forest-fire',      'Riesgo de incendios'),
+    ('rain-flood',       'Lluvias e inundaciones'),
+    ('coastalevent',     'Fenómenos costeros'),
+    ('coastal',          'Fenómenos costeros'),
+    ('thunderstorm',     'Tormentas'),
+    ('snow-ice',         'Nieve o hielo'),
+    ('avalanche',        'Aludes'),
+    ('flooding',         'Inundaciones'),
+    ('flood',            'Inundaciones'),
+    ('storm',            'Tormentas'),
+    ('rain',             'Lluvia intensa'),
+    ('wind',             'Viento fuerte'),
+    ('snow',             'Nieve'),
+    ('ice',              'Hielo'),
+    ('fog',              'Niebla'),
+    ('heat',             'Calor extremo'),
+    ('cold',             'Frío extremo'),
+)
+
+
+def _fenomeno(*textos: str) -> str:
+    """Traduce el tipo de fenómeno a partir del evento/título del feed."""
+    h = ' '.join(t for t in textos if t).lower()
+    for en, es in FENOMENOS:
+        if en in h:
+            return es
+    return 'Fenómeno adverso'
+
+
+def _texto_alerta(nivel: str, fenomeno: str, area: str) -> str:
+    """Texto que ve el agricultor: qué avisa, de qué color y dónde."""
+    base = f'Aviso {nivel} por {fenomeno.lower()}'
+    return f'{base} — {area}' if area else base
+
+
 def _norm(s: str) -> str:
     """Normaliza para comparar: minúsculas, guiones → espacios, sin prefijos admin."""
     s = s.lower().replace('-', ' ').strip()
@@ -117,14 +163,6 @@ def _fetch_meteoalarm(provincia, comunidad=''):
     root = ET.fromstring(_feed_cache['xml'])
     alertas = []
 
-    FENOMENOS = {
-        'thunderstorm': 'Tormentas', 'storm': 'Tormenta',
-        'rain': 'Lluvia intensa', 'wind': 'Viento fuerte',
-        'snow': 'Nieve', 'fog': 'Niebla', 'heat': 'Calor extremo',
-        'cold': 'Frío extremo', 'ice': 'Hielo', 'flood': 'Inundaciones',
-        'avalanche': 'Aludes', 'coastal': 'Oleaje',
-    }
-
     for entry in root.findall(f'{{{ATOM_NS}}}entry'):
         # 1) CAP embebido dentro de <cap:alert> wrapper (algunos feeds)
         entry_cap = []
@@ -144,19 +182,20 @@ def _fetch_meteoalarm(provincia, comunidad=''):
             if _is_expired(expira_entry):
                 continue
             # METEOALARM usa severity='Moderate' para alertas amarillas — usar título ATOM
-            t_low = (entry.findtext(f'{{{ATOM_NS}}}title') or '').lower()
+            titulo = entry.findtext(f'{{{ATOM_NS}}}title') or ''
+            t_low  = titulo.lower()
             if 'red' in t_low:
                 nivel, icono = 'rojo', '🔴'
             elif 'orange' in t_low:
                 nivel, icono = 'naranja', '🟠'
             else:
                 nivel, icono = 'amarillo', '🟡'
-            event_raw  = (entry.findtext(f'{{{CAP_NS}}}event') or '').lower()
-            fenomeno   = next((es for en, es in FENOMENOS.items() if en in event_raw), 'Fenómeno adverso')
+            event_raw = entry.findtext(f'{{{CAP_NS}}}event') or ''
+            fenomeno  = _fenomeno(event_raw, titulo)
             alertas.append({
                 'nivel': nivel, 'icon': icono,
                 'evento': fenomeno, 'area': area_desc,
-                'texto': f'⚠️ {fenomeno} — {area_desc}',
+                'texto': _texto_alerta(nivel, fenomeno, area_desc),
                 'inicio': entry.findtext(f'{{{CAP_NS}}}onset')   or '',
                 'expira': expira_entry,
                 'fuente': 'AEMET',
@@ -177,18 +216,14 @@ def _fetch_meteoalarm(provincia, comunidad=''):
         elif 'orange' in h_low:
             nivel, icono = 'naranja', '🟠'
 
-        fenomeno = 'Fenómeno adverso'
-        for en, es in FENOMENOS.items():
-            if en in h_low:
-                fenomeno = es
-                break
+        fenomeno = _fenomeno(haystack)
 
         area = title.split(' - ', 1)[-1].strip() if ' - ' in title else ''
         if title:
             alertas.append({
                 'nivel': nivel, 'icon': icono,
                 'evento': fenomeno, 'area': area,
-                'texto': f'⚠️ {fenomeno} — {area}' if area else f'Aviso {nivel}: {fenomeno}',
+                'texto': _texto_alerta(nivel, fenomeno, area),
                 'expira': '', 'fuente': 'AEMET',
             })
 
