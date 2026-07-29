@@ -190,7 +190,29 @@ Resumen rápido: 🔴 Stripe live · 🔴 SIEX (deadline 01/01/2027) · 🟠 Ema
 ## Producción
 
 - **URL:** `https://cuaderno.tualiado.es`
-- **Hosting app (Flask):** EasyPanel en VPS Contabo `75.119.149.104`
-- **Base de datos (Postgres):** alojada en Supabase — conexión `psycopg2` vía `DATABASE_URL`, sin SDK. App y BD en sitios distintos.
-- **Deploy:** push a `main` → webhook GitHub → EasyPanel reconstruye Docker y reinicia
+- **Hosting app (Flask):** VPS propio, la app corre en Docker detrás de un panel de despliegue
+- **Base de datos (Postgres):** servicio gestionado externo — conexión `psycopg2` vía `DATABASE_URL`, sin SDK. App y BD están en sitios distintos.
+- **Deploy:** push a `main` → webhook → se reconstruye la imagen Docker y se reinicia
 - **Variables de entorno necesarias:** `DATABASE_URL`, `SECRET_KEY`, `REDIS_URL`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `ALLOWED_ORIGINS`
+
+> Los datos concretos (IP del servidor, proveedores, URL del webhook, credenciales del panel) **no van en el repo**: ver la política más abajo.
+
+---
+
+## Qué NO se documenta en el repo (es público)
+
+`cuaderno-campo` es un repositorio **público**. Cualquiera lee estos archivos, incluidos el `CHANGELOG` y los specs. La documentación describe **cómo está montado el sistema**, nunca **dónde está ni con quién**.
+
+Fuera del repo, siempre:
+
+- **IPs y hostnames** de servidores o de la base de datos.
+- **Nombres de proveedor** de hosting, BD, panel de despliegue o CDN. Saber qué proveedor se usa acota el ataque: se heredan sus puertos por defecto, su superficie de gestión y sus fallos conocidos.
+- **URLs de webhook, paneles de administración y endpoints internos**, aunque pidan credenciales.
+- **Rutas absolutas** de la máquina de producción y nombres de contenedor o de servicio.
+- Cualquier **captura de pantalla** de un panel de infraestructura.
+
+Sí se documenta, porque es lo que hace falta para trabajar y no localiza nada: el stack (Flask, Postgres, Docker, gunicorn), la arquitectura, los **nombres** de las variables de entorno (nunca sus valores), y el flujo de deploy descrito de forma genérica.
+
+**Cómo aplicarlo:** decirlo en genérico — "VPS propio", "Postgres gestionado externo", "el proveedor". Si un dato concreto hace falta para operar, va al gestor de contraseñas o a las variables de entorno del panel, no a un `.md`. Y ojo con el `CHANGELOG` y con `spec/`: cuentan como repo igual que el código.
+
+**Si algo se cuela:** quitarlo del archivo no lo borra del historial de git. Para un dato *rotable* (una IP, una URL de webhook) sale más barato cambiarlo que reescribir el historial. Para un secreto, hay que rotarlo sí o sí y además valorar la purga.
