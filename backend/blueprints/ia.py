@@ -61,6 +61,12 @@ _CAMPOS_PERMITIDOS = {c for cols in CAMPOS_MODULO.values() for c in cols}
 _TABLAS_PERMITIDAS = set(TABLA_MODULO.values())
 _FECHAS_PERMITIDAS = set(FECHA_MODULO.values())
 
+# Campos no textuales de CAMPOS_MODULO: dosis_valor es REAL, equipo_id y
+# aplicador_id son INTEGER. Compararlos con '' revienta en PostgreSQL
+# (InvalidTextRepresentation); SQLite lo tolera y por eso pasó desapercibido.
+# Para ellos basta con IS NOT NULL.
+_CAMPOS_NUMERICOS = {'dosis_valor', 'equipo_id', 'aplicador_id'}
+
 
 # ── Funciones internas ─────────────────────────────────────────────────────────
 
@@ -87,6 +93,14 @@ def _mes_in_expr(fecha_col, meses):
     return f"CAST(strftime('%m', {fecha_col}) AS INTEGER) IN ({ph})"
 
 
+def _cond_no_vacio(campo, prefijo=''):
+    """Condición SQL «este campo tiene valor», según el tipo de la columna."""
+    col = f"{prefijo}{campo}"
+    if campo in _CAMPOS_NUMERICOS:
+        return f"{col} IS NOT NULL"
+    return f"{col} IS NOT NULL AND {col} != ''"
+
+
 def _recalcular_patrones(user_id, modulo, parcela_id, fecha_str):
     """Recalcula el valor más frecuente de cada campo para user+módulo+parcela+temporada.
     Llamar al final de cada POST exitoso en todos los módulos."""
@@ -107,61 +121,66 @@ def _recalcular_patrones(user_id, modulo, parcela_id, fecha_str):
     conn = get_db()
     try:
         for campo in campos:
-            if modulo == 'cultivo_campana':
-                # cultivos_campana no tiene user_id propio → JOIN con parcelas
-                if not parcela_id:
+            # Cada campo va en su propia transacción: si uno falla, los demás se
+            # guardan igual. En PostgreSQL un error aborta la transacción entera,
+            # así que sin el rollback el resto del bucle fallaría en cascada.
+            try:
+                if modulo == 'cultivo_campana':
+                    # cultivos_campana no tiene user_id propio → JOIN con parcelas
+                    if not parcela_id:
+                        continue
+                    sql = f"""
+                        SELECT cc.{campo} AS val, COUNT(*) AS cnt, MAX(cc.{fecha_col}) AS ultima
+                        FROM cultivos_campana cc
+                        JOIN parcelas p ON cc.parcela_id = p.id
+                        WHERE p.user_id=? AND cc.parcela_id=?
+                          AND {_cond_no_vacio(campo, 'cc.')}
+                          AND {mes_expr}
+                        GROUP BY cc.{campo} ORDER BY cnt DESC, ultima DESC LIMIT 1
+                    """
+                    params = [user_id, parcela_id] + list(meses)
+                elif parcela_id:
+                    sql = f"""
+                        SELECT {campo} AS val, COUNT(*) AS cnt, MAX({fecha_col}) AS ultima
+                        FROM {tabla}
+                        WHERE user_id=? AND parcela_id=?
+                          AND {_cond_no_vacio(campo)}
+                          {soft_del} AND {mes_expr}
+                        GROUP BY {campo} ORDER BY cnt DESC, ultima DESC LIMIT 1
+                    """
+                    params = [user_id, parcela_id] + list(meses)
+                else:
+                    sql = f"""
+                        SELECT {campo} AS val, COUNT(*) AS cnt, MAX({fecha_col}) AS ultima
+                        FROM {tabla}
+                        WHERE user_id=?
+                          AND {_cond_no_vacio(campo)}
+                          {soft_del} AND {mes_expr}
+                        GROUP BY {campo} ORDER BY cnt DESC, ultima DESC LIMIT 1
+                    """
+                    params = [user_id] + list(meses)
+
+                row = one(conn, sql, params)
+                if not row or row.get('val') is None:
                     continue
-                sql = f"""
-                    SELECT cc.{campo} AS val, COUNT(*) AS cnt, MAX(cc.{fecha_col}) AS ultima
-                    FROM cultivos_campana cc
-                    JOIN parcelas p ON cc.parcela_id = p.id
-                    WHERE p.user_id=? AND cc.parcela_id=?
-                      AND cc.{campo} IS NOT NULL AND cc.{campo} != ''
-                      AND {mes_expr}
-                    GROUP BY cc.{campo} ORDER BY cnt DESC, ultima DESC LIMIT 1
-                """
-                params = [user_id, parcela_id] + list(meses)
-            elif parcela_id:
-                sql = f"""
-                    SELECT {campo} AS val, COUNT(*) AS cnt, MAX({fecha_col}) AS ultima
-                    FROM {tabla}
-                    WHERE user_id=? AND parcela_id=?
-                      AND {campo} IS NOT NULL AND {campo} != ''
-                      {soft_del} AND {mes_expr}
-                    GROUP BY {campo} ORDER BY cnt DESC, ultima DESC LIMIT 1
-                """
-                params = [user_id, parcela_id] + list(meses)
-            else:
-                sql = f"""
-                    SELECT {campo} AS val, COUNT(*) AS cnt, MAX({fecha_col}) AS ultima
-                    FROM {tabla}
-                    WHERE user_id=?
-                      AND {campo} IS NOT NULL AND {campo} != ''
-                      {soft_del} AND {mes_expr}
-                    GROUP BY {campo} ORDER BY cnt DESC, ultima DESC LIMIT 1
-                """
-                params = [user_id] + list(meses)
 
-            row = one(conn, sql, params)
-            if not row or row.get('val') is None:
-                continue
-
-            # DELETE + INSERT (funciona en SQLite y PG; evita problema de NULL en UNIQUE)
-            conn.execute("""
-                DELETE FROM ia_patrones
-                WHERE user_id=? AND modulo=? AND temporada=? AND campo=?
-                  AND (parcela_id=? OR (parcela_id IS NULL AND ? IS NULL))
-            """, (user_id, modulo, temporada, campo, parcela_id, parcela_id))
-            conn.execute("""
-                INSERT INTO ia_patrones
-                    (user_id, modulo, parcela_id, temporada, campo, valor_sugerido, frecuencia, ultima_vez)
-                VALUES (?,?,?,?,?,?,?,?)
-            """, (user_id, modulo, parcela_id, temporada, campo,
-                  str(row['val']), row['cnt'], row['ultima']))
-
-        conn.commit()
-    except Exception:
-        logger.exception("Error recalculando patrones user_id=%s modulo=%s", user_id, modulo)
+                # DELETE + INSERT (funciona en SQLite y PG; evita problema de NULL en UNIQUE)
+                conn.execute("""
+                    DELETE FROM ia_patrones
+                    WHERE user_id=? AND modulo=? AND temporada=? AND campo=?
+                      AND (parcela_id=? OR (parcela_id IS NULL AND ? IS NULL))
+                """, (user_id, modulo, temporada, campo, parcela_id, parcela_id))
+                conn.execute("""
+                    INSERT INTO ia_patrones
+                        (user_id, modulo, parcela_id, temporada, campo, valor_sugerido, frecuencia, ultima_vez)
+                    VALUES (?,?,?,?,?,?,?,?)
+                """, (user_id, modulo, parcela_id, temporada, campo,
+                      str(row['val']), row['cnt'], row['ultima']))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                logger.exception("Error recalculando patrón user_id=%s modulo=%s campo=%s",
+                                 user_id, modulo, campo)
     finally:
         conn.close()
 
