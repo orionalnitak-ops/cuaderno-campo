@@ -134,9 +134,26 @@ def test_fallo_aislado():
           not any('public.parcelas ALTER COLUMN user_id SET NOT NULL' in s for s in conn.sql))
 
 
+def test_nombre_de_tabla_no_valido():
+    """Un nombre que no sea identificador SQL seguro no llega a interpolarse."""
+    print("\n[5] Nombre de tabla no válido")
+    conn = _FakeConn()
+    original = db._TABLAS_USER_ID
+    db._TABLAS_USER_ID = ('parcelas', 'x"; DROP TABLE users; --')
+    try:
+        _run(conn)
+    finally:
+        db._TABLAS_USER_ID = original
+
+    check("el nombre malicioso no aparece en ningún SQL",
+          not any('DROP TABLE' in s for s in conn.sql))
+    check("la tabla legítima se procesa igual",
+          any('public.parcelas ALTER COLUMN user_id SET NOT NULL' in s for s in conn.sql))
+
+
 def test_sqlite_no_hace_nada():
     """En SQLite (local) la migración es un no-op: no soporta ALTER COLUMN."""
-    print("\n[5] SQLite")
+    print("\n[6] SQLite")
     conn = _FakeConn()
     original = db.USE_PG
     db.USE_PG = False
@@ -152,5 +169,6 @@ if __name__ == '__main__':
     test_camino_feliz()
     test_filas_huerfanas()
     test_fallo_aislado()
+    test_nombre_de_tabla_no_valido()
     test_sqlite_no_hace_nada()
     print("\nTODOS LOS TESTS PASAN\n")

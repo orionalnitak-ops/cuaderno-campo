@@ -381,6 +381,11 @@ def _harden_user_id_postgres(conn):
     endurecidas, con_huerfanas = [], []
     for tabla in _TABLAS_USER_ID:
         try:
+            # Los identificadores SQL no admiten placeholders, así que el nombre
+            # de tabla va interpolado. Hoy la lista son literales de este módulo;
+            # esta validación es lo que seguiría protegiendo si un refactor la
+            # hiciera derivar de configuración o de la propia BD.
+            tabla = _safe_sql_identifier(tabla, '_harden_user_id_postgres')
             c = conn.cursor()
             # Si la tabla no existe todavía (BD nueva a medio init), no hay nada que migrar.
             c.execute("SELECT to_regclass(?)", (f'public.{tabla}',))
