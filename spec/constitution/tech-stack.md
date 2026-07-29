@@ -20,9 +20,11 @@
 
 ## Infraestructura
 
-- **Hosting de la app (Flask):** EasyPanel en VPS Contabo `75.119.149.104`
-- **Base de datos (Postgres):** Supabase (NO Contabo) — ojo: app y BD están en sitios distintos
-- **Deploy:** push a `main` → webhook GitHub → EasyPanel reconstruye Docker
+- **Hosting de la app (Flask):** VPS propio, la app corre en Docker detrás de un panel de despliegue
+- **Base de datos (Postgres):** servicio gestionado externo — ojo: app y BD están en sitios distintos
+- **Deploy:** push a `main` → webhook → se reconstruye la imagen Docker
+
+> Los datos concretos (IP, proveedores, URL del webhook) no van en el repo: es público. Ver la política en `CLAUDE.md`.
 - **Arranque local:** `python app.py` en `backend/` → `http://127.0.0.1:5000`
 
 ## Reglas de BD (no negociables)

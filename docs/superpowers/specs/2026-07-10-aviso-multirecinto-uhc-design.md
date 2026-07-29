@@ -171,5 +171,5 @@ rechazados no viajan).
 ## Convención de entrega
 
 Una pieza = un PR. Rama `feat/aviso-multirecinto-uhc` → PR → CI (lint + bandit) →
-security review → merge a `main` → deploy automático EasyPanel (restart completo
+security review → merge a `main` → deploy automático (restart completo
 si se toca `db.py`/`exports.py` — en principio no se tocan).

@@ -69,8 +69,8 @@ Formato: [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) · Versionado:
 
 ### Hosting y deploy
 
-- **EasyPanel / VPS Contabo** — Dockerfile en raíz, gunicorn con `--preload`, advisory lock en `init_db`
-- **Auto-deploy** — webhook GitHub → EasyPanel
+- **VPS propio con Docker** — Dockerfile en raíz, gunicorn con `--preload`, advisory lock en `init_db`
+- **Auto-deploy** — webhook desde GitHub al mergear en `main`
 - **Base de datos** — SQLite (local) / PostgreSQL en producción con patrón `get_db()` + `dicts()`/`one()`
 
 ---
