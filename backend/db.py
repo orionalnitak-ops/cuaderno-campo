@@ -349,6 +349,75 @@ def _enable_rls_postgres(conn):
         logger.error("[db] No se pudo activar RLS automáticamente: %s", e)
 
 
+# Tablas cuyo user_id nació como `INTEGER DEFAULT 2` y hay que endurecer.
+# El 2 era el id de la primera cuenta de la app mono-usuario: un INSERT que se
+# dejara el user_id no fallaba, escribía en esa cuenta. Con multi-explotación
+# eso es una fuga de datos entre agricultores esperando a que alguien olvide
+# la columna. Hoy ningún INSERT del código depende del DEFAULT.
+_TABLAS_USER_ID = (
+    'explotacion', 'parcelas', 'compras', 'equipos', 'aplicadores',
+    'tratamientos', 'fertilizacion', 'riego', 'abonado', 'labores',
+    'unidades_homogeneas', 'cosecha',
+)
+
+
+def _harden_user_id_postgres(conn):
+    """Quita el `DEFAULT 2` de user_id y lo pone NOT NULL en las tablas antiguas.
+
+    Los CREATE TABLE ya nacen con `NOT NULL`, pero llevan `IF NOT EXISTS`: en una
+    BD que ya existe no se aplican. Esta migración es la que arregla producción.
+
+    El DROP DEFAULT se hace siempre (es metadatos, no toca filas). El SET NOT NULL
+    solo si la tabla no tiene ya filas con user_id NULL: no se puede endurecer una
+    columna con datos que la violan, y borrar registros de un agricultor para que
+    cuadre el esquema no es una decisión que deba tomar una migración automática.
+    Esas filas se registran por nombre de tabla y recuento para revisarlas a mano.
+
+    Idempotente. Cada tabla va en su propia transacción para que un fallo aislado
+    no arrastre a las demás — en PG un error aborta la transacción entera.
+    """
+    if not USE_PG:
+        return
+    endurecidas, con_huerfanas = [], []
+    for tabla in _TABLAS_USER_ID:
+        try:
+            # Los identificadores SQL no admiten placeholders, así que el nombre
+            # de tabla va interpolado. Hoy la lista son literales de este módulo;
+            # esta validación es lo que seguiría protegiendo si un refactor la
+            # hiciera derivar de configuración o de la propia BD.
+            tabla = _safe_sql_identifier(tabla, '_harden_user_id_postgres')
+            c = conn.cursor()
+            # Si la tabla no existe todavía (BD nueva a medio init), no hay nada que migrar.
+            c.execute("SELECT to_regclass(?)", (f'public.{tabla}',))
+            if not c.fetchone()[0]:
+                conn.commit()
+                continue
+
+            c.execute(f"ALTER TABLE public.{tabla} ALTER COLUMN user_id DROP DEFAULT")
+
+            c.execute(f"SELECT COUNT(*) FROM public.{tabla} WHERE user_id IS NULL")
+            huerfanas = c.fetchone()[0]
+            if huerfanas:
+                con_huerfanas.append(f"{tabla} ({huerfanas})")
+            else:
+                c.execute(f"ALTER TABLE public.{tabla} ALTER COLUMN user_id SET NOT NULL")
+                endurecidas.append(tabla)
+            conn.commit()
+        except Exception as e:
+            # No se aborta el arranque por esto: el aislamiento real lo da el
+            # `WHERE user_id=?` de cada query, esto es la red de seguridad.
+            conn.rollback()
+            logger.error("[db] user_id no endurecido en %s: %s", tabla, e)
+
+    if con_huerfanas:
+        logger.error(
+            "[db] user_id sigue admitiendo NULL en: %s. Son filas sin dueño: "
+            "asignarlas o borrarlas a mano y reiniciar para completar la migración.",
+            ', '.join(con_huerfanas))
+    logger.info("[db] user_id NOT NULL en %d/%d tablas comprobadas",
+                len(endurecidas), len(_TABLAS_USER_ID))
+
+
 def init_db():
     conn = get_db()
     c = conn.cursor()
@@ -360,7 +429,7 @@ def init_db():
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS explotacion (
             id {_PK},
-            user_id INTEGER DEFAULT 2,
+            user_id INTEGER NOT NULL,
             titular TEXT,
             nif TEXT,
             rega TEXT,
@@ -382,7 +451,7 @@ def init_db():
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS parcelas (
             id {_PK},
-            user_id INTEGER DEFAULT 2,
+            user_id INTEGER NOT NULL,
             comunidad TEXT DEFAULT '07-Castilla-La Mancha',
             provincia_cod TEXT,
             provincia_nombre TEXT,
@@ -486,7 +555,7 @@ def init_db():
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS compras (
             id {_PK},
-            user_id INTEGER DEFAULT 2,
+            user_id INTEGER NOT NULL,
             fecha TEXT,
             tipo_producto TEXT,
             producto TEXT,
@@ -517,7 +586,7 @@ def init_db():
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS equipos (
             id {_PK},
-            user_id INTEGER DEFAULT 2,
+            user_id INTEGER NOT NULL,
             descripcion TEXT,
             tipo TEXT,
             marca TEXT,
@@ -537,7 +606,7 @@ def init_db():
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS aplicadores (
             id {_PK},
-            user_id INTEGER DEFAULT 2,
+            user_id INTEGER NOT NULL,
             nombre TEXT NOT NULL,
             nif TEXT,
             num_ropo TEXT,
@@ -570,7 +639,7 @@ def init_db():
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS tratamientos (
             id {_PK},
-            user_id INTEGER DEFAULT 2,
+            user_id INTEGER NOT NULL,
             parcela_id INTEGER,
             parcela_etiqueta TEXT,
             fecha_aplicacion TEXT,
@@ -616,7 +685,7 @@ def init_db():
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS fertilizacion (
             id {_PK},
-            user_id INTEGER DEFAULT 2,
+            user_id INTEGER NOT NULL,
             parcela_id INTEGER,
             parcela_etiqueta TEXT,
             fecha_aplicacion TEXT,
@@ -647,7 +716,7 @@ def init_db():
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS riego (
             id {_PK},
-            user_id INTEGER DEFAULT 2,
+            user_id INTEGER NOT NULL,
             parcela_id INTEGER,
             parcela_etiqueta TEXT,
             fecha TEXT,
@@ -667,7 +736,7 @@ def init_db():
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS abonado (
             id {_PK},
-            user_id INTEGER DEFAULT 2,
+            user_id INTEGER NOT NULL,
             parcela_id INTEGER,
             parcela_etiqueta TEXT,
             cultivo TEXT,
@@ -692,7 +761,7 @@ def init_db():
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS labores (
             id {_PK},
-            user_id INTEGER DEFAULT 2,
+            user_id INTEGER NOT NULL,
             parcela_id INTEGER,
             parcela_etiqueta TEXT,
             fecha TEXT,
@@ -713,7 +782,7 @@ def init_db():
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS unidades_homogeneas (
             id {_PK},
-            user_id INTEGER DEFAULT 2,
+            user_id INTEGER NOT NULL,
             nombre TEXT NOT NULL,
             cultivo TEXT,
             campana TEXT DEFAULT '2025/2026',
@@ -747,7 +816,7 @@ def init_db():
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS cosecha (
             id {_PK},
-            user_id INTEGER DEFAULT 2,
+            user_id INTEGER NOT NULL,
             parcela_id INTEGER,
             parcela_etiqueta TEXT,
             fecha_inicio TEXT,
@@ -823,6 +892,7 @@ def init_db():
     _seed_if_needed(conn)
     _backfill_explotaciones(conn)
     # Al final: ya existen todas las tablas, incluidas las que crea _seed_if_needed.
+    _harden_user_id_postgres(conn)
     _enable_rls_postgres(conn)
     if USE_PG:
         c.execute("SELECT pg_advisory_unlock(7311201201)")
