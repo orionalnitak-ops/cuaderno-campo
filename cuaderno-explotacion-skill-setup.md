@@ -280,7 +280,7 @@ Interfaz super simple (no como las 48 apps existentes que son complicadas).
 
 ## Modelo de negocio
 - Plan GRATIS: módulos 1-3
-- Plan PREMIUM: todos los módulos + integración oficial (SIEX)
+- Plan PREMIUM: todos los módulos (compatibles con SIEX)
 
 ## Roadmap
 Hito 1 (MVP): Módulos 1, 2, 3 + exportación
@@ -484,11 +484,12 @@ DELETE /api/parcelas/{id} - eliminar
 4. Exporta a PDF/Excel
 5. PDF listo para inspección agraria
 
-## Integración SIEX (fase 2)
+## Compatibilidad SIEX
 SIEX = Sistema oficial del Ministerio.
-Tu app se conecta vía API.
-Los datos fluyen automáticamente.
-(Esto es fase 2, ahora no es necesario)
+Tu cuaderno guarda y exporta los datos
+con la estructura y los catálogos que SIEX usa.
+El envío por API queda fuera de alcance: exige
+ser entidad habilitada, y no se promete.
 ```
 
 **4. references/normativa.md**
@@ -567,13 +568,13 @@ Tareas:
 - [ ] Autenticación mejorada
 - [ ] Facturas automáticas
 
-## Hito 4: Integración SIEX (Semanas 17+)
-Objetivo: Conectar con sistema oficial del Ministerio
-Incluye: API SIEX, certificación oficial
+## Hito 4: Compatibilidad SIEX (Semanas 17+)
+Objetivo: que los datos y las exportaciones encajen con SIEX
+Incluye: catálogos oficiales y estructura del Anexo VI
 
 Tareas:
-- [ ] Implementar API SIEX (Anexo VI)
-- [ ] Testing con Ministerio
+- [ ] Alinear estructura de datos y catálogos con el Anexo VI
+- [ ] Validar las exportaciones contra los catálogos oficiales
 - [ ] Certificación como CUE comercial
 - [ ] Marketing
 ```

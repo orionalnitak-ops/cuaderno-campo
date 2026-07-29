@@ -39,7 +39,7 @@ cuaderno_campo/
 4. Autocompletado SIGPAC — API pública visor SIGPAC Castilla-La Mancha
 5. Despliegue en servidor (Render.com o Railway)
 6. PWA — instalable en móvil sin tienda
-7. Integración SIEX API (Anexo VI FEGA) — antes de enero 2027
+7. Compatibilidad SIEX (estructura de datos y catálogos del Anexo VI FEGA) — antes de enero 2027
 
 ## Normativa clave
 - RD 1311/2012 Anexo III — campos mínimos obligatorios
