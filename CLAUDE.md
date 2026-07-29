@@ -159,6 +159,12 @@ Defensa en dos capas:
 
 `init_db()` activa el RLS solo (`_enable_rls_postgres` en `db.py`), recorriendo `pg_class` en lugar de una lista fija, para que una tabla nueva no nazca desprotegida. No hace falta acordarse al añadir tablas — pero si alguna vez se crea una tabla fuera de `init_db()`, comprobar el Security Advisor del proveedor.
 
+### `user_id` siempre `NOT NULL`
+
+Toda tabla con datos de agricultor declara `user_id INTEGER NOT NULL`. Nunca ponerle un `DEFAULT`: un `INSERT` al que se le olvide la columna tiene que **fallar**, no escribir callando en la cuenta de otro. Las 12 tablas antiguas nacieron con `DEFAULT 2` (el id de la cuenta única de la app pre-multiusuario) y las migra `_harden_user_id_postgres()` en `db.py`.
+
+Esa migración no fuerza `NOT NULL` sobre una tabla que ya tenga filas con `user_id NULL`: las registra por nombre y recuento con `logger.error` para revisarlas a mano. Decidir qué se hace con los registros de un agricultor no es cosa de una migración automática.
+
 ---
 
 ## Especificaciones (SDD)
