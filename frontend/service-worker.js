@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cuaderno-cache-v47';
+const CACHE_NAME = 'cuaderno-cache-v48';
 
 const APP_SHELL = [
   '/',
@@ -17,6 +17,12 @@ const APP_SHELL = [
   '/dist/screens_admin.js',
   '/dist/screens_planes.js',
   '/dist/screens_onboarding.js',
+  // screens_ayuda y screens_uhc los carga index.html desde hace tiempo pero
+  // nunca llegaron a esta lista: online funcionaban por la regla de assets,
+  // offline no estaban garantizados en la primera visita.
+  '/dist/screens_ayuda.js',
+  '/dist/screens_uhc.js',
+  '/dist/screens_cumplimiento.js',
   '/dist/app.js',
   'https://unpkg.com/react@18.3.1/umd/react.production.min.js',
   'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js',
@@ -25,8 +31,16 @@ const APP_SHELL = [
 ];
 
 self.addEventListener('install', event => {
+  // Recurso a recurso en vez de cache.addAll(): con addAll, un solo 404 aborta
+  // la instalación ENTERA y el usuario se queda sin PWA offline. Así, un
+  // recurso que falte se queda sin cachear (se servirá de red) pero el resto
+  // del shell sí se instala.
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL))
+    caches.open(CACHE_NAME).then(cache => Promise.allSettled(
+      APP_SHELL.map(url => cache.add(url).catch(err => {
+        console.warn('[sw] no se pudo cachear', url, err);
+      }))
+    ))
   );
   self.skipWaiting();
 });

@@ -150,6 +150,7 @@ function App() {
 
     // ── App state ──
     const [screen, setScreen]           = useState('inicio');
+    const [screenArg, setScreenArg]     = useState(null);   // sección destino opcional
     const [homeKey, setHomeKey]         = useState(0);
     const [historialKey, setHistorialKey] = useState(0);
     const [lopdOk, setLopdOk]           = useState(false);
@@ -367,9 +368,13 @@ function App() {
         if (msg) { showMsg(msg); setHistorialKey(k => k + 1); }
     };
 
-    const navigate = (id) => {
+    // `arg` es opcional: lo usa la "Revisión del cuaderno" para aterrizar en la
+    // sección exacta de Ajustes donde se corrige el problema, en vez de en la
+    // portada, que obligaría al agricultor a buscarla.
+    const navigate = (id, arg) => {
         if (id === '_fab') { setShowModules(s => !s); return; }
         if (id === 'inicio') setHomeKey(k => k + 1);
+        setScreenArg(arg || null);
         setScreen(id);
         setShowModules(false);
     };
@@ -443,10 +448,11 @@ function App() {
             case 'inicio':    return <ScreenHome key={homeKey} campana={campana} onOpenForm={openForm} showToast={showMsg} onNavigate={navigate} />;
             case 'parcelas':  return <ScreenParcelas campana={campana} showToast={showMsg} onNavigate={navigate} />;
             case 'historial': return <ScreenHistorial key={historialKey} campana={campana} onEdit={openForm} showToast={showMsg} />;
-            case 'mas':       return <ScreenSettings  campana={campana} onCampana={setCampana} showToast={showMsg} currentUser={currentUser} onLogout={handleLogout} onNavigate={navigate} />;
+            case 'mas':       return <ScreenSettings  key={screenArg || 'mas'} campana={campana} onCampana={setCampana} showToast={showMsg} currentUser={currentUser} onLogout={handleLogout} onNavigate={navigate} initialSection={screenArg} />;
             case 'admin':     return isAdmin ? <ScreenAdmin currentUser={currentUser} onSwitchUser={handleSwitchUser} showToast={showMsg} /> : <ScreenHome campana={campana} onOpenForm={openForm} showToast={showMsg} />;
             case 'planes':    return <ScreenPlanes currentUser={currentUser} showToast={showMsg} onClose={() => navigate('inicio')} />;
             case 'uhc':       return <ScreenUHC campana={campana} showToast={showMsg} />;
+            case 'cumplimiento': return <ScreenCumplimiento campana={campana} onNavigate={navigate} onOpenForm={openForm} />;
             default:          return <ScreenHome     campana={campana} onOpenForm={openForm} showToast={showMsg} />;
         }
     };
@@ -457,6 +463,7 @@ function App() {
         { id: 'parcelas',  icon: '🗺️', label: 'Mis parcelas' },
         { id: 'uhc',       icon: '🌱', label: 'Grupos UHC' },
         { id: 'historial', icon: '📋', label: 'Historial' },
+        { id: 'cumplimiento', icon: '🚦', label: 'Revisión del cuaderno' },
         { id: 'mas',       icon: '⚙️', label: 'Ajustes' },
         ...(isAdmin ? [{ id: 'admin', icon: '👥', label: 'Panel Admin' }] : [{ id: 'planes', icon: '💳', label: 'Suscripción' }]),
     ];

@@ -7,6 +7,13 @@ from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, dicts, one, USE_PG
 from helpers import get_uid
+# Umbrales compartidos con la "Revisión del cuaderno". Si divergen, esa pantalla
+# y estos recordatorios se contradicen delante del agricultor.
+# Nota: las dos evalúan las mismas reglas por caminos distintos (aquí una fila
+# por parcela en ia_alertas, allí agregados con GROUP BY). Unificar el día que
+# _generar_alertas deje de correr dentro del login, que hoy es su único
+# invocador y además está silenciado con `except: pass`.
+from blueprints.cumplimiento import DIAS_SIN_REGISTRO, DIAS_PLAZO_SEGURIDAD
 
 bp = Blueprint('ia', __name__)
 logger = logging.getLogger(__name__)
@@ -210,7 +217,7 @@ def _generar_alertas(user_id):
                 try:
                     dt   = datetime.date.fromisoformat(str(ultimo['ultima'])[:10])
                     dias = (hoy - dt).days
-                    if dias > 30:
+                    if dias > DIAS_SIN_REGISTRO:
                         conn.execute(
                             "DELETE FROM ia_alertas WHERE user_id=? AND tipo=? AND parcela_id=?",
                             (user_id, 'sin_registro_reciente', pid))
@@ -232,7 +239,7 @@ def _generar_alertas(user_id):
                 try:
                     fm   = datetime.date.fromisoformat(str(t['fecha_recoleccion_minima'])[:10])
                     diff = (fm - hoy).days
-                    if 0 <= diff <= 7:
+                    if 0 <= diff <= DIAS_PLAZO_SEGURIDAD:
                         conn.execute("""
                             DELETE FROM ia_alertas
                             WHERE user_id=? AND tipo=? AND parcela_id=? AND modulo=?

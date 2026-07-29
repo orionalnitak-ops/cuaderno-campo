@@ -9,6 +9,13 @@ Formato: [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) · Versionado:
 
 ### Añadido
 
+- **Revisión del cuaderno** — pantalla nueva que repasa sola lo que ya tienes anotado y te dice si estás en regla: un porcentaje, un color y la lista concreta de lo que falta, con un botón que lleva al sitio exacto donde se corrige. No pide ningún dato nuevo: todo se deriva de lo ya registrado. Comprueba la inspección ITEAF y el nº ROMA de los equipos, el nº ROPO de aplicadores y asesores, el cultivo declarado por parcela, y cruza los productos aplicados contra las compras registradas para detectar los que no tienen respaldo documental. Cada punto cita la norma que lo exige. Los plazos de seguridad y las parcelas sin movimiento aparecen aparte, como avisos que no puntúan. Accesible desde una tarjeta en Inicio y desde el menú.
+
+### Corregido
+
+- El service worker no precargaba `screens_ayuda.js` ni `screens_uhc.js` pese a que la app sí los usa: sin conexión podían no estar disponibles en la primera visita.
+- La instalación del service worker se hacía con `cache.addAll`, de forma que un solo recurso inaccesible dejaba a la PWA entera sin caché offline. Ahora cada recurso se cachea por separado.
+
 - **Ficha de asesor fitosanitario** — el asesor deja de ser texto libre y pasa a ser una ficha reutilizable (nombre, NIF, nº ROPO de asesor, titulación, empresa, contacto), igual que los aplicadores. Se elige de un desplegable en cada tratamiento y sale en el PDF oficial y en el Excel con su nº ROPO. Petición de un agricultor piloto. A diferencia del aplicador, la falta de ROPO avisa pero no bloquea el guardado. Los tratamientos ya registrados con texto libre siguen mostrándose igual.
 
 ---
