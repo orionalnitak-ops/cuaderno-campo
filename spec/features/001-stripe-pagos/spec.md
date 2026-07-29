@@ -9,7 +9,7 @@
 | | Mensual | Anual |
 |---|:---:|:---:|
 | **Básico** | 9,99€/mes | 100€/año |
-| **Pro** *(activo cuando SIEX esté implementado)* | 14,99€/mes | 150€/año |
+| **Pro** *(multi-explotación)* | 14,99€/mes | 150€/año |
 
 ## Funcionalidades por plan
 
@@ -24,9 +24,12 @@
 | Exportación PDF oficial (RD 1311/2012) | ✅ | ✅ |
 | Widget meteorológico | ✅ | ✅ |
 | Importar desde Excel / Google Sheets | ✅ | ✅ |
-| **Integración SIEX** (obligatorio desde 2027) | ❌ | ✅ |
+| **Compatible con SIEX** | ✅ | ✅ |
+| Multi-explotación (hasta 5 titulares) | ❌ | ✅ |
 
-Hoy Básico y Pro son funcionalmente idénticos. La diferencia se activará sola cuando se implemente SIEX.
+La compatibilidad con SIEX está en **los dos planes**: es cómo se guardan y se exportan los datos, no un extra que se cobre. Lo que diferencia a Pro es la multi-explotación.
+
+> **Lenguaje:** "compatible con SIEX", nunca "integración/subida a SIEX" — ver la regla dura en `CLAUDE.md`. La vía de *entidad habilitada* (envío por API IUWS) exige registro como entidad, certificado de sello de componente y una autorización firmada por cada titular; además, aparentemente, que los estatutos recojan la representación de terceros ante la administración agraria. No se asume por ahora, así que no se promete.
 
 ---
 

@@ -80,7 +80,7 @@ Formato: [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) · Versionado:
 - `v0.9.1` — Stripe Live mode (precios en EUR, cobro real)
 - `v0.9.x` — Emails transaccionales (Resend): verificación + bienvenida diferenciada trial/pago
 - `v0.9.x` — Pantalla de ayuda visual completa (6 slides SVG, swipe)
-- `v1.0.0` — Integración SIEX / IUWS (obligatoria 01/01/2027)
+- `v1.0.0` — Compatibilidad SIEX completa (datos, catálogos y exportaciones alineados con SIEX, de cara a la obligatoriedad del cuaderno digital el 01/01/2027)
 
 ---
 
