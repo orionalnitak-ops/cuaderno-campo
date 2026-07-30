@@ -52,6 +52,17 @@ EQUIPOS_EXENTOS_KEYWORDS = ('mochila', 'manual', 'lanza', 'espalda', 'carretilla
 
 MAX_ITEMS = 20  # con 50+ parcelas el JSON no puede crecer linealmente
 
+# Fragmento SQL LITERAL, constante de módulo. Se interpola con f-string en tres
+# consultas, así que la regla es dura: NUNCA construir esta cadena a partir de
+# input ni de datos de la BD. La campaña viaja siempre como parámetro por los
+# dos `?`, jamás dentro del texto. Vive aquí arriba, y no como variable local,
+# precisamente para que se lea como constante y nadie la convierta en dinámica.
+#
+# Motivo de existir: `tratamientos.campana` se añadió con _add_col y hay
+# registros antiguos con NULL o vacío. Filtrar `campana = ?` a secas los sacaría
+# del universo e inflaría el porcentaje, que es fallar hacia el lado optimista.
+_CAMPANA_SQL = "COALESCE(NULLIF(TRIM(campana), ''), ?) = ?"
+
 DESCARGO = ("Orientativo. Repasa lo que te marcamos, pero no sustituye a la "
             "revisión oficial de un inspector.")
 
@@ -211,12 +222,8 @@ def evaluar_cumplimiento(conn, uid, hoy=None, campana=None):
         "SELECT id, nombre_finca FROM parcelas WHERE user_id=? AND activa=1", (uid,))
     nombre_parcela = {p['id']: (p.get('nombre_finca') or f"Parcela {p['id']}") for p in parcelas}
 
-    # `campana` puede venir NULL o vacía en registros antiguos (la columna se
-    # añadió con _add_col). Filtrar `campana = ?` a secas los sacaría del
-    # universo e INFLARÍA el porcentaje: el peor error posible aquí, porque
-    # falla hacia el lado optimista.
-    camp_sql = "COALESCE(NULLIF(TRIM(campana), ''), ?) = ?"
-    camp_par = (campana, campana)
+    camp_sql = _CAMPANA_SQL          # constante de módulo, ver arriba
+    camp_par = (campana, campana)    # la campaña va por parámetro, no en el texto
 
     bloques = []
 

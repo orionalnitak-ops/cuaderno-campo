@@ -141,6 +141,19 @@ def test_iteaf():
 
 # ── B · _norm (puro) ──────────────────────────────────────────────────────────
 
+def test_fragmento_sql_es_literal():
+    # _CAMPANA_SQL se interpola con f-string en tres consultas. No es inyectable
+    # porque es una constante literal, pero eso hay que MANTENERLO cierto: este
+    # test falla si alguien la convierte en algo dinámico o le mete un valor.
+    print("B0 · el fragmento SQL sigue siendo literal:")
+    from blueprints.cumplimiento import _CAMPANA_SQL as F
+    check("es una cadena constante", isinstance(F, str))
+    check("la campaña viaja por dos placeholders '?'", F.count('?') == 2)
+    check("sin huecos de format/f-string", '{' not in F and '}' not in F and '%' not in F)
+    check("sin comillas que puedan cerrar un literal",
+          F.count("'") == 2 and '"' not in F)  # solo las de la cadena vacía ''
+
+
 def test_norm():
     print("B · _norm:")
     check("mismo registro con formatos distintos", _norm('ES-25.123 ') == _norm('es25123'))
@@ -447,6 +460,7 @@ def test_sin_n_mas_1():
 def run():
     print("test_cumplimiento:")
     test_iteaf()
+    test_fragmento_sql_es_literal()
     test_norm()
     test_trazabilidad()
     test_sin_compras()
