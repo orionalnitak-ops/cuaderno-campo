@@ -19,7 +19,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from blueprints.cumplimiento import (  # noqa: E402
-    _color, _estado_iteaf, _norm, evaluar_cumplimiento,
+    _color, _es_exento, _estado_iteaf, _norm, evaluar_cumplimiento,
 )
 
 UID = 1
@@ -223,13 +223,18 @@ def test_sin_compras():
 # ── D · puntuación y color ────────────────────────────────────────────────────
 
 def test_color():
+    # El color mide GRAVEDAD, el porcentaje mide CUÁNTO falta. Atar el rojo al
+    # porcentaje daba un semáforo que se contradecía: rojo junto a
+    # "importantes: 0".
     print("D · color:")
     check("100 sin críticos -> verde", _color(100, 0) == 'verde')
-    check("95 CON un crítico -> naranja (nunca verde)", _color(95, 1) == 'naranja')
     check("90 sin críticos -> verde", _color(90, 0) == 'verde')
     check("89 sin críticos -> naranja", _color(89, 0) == 'naranja')
-    check("60 -> naranja", _color(60, 0) == 'naranja')
-    check("59 -> rojo", _color(59, 0) == 'rojo')
+    check("25 sin críticos -> naranja, NO rojo", _color(25, 0) == 'naranja')
+    check("0 sin críticos -> naranja: falta mucho, pero nada grave",
+          _color(0, 0) == 'naranja')
+    check("un crítico -> rojo aunque el número sea alto", _color(95, 1) == 'rojo')
+    check("un crítico -> nunca verde", _color(100, 1) != 'verde')
 
 
 def test_puntuacion():
@@ -281,6 +286,46 @@ def test_puntuacion():
     res = evaluar_cumplimiento(conn, UID, hoy=HOY)
     check("mochila exenta -> iteaf no aplica", bloque(res, 'iteaf')['estado'] == 'no_aplica')
     check("mochila exenta -> roma no aplica", bloque(res, 'roma')['estado'] == 'no_aplica')
+    check("'Empresa externa / Contratado' también exento",
+          _es_exento({'tipo': 'Externo', 'descripcion': 'Empresa externa / Contratado'}))
+    conn.close()
+
+
+def test_equipo_plantilla():
+    # Las filas que siembra _seed_if_needed ("Pulverizador terrestre (completar
+    # marca y modelo)") se llevaban 7 de 16 puntos y teñían de rojo un cuaderno
+    # sin ningún incumplimiento real.
+    print("D2b · equipo de plantilla sin tocar:")
+    conn = _db()
+    conn.execute("INSERT INTO equipos (id, user_id, descripcion, tipo, num_registro_roma,"
+                 " fecha_iteaf) VALUES (?,?,?,?,?,?)",
+                 (1, UID, 'Pulverizador terrestre (completar marca y modelo)',
+                  'Pulverizador terrestre', None, None))
+    conn.commit()
+    res = evaluar_cumplimiento(conn, UID, hoy=HOY)
+    check("plantilla sin usar -> fuera del universo de ITEAF",
+          bloque(res, 'iteaf')['estado'] == 'no_aplica')
+    check("plantilla sin usar -> fuera del universo de ROMA",
+          bloque(res, 'roma')['estado'] == 'no_aplica')
+    check("plantilla sin usar -> no lastra el porcentaje",
+          res['puntuacion']['totales'] == 0)
+
+    # basta anotar UN dato para que vuelva a contar
+    conn.execute("UPDATE equipos SET fecha_iteaf='2020-01-01' WHERE id=1")
+    conn.commit()
+    res = evaluar_cumplimiento(conn, UID, hoy=HOY)
+    check("en cuanto anota la fecha ITEAF, vuelve a contar",
+          bloque(res, 'iteaf')['estado'] == 'aviso' and bloque(res, 'iteaf')['universo'] == 1)
+
+    # o basta con haberlo usado, aunque fuera en otra campaña
+    conn.execute("UPDATE equipos SET fecha_iteaf=NULL WHERE id=1")
+    _trat(conn, equipo_id=1, producto_comercial='X', campana='2024/2025')
+    conn.commit()
+    res = evaluar_cumplimiento(conn, UID, hoy=HOY)
+    check("usado en una campaña anterior -> sigue contando",
+          bloque(res, 'roma')['universo'] == 1)
+    check("pero si no lo ha usado ESTA campaña, solo avisa",
+          bloque(res, 'roma')['estado'] == 'aviso')
     conn.close()
 
 
@@ -407,6 +452,7 @@ def run():
     test_sin_compras()
     test_color()
     test_puntuacion()
+    test_equipo_plantilla()
     test_informativos()
     test_ropo()
     test_aislamiento()

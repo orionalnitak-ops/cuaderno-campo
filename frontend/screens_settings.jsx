@@ -462,6 +462,11 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
                 ))}
             </div>
 
+            {/* ── Revisión del cuaderno ── */}
+            <div style={{ padding: '16px 16px 0' }}>
+                <CumplTarjeta onNavigate={onNavigate} />
+            </div>
+
             {/* ── Botones soporte + ayuda permanentes ── */}
             <div style={{ padding: '12px 16px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <button

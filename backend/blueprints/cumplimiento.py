@@ -135,11 +135,19 @@ def _es_exento(equipo):
 
 
 def _color(pct, criticos):
-    """Nunca luz verde habiendo un fallo crítico, por alto que salga el número."""
-    if criticos == 0 and pct >= 90:
-        return 'verde'
-    if pct < 60:
+    """El color mide GRAVEDAD; el porcentaje mide CUÁNTO falta. Dos ejes
+    distintos a propósito.
+
+    Rojo significa "tienes algo que te puede costar una sanción", no "te faltan
+    muchas cosas". Atarlo al porcentaje daba un semáforo incoherente: un
+    cuaderno a medio rellenar salía en rojo mientras la propia pantalla decía
+    "importantes: 0". Ahora el número ya dice cuánto queda; el color dice si es
+    grave.
+    """
+    if criticos:
         return 'rojo'
+    if pct >= 90:
+        return 'verde'
     return 'naranja'
 
 
@@ -214,22 +222,45 @@ def evaluar_cumplimiento(conn, uid, hoy=None, campana=None):
 
     # ── ITEAF y ROMA (una sola consulta para los dos bloques) ──
     # 3. uso agregado: qué equipos y qué personas firman tratamientos esta campaña
+    # Una sola consulta da los dos horizontes: "usado esta campaña" (marca la
+    # severidad) y "usado alguna vez" (distingue un equipo real de una fila de
+    # plantilla que nadie tocó).
     uso = dicts(conn, f"""
-        SELECT equipo_id, aplicador_id, asesor_id, COUNT(*) AS veces
+        SELECT equipo_id, aplicador_id, asesor_id,
+               COUNT(*) AS veces,
+               SUM(CASE WHEN {camp_sql} THEN 1 ELSE 0 END) AS veces_campana
         FROM tratamientos
-        WHERE user_id=? AND deleted_at IS NULL AND {camp_sql}
+        WHERE user_id=? AND deleted_at IS NULL
         GROUP BY equipo_id, aplicador_id, asesor_id
-    """, (uid,) + camp_par)
-    equipos_usados    = {u['equipo_id']    for u in uso if u.get('equipo_id')}
-    aplicadores_usados = {u['aplicador_id'] for u in uso if u.get('aplicador_id')}
-    asesores_usados   = {u['asesor_id']    for u in uso if u.get('asesor_id')}
+    """, camp_par + (uid,))
+    equipos_usados     = {u['equipo_id']    for u in uso if u.get('equipo_id') and u['veces_campana']}
+    aplicadores_usados = {u['aplicador_id'] for u in uso if u.get('aplicador_id') and u['veces_campana']}
+    asesores_usados    = {u['asesor_id']    for u in uso if u.get('asesor_id') and u['veces_campana']}
+    equipos_usados_alguna_vez = {u['equipo_id'] for u in uso if u.get('equipo_id')}
 
     # 4. equipos
     equipos = dicts(conn, """
         SELECT id, descripcion, tipo, marca, modelo, num_registro_roma, fecha_iteaf
         FROM equipos WHERE user_id=?
     """, (uid,))
-    equipos = [e for e in equipos if not _es_exento(e)]
+    def _es_plantilla(e):
+        """Fila de equipo que nadie ha rellenado ni usado jamás.
+
+        `_seed_if_needed` en db.py crea tres al dar de alta la cuenta, del tipo
+        "Pulverizador terrestre (completar marca y modelo)". Suspender al
+        agricultor por una fila que le puso la app sola y que nunca ha tocado es
+        un falso positivo caro: se lleva 7 de los 16 puntos y tiñe de rojo un
+        cuaderno sin ningún incumplimiento.
+
+        Se autocorrige: en cuanto anota el ROMA, la fecha ITEAF o usa el equipo
+        en un tratamiento, deja de ser plantilla y vuelve a contar. Y usarlo sin
+        ROMA ya lo bloquea el POST de tratamientos, que es donde importa.
+        """
+        return (e['id'] not in equipos_usados_alguna_vez
+                and not (e.get('num_registro_roma') or '').strip()
+                and not str(e.get('fecha_iteaf') or '').strip())
+
+    equipos = [e for e in equipos if not _es_exento(e) and not _es_plantilla(e)]
 
     def _etiqueta_equipo(e):
         return (e.get('descripcion') or ' '.join(
@@ -496,8 +527,11 @@ def evaluar_cumplimiento(conn, uid, hoy=None, campana=None):
     if pendientes == 0:
         titulo, subtitulo = "Todo en orden", "No hemos encontrado nada pendiente"
     else:
-        titulo = {'verde': "Casi todo en orden", 'naranja': "Casi listo",
-                  'rojo': "Te falta bastante"}[color]
+        # Los títulos siguen al color, que ahora habla de gravedad y no de
+        # cantidad: el rojo nombra lo importante, no "lo mucho que falta".
+        titulo = {'verde':   "Casi todo en orden",
+                  'naranja': "Te faltan cosas por completar",
+                  'rojo':    "Tienes algo importante pendiente"}[color]
         subtitulo = f"{pendientes} {_plural(pendientes, 'cosa pendiente', 'cosas pendientes')}"
         if criticos:
             subtitulo += (f", {criticos} "

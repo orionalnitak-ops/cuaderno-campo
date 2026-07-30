@@ -118,6 +118,49 @@ function CumplBloque({ bloque, abierto, onToggle, onArreglar }) {
     );
 }
 
+// Tarjeta de entrada a la pantalla. Vive en Ajustes. Título fijo: el veredicto
+// ("Te falta bastante") queda para la pantalla de detalle, donde va acompañado
+// del anillo y del descargo que lo ponen en contexto.
+function CumplTarjeta({ onNavigate }) {
+    const [d, setD] = React.useState(null);
+
+    React.useEffect(() => {
+        fetch('/api/cumplimiento', { credentials: 'include' })
+            .then(r => r.ok ? r.json() : { ok: false })
+            .then(x => { if (x.ok) setD(x.data); })
+            .catch(() => {});   // si falla no se pinta nada: no puede romper Ajustes
+    }, []);
+
+    if (!d || !onNavigate) return null;
+    const c = CUMPL_COLORES[d.color] || CUMPL_COLORES.naranja;
+
+    return (
+        <div
+            onClick={() => onNavigate('cumplimiento')}
+            style={{
+                background: 'var(--surface-container-lowest)',
+                borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-card)',
+                borderLeft: `4px solid ${c.fg}`, padding: '14px 16px',
+                display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer',
+            }}>
+            <div style={{
+                fontFamily: 'var(--font-heading)', fontWeight: 800,
+                fontSize: '1.6rem', lineHeight: 1, flexShrink: 0, color: c.fg,
+            }}>{d.porcentaje}%</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                    fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '0.92rem',
+                }}>Revisar cuaderno</div>
+                <div style={{
+                    fontSize: '0.78rem', color: 'var(--on-surface-variant)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>{d.subtitulo}</div>
+            </div>
+            <span style={{ color: 'var(--outline)', fontSize: 20, flexShrink: 0 }}>›</span>
+        </div>
+    );
+}
+
 function ScreenCumplimiento({ campana, onNavigate, onOpenForm }) {
     const [data, setData] = React.useState(null);
     const [loading, setLoading] = React.useState(true);

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cuaderno-cache-v48';
+const CACHE_NAME = 'cuaderno-cache-v49';
 
 const APP_SHELL = [
   '/',

@@ -383,7 +383,7 @@ const HELP_SCREENS = {
             {
                 icon: '🔢',
                 title: 'El porcentaje y el color',
-                desc: 'Verde es que está todo en orden, naranja que te faltan cosas y rojo que te falta bastante. Si hay algo importante pendiente nunca sale verde, por alto que sea el número.',
+                desc: 'Son dos cosas distintas. El porcentaje dice CUÁNTO te falta. El color dice si es GRAVE: rojo es que tienes algo que te puede costar una sanción, naranja que te faltan cosas por completar pero nada urgente, y verde que está todo en orden. Un cuaderno a medio rellenar sale naranja, no rojo.',
             },
             {
                 icon: '⚖️',
@@ -393,7 +393,7 @@ const HELP_SCREENS = {
             {
                 icon: '➖',
                 title: 'Lo que "no aplica"',
-                desc: 'Si no tienes equipos, la inspección ITEAF no te afecta y esa comprobación sale del cálculo: no te baja el porcentaje. Lo mismo si aún no usas el módulo de compras.',
+                desc: 'Si no tienes equipos, la inspección ITEAF no te afecta y esa comprobación sale del cálculo: no te baja el porcentaje. Lo mismo si aún no usas el módulo de compras, o si un equipo es de los que vienen de ejemplo y nunca has llegado a rellenar: no te lo contamos hasta que anotes algo suyo o lo uses en un tratamiento.',
             },
             {
                 icon: '🔧',

@@ -71,15 +71,19 @@ Se muestran en una sección aparte, «Avisos operativos (no cuentan en el porcen
 
 Así el porcentaje significa exactamente una cosa: **documentación exigible**.
 
-### 3. Nunca luz verde con un fallo crítico
+### 3. El color mide gravedad; el porcentaje mide cuánto falta
 
 ```
-verde   si criticos == 0 y pct >= 90
-rojo    si pct < 60
+rojo    si hay al menos un hallazgo crítico
+verde   si no hay críticos y pct >= 90
 naranja en el resto
 ```
 
-La cláusula `criticos == 0` es la que impide que el semáforo mienta en el peor caso posible: una ITEAF caducada no puede quedar tapada por un porcentaje alto.
+Son **dos ejes distintos, a propósito**. Rojo significa *«tienes algo que te puede costar una sanción»*, no *«te faltan muchas cosas»*.
+
+Atar el rojo al porcentaje producía un semáforo que se contradecía a sí mismo: al probarlo con datos reales salía **25 % en rojo mientras la propia pantalla decía «importantes: 0»**. Un cuaderno a medio rellenar sin ningún incumplimiento grave es naranja; el número ya dice cuánto queda.
+
+En la otra dirección la garantía se mantiene y se refuerza: una ITEAF caducada pone el semáforo en rojo por sí sola, por alto que sea el porcentaje.
 
 ### 4. El cruce compras↔tratamientos se apaga si no hay compras
 
@@ -124,6 +128,14 @@ Se usa `COALESCE(NULLIF(TRIM(campana), ''), ?) = ?`, ANSI y válido en ambos mot
 `equipos` no tiene `activo` ni `deleted_at`: el borrado es duro y borrarlo rompería las referencias `tratamientos.equipo_id`. Un tractor vendido en 2021 con la ITEAF caducada quedaría en rojo para siempre y el agricultor **no podría arreglarlo**.
 
 Regla: severidad `critico` solo si el equipo aparece en ≥1 tratamiento de la campaña. Si no, se degrada a `aviso` con el detalle *«No lo has usado esta campaña. Si ya no lo tienes, bórralo en Ajustes → Equipos.»* Misma regla para las personas sin ROPO.
+
+### 9b. Un equipo de plantilla que nadie tocó no cuenta
+
+`_seed_if_needed()` en `db.py` crea tres equipos al dar de alta la cuenta, del tipo *«Pulverizador terrestre (completar marca y modelo)»*. Al probar con datos reales, **una sola de esas filas se llevaba 7 de los 16 puntos** (falla ITEAF y ROMA a la vez) y era la causa principal de que el semáforo saliera rojo en un cuaderno sin ningún incumplimiento.
+
+Regla: un equipo **sin ROMA, sin fecha ITEAF y que no aparece en ningún tratamiento jamás** es indistinguible de una plantilla sin rellenar y queda fuera del universo.
+
+Se autocorrige: basta con anotar el ROMA, la fecha ITEAF **o** usarlo una vez —aunque sea de una campaña anterior— para que vuelva a contar. Y el riesgo de silenciar un equipo real está cubierto donde importa: el POST de tratamientos ya bloquea usar un equipo sin ROMA.
 
 ### 10. La pantalla lleva un descargo de responsabilidad
 

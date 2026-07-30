@@ -64,9 +64,6 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     // ── Alertas IA ──
     const [iaAlertas, setIaAlertas] = useState([]);
 
-    // ── Revisión del cuaderno (semáforo) ──
-    const [cumpl, setCumpl] = useState(null);
-
     // ── Push notifications ──
     const [pushActivo,   setPushActivo]   = useState(false);
     const [pushCargando, setPushCargando] = useState(false);
@@ -245,14 +242,6 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
         fetch('/api/ia/alertas', { credentials: 'include' })
             .then(r => r.ok ? r.json() : { ok: false })
             .then(d => { if (d.ok) setIaAlertas(d.data || []); })
-            .catch(() => {});
-    }, []);
-
-    // Si falla, no se pinta nada: Inicio no puede romperse por esta tarjeta.
-    useEffect(() => {
-        fetch('/api/cumplimiento', { credentials: 'include' })
-            .then(r => r.ok ? r.json() : { ok: false })
-            .then(d => { if (d.ok) setCumpl(d.data); })
             .catch(() => {});
     }, []);
 
@@ -1130,43 +1119,6 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                 )}
               </div>{/* /wrapper centrado */}
             </div>
-
-            {/* ══ REVISIÓN DEL CUADERNO ══ */}
-                {cumpl && onNavigate && (
-                    <div style={{ padding: '0 16px 12px' }}>
-                        <div
-                            onClick={() => onNavigate('cumplimiento')}
-                            style={{
-                                background: 'var(--surface-container-lowest)',
-                                borderRadius: 'var(--radius-xl)',
-                                boxShadow: 'var(--shadow-card)',
-                                borderLeft: `4px solid ${
-                                    cumpl.color === 'verde' ? '#00694c'
-                                    : cumpl.color === 'rojo' ? 'var(--tertiary)' : '#b45309'}`,
-                                padding: '14px 16px',
-                                display: 'flex', alignItems: 'center', gap: 14,
-                                cursor: 'pointer',
-                            }}>
-                            <div style={{
-                                fontFamily: 'var(--font-heading)', fontWeight: 800,
-                                fontSize: '1.6rem', lineHeight: 1, flexShrink: 0,
-                                color: cumpl.color === 'verde' ? '#00694c'
-                                     : cumpl.color === 'rojo' ? 'var(--tertiary)' : '#b45309',
-                            }}>{cumpl.porcentaje}%</div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{
-                                    fontFamily: 'var(--font-heading)', fontWeight: 700,
-                                    fontSize: '0.92rem',
-                                }}>{cumpl.titulo}</div>
-                                <div style={{
-                                    fontSize: '0.78rem', color: 'var(--on-surface-variant)',
-                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                }}>{cumpl.subtitulo}</div>
-                            </div>
-                            <span style={{ color: 'var(--outline)', fontSize: 20, flexShrink: 0 }}>›</span>
-                        </div>
-                    </div>
-                )}
 
             {/* ══ RECORDATORIOS IA ══ */}
                 {iaAlertas.length > 0 && (
