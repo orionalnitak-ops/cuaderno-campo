@@ -1036,6 +1036,10 @@ def _seed_if_needed(conn):
         ('idx_push_subs_user',       'push_subscriptions', 'user_id'),
         ('idx_ia_alertas_user',      'ia_alertas',         'user_id'),
         ('idx_asesores_user',        'asesores',           'user_id'),
+        # La "Revisión del cuaderno" consulta estas tres en cada carga.
+        ('idx_equipos_user',         'equipos',            'user_id'),
+        ('idx_aplicadores_user',     'aplicadores',        'user_id'),
+        ('idx_cultivos_campana',     'cultivos_campana',   'campana'),
     ]
     for idx_name, table, cols in _indexes:
         # Validar cada identificador contra la allowlist ANTES de interpolar.

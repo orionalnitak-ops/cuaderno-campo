@@ -376,6 +376,42 @@ const HELP_SCREENS = {
             },
         ],
     },
+    cumplimiento: {
+        title: '🚦 Revisión del cuaderno',
+        intro: 'Esta pantalla repasa sola lo que ya tienes anotado y te dice qué te falta para tener el cuaderno en regla. No hay nada que rellenar aquí: solo mira y te avisa.',
+        steps: [
+            {
+                icon: '🔢',
+                title: 'El porcentaje y el color',
+                desc: 'Son dos cosas distintas. El porcentaje dice CUÁNTO te falta. El color dice si es GRAVE: rojo es que tienes algo que te puede costar una sanción, naranja que te faltan cosas por completar pero nada urgente, y verde que está todo en orden. Un cuaderno a medio rellenar sale naranja, no rojo.',
+            },
+            {
+                icon: '⚖️',
+                title: 'Por qué unas cosas pesan más',
+                desc: 'Cada comprobación pesa según lo que te costaría en una inspección. La inspección del equipo y el respaldo de compra de los productos pesan más que tener el cultivo declarado. Al desplegar cada punto te decimos la norma concreta.',
+            },
+            {
+                icon: '➖',
+                title: 'Lo que "no aplica"',
+                desc: 'Si no tienes equipos, la inspección ITEAF no te afecta y esa comprobación sale del cálculo: no te baja el porcentaje. Lo mismo si aún no usas el módulo de compras, o si un equipo es de los que vienen de ejemplo y nunca has llegado a rellenar: no te lo contamos hasta que anotes algo suyo o lo uses en un tratamiento.',
+            },
+            {
+                icon: '🔧',
+                title: 'Arreglarlo',
+                desc: 'Despliega cualquier punto y pulsa "Arreglar ahora": te lleva directo al sitio donde se corrige. Al volver, el repaso se recalcula solo.',
+            },
+            {
+                icon: '💡',
+                title: 'Avisos operativos',
+                desc: 'Al final aparecen los plazos de seguridad en curso y las parcelas sin movimiento. Son recordatorios útiles, no incumplimientos, así que no cuentan en el porcentaje.',
+            },
+            {
+                icon: '⚠️',
+                title: 'Es orientativo',
+                desc: 'Te señalamos lo que podemos comprobar con lo que hay anotado, pero no sustituye a la revisión oficial de un inspector ni al criterio de tu asesor.',
+            },
+        ],
+    },
     planes: {
         title: '💳 Planes y suscripción',
         intro: 'Elige el plan que mejor se adapta a tu explotación. Puedes cambiar en cualquier momento.',

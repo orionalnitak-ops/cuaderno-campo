@@ -349,9 +349,11 @@ function AsesorModal({ asesor, onSave, onClose }) {
 }
 
 // ── Screen: Ajustes / Más ──
-function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, onNavigate }) {
+function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, onNavigate, initialSection }) {
     const { useState, useEffect } = React;
-    const [section, setSection] = useState('explotacion');
+    // initialSection lo manda la "Revisión del cuaderno" al pulsar "Arreglar
+    // ahora", para aterrizar donde está el problema y no en la portada.
+    const [section, setSection] = useState(initialSection || 'explotacion');
     const [equipos, setEquipos] = useState([]);
     const [aplicadores, setAplicadores] = useState([]);
     const [asesores, setAsesores] = useState([]);
@@ -458,6 +460,11 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
                         {s.icon} {s.label}
                     </button>
                 ))}
+            </div>
+
+            {/* ── Revisión del cuaderno ── */}
+            <div style={{ padding: '16px 16px 0' }}>
+                <CumplTarjeta onNavigate={onNavigate} />
             </div>
 
             {/* ── Botones soporte + ayuda permanentes ── */}
