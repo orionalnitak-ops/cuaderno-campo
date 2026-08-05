@@ -86,10 +86,10 @@ def explotaciones():
         if limit <= 1:
             # basic/trial: mono-explotación → upsell a Pro
             return jsonify({"error": "upgrade_required", "feature": "multi_explotacion",
-                            "message": "El plan Multi-explotación permite gestionar varios titulares. Sube a Pro (14,99 €)."}), 403
+                            "message": "Tu plan es de una sola explotación. El plan Pro (29,99 €/mes, IVA incluido) permite hasta 5 titulares."}), 403
         # pro en su tope: no hay upsell, es límite del plan
         return jsonify({"error": "limit_reached", "feature": "multi_explotacion", "limit": limit,
-                        "message": f"Has alcanzado el máximo de {limit} explotaciones de tu plan. Contacta con soporte si necesitas más."}), 403
+                        "message": f"Has alcanzado el máximo de {limit} explotaciones de tu plan. Si necesitas llevar más, escríbenos a cuadernodigital@tualiado.es y lo hablamos."}), 403
 
     data = request.json or {}
     cols = ['user_id'] + _EXPL_FIELDS + ['orden']
