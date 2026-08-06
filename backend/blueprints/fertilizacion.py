@@ -437,12 +437,14 @@ def manage_abonado():
     if err:
         conn.close()
         return jsonify({"error": err}), 400
-    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
-        conn.close()
-        return jsonify({"error": "Parcela no encontrada"}), 403
+    # El orden importa: sin explotación activa, `parcela_es_del_usuario` cae en
+    # la rama que NO filtra por explotación, así que se comprueba antes.
     if not exp_id:
         conn.close()
         return jsonify({"error": SIN_EXPLOTACION}), 400
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
 
     c = conn.cursor()
     c.execute('''

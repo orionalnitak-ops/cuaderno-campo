@@ -149,12 +149,14 @@ def manage_cosecha():
         conn.close()
         return jsonify({"error": "Formato de fecha inválido (use YYYY-MM-DD)"}), 400
 
-    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
-        conn.close()
-        return jsonify({"error": "Parcela no encontrada"}), 403
+    # El orden importa: sin explotación activa, `parcela_es_del_usuario` cae en
+    # la rama que NO filtra por explotación, así que se comprueba antes.
     if not exp_id:
         conn.close()
         return jsonify({"error": SIN_EXPLOTACION}), 400
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
+        conn.close()
+        return jsonify({"error": "Parcela no encontrada"}), 403
 
     # Bloquear cosecha si hay tratamientos con plazo de seguridad no vencido en la misma parcela
     if data.get('parcela_id') and data.get('fecha_inicio'):
