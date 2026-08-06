@@ -164,11 +164,19 @@ def _escenario():
     _ins(conn, 'tratamientos', EXPL_B, parcela_id=2, campana=CAMPANA_B,
          fecha_aplicacion='2026-07-02', producto_comercial='Azufre FINCA-B',
          num_registro_mapa='88888', equipo_id=2, aplicador_id=2, asesor_id=2,
-         asesor='Asesor a mano FINCA-B', fecha_recoleccion_minima='2026-08-02')
+         fecha_recoleccion_minima='2026-08-02')
 
-    # Parcela de B sin movimiento reciente (bloque registro_reciente)
+    # Parcela de B sin movimiento reciente (bloque registro_reciente) y, en el
+    # mismo registro, un asesor escrito a mano.
+    #
+    # `asesor` SIN `asesor_id` a propósito: la consulta de asesores legacy exige
+    # `asesor_id IS NULL`, así que poner los dos campos en la misma fila no
+    # ejercita esa rama. Este es el caso que hay que cubrir, porque el nombre
+    # escrito a mano sale directo de `tratamientos` y es la vía por la que una
+    # persona de otra finca podría colarse en el bloque ROPO.
     _ins(conn, 'tratamientos', EXPL_B, parcela_id=2, campana=CAMPANA_B,
-         fecha_aplicacion='2026-01-01', producto_comercial='Viejo FINCA-B')
+         fecha_aplicacion='2026-01-01', producto_comercial='Viejo FINCA-B',
+         asesor='Asesor a mano FINCA-B')
 
     conn.commit()
     return conn

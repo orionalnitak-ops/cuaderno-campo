@@ -31,7 +31,10 @@ CAMPANA = '2025/2026'
 # alguien añade una columna al motor y no al esquema del test, esto falle
 # ruidosamente en vez de dar un falso verde.
 COLUMNAS_REQUERIDAS = {
-    'explotacion':      'user_id, campana_activa',
+    # `orden` la usa el desempate de "explotación por defecto", igual que
+    # resolve_default_explotacion() en helpers.py. Está en la tabla real, así que
+    # tiene que estar aquí: sin ella este fixture daba un falso fallo.
+    'explotacion':      'user_id, campana_activa, orden',
     'parcelas':         'id, user_id, nombre_finca, activa',
     'tratamientos':     ('id, user_id, parcela_id, fecha_aplicacion, producto_comercial, '
                          'num_registro_mapa, equipo_id, aplicador_id, asesor_id, asesor, '
@@ -45,7 +48,9 @@ COLUMNAS_REQUERIDAS = {
 }
 
 _SCHEMA = """
-CREATE TABLE explotacion (user_id INTEGER, campana_activa TEXT);
+CREATE TABLE explotacion (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, campana_activa TEXT,
+    orden INTEGER DEFAULT 0);
 CREATE TABLE parcelas (
     id INTEGER PRIMARY KEY, user_id INTEGER, nombre_finca TEXT, activa INTEGER DEFAULT 1);
 CREATE TABLE tratamientos (
