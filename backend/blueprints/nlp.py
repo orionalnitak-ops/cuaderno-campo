@@ -8,7 +8,7 @@ import unicodedata as _UD
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, one, dicts
-from helpers import get_uid, _to_real
+from helpers import get_uid, _to_real, get_active_explotacion_id
 
 bp = Blueprint('nlp', __name__)
 
@@ -23,7 +23,12 @@ def _norm(s):
 
 def extraer_parcela(texto, uid):
     conn = get_db()
-    parcelas = dicts(conn, "SELECT id, nombre_finca FROM parcelas WHERE user_id=? AND activa=1", (uid,))
+    # Solo las parcelas de la explotación activa: si no, el dictado puede
+    # reconocer una finca de otra explotación y guardar allí (feature 013).
+    exp_id = get_active_explotacion_id(conn)
+    parcelas = dicts(conn, "SELECT id, nombre_finca FROM parcelas"
+                           " WHERE user_id=? AND explotacion_id=? AND activa=1",
+                     (uid, exp_id))
     conn.close()
     tnorm = _norm(texto)
 
@@ -324,11 +329,16 @@ def parse_guardar():
     campana      = data.get('campana') or '2025/2026'
 
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
+    if not exp_id:
+        conn.close()
+        return jsonify({"ok": False, "error": "No tienes ninguna explotación creada"}), 400
 
-    # Auto-crear parcela si no existe
+    # Auto-crear parcela si no existe — en la explotación activa
     if not parcela_id and parcela_nombre:
         c = conn.cursor()
-        c.execute("INSERT INTO parcelas (user_id, nombre_finca) VALUES (?, ?)", (uid, parcela_nombre))
+        c.execute("INSERT INTO parcelas (user_id, explotacion_id, nombre_finca) VALUES (?,?,?)",
+                  (uid, exp_id, parcela_nombre))
         parcela_id = c.lastrowid
         conn.commit()
 
@@ -336,8 +346,15 @@ def parse_guardar():
         conn.close()
         return jsonify({"ok": False, "error": "No se pudo determinar la parcela. Indícala manualmente."}), 400
 
-    parcela = one(conn, "SELECT nombre_finca FROM parcelas WHERE id=? AND user_id=?", (parcela_id, uid))
-    etiqueta = (parcela or {}).get('nombre_finca', '')
+    # La parcela tiene que ser de la explotación activa: si no, dictar por voz
+    # escribiría en la finca equivocada (feature 013).
+    parcela = one(conn, "SELECT nombre_finca FROM parcelas"
+                        " WHERE id=? AND user_id=? AND explotacion_id=?",
+                  (parcela_id, uid, exp_id))
+    if not parcela:
+        conn.close()
+        return jsonify({"ok": False, "error": "Parcela no encontrada"}), 403
+    etiqueta = parcela.get('nombre_finca', '')
 
     nota = f"NLP: {texto}" if texto else ''
 
@@ -379,16 +396,16 @@ def parse_guardar():
         if not horas_riego and not volumen_m3:
             horas_riego = 1.0
         conn.execute(
-            "INSERT INTO riego (user_id, parcela_id, parcela_etiqueta, fecha, tipo_riego, horas_riego, volumen_m3, fuente_agua, notas, campana) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (uid, parcela_id, etiqueta, fecha, tipo_riego,
+            "INSERT INTO riego (user_id, explotacion_id, parcela_id, parcela_etiqueta, fecha, tipo_riego, horas_riego, volumen_m3, fuente_agua, notas, campana) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (uid, exp_id, parcela_id, etiqueta, fecha, tipo_riego,
              horas_riego,
              volumen_m3,
              None, nota, campana)
         )
     elif accion == 'cosecha':
         conn.execute(
-            "INSERT INTO cosecha (user_id, parcela_id, parcela_etiqueta, fecha_inicio, cultivo, produccion_total_unidad, notas, campana) VALUES (?,?,?,?,?,?,?,?)",
-            (uid, parcela_id, etiqueta, fecha, producto or None, 'kg', nota, campana)
+            "INSERT INTO cosecha (user_id, explotacion_id, parcela_id, parcela_etiqueta, fecha_inicio, cultivo, produccion_total_unidad, notas, campana) VALUES (?,?,?,?,?,?,?,?,?)",
+            (uid, exp_id, parcela_id, etiqueta, fecha, producto or None, 'kg', nota, campana)
         )
     else:
         # palabra_clave viene del frontend; si no, re-extraer del texto
@@ -424,8 +441,8 @@ def parse_guardar():
         else:
             descripcion_labor = texto
         conn.execute(
-            "INSERT INTO labores (user_id, parcela_id, parcela_etiqueta, fecha, tipo_labor, descripcion, producto, notas, campana) VALUES (?,?,?,?,?,?,?,?,?)",
-            (uid, parcela_id, etiqueta, fecha, tipo, descripcion_labor, producto or None, nota, campana)
+            "INSERT INTO labores (user_id, explotacion_id, parcela_id, parcela_etiqueta, fecha, tipo_labor, descripcion, producto, notas, campana) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (uid, exp_id, parcela_id, etiqueta, fecha, tipo, descripcion_labor, producto or None, nota, campana)
         )
 
     conn.commit()

@@ -263,7 +263,7 @@ def manage_tratamientos():
         conn.commit()
         conn.close()
         for p in parcelas:
-            _recalcular_patrones(uid, 'tratamientos', p['id'], data.get('fecha_aplicacion'))
+            _recalcular_patrones(uid, 'tratamientos', p['id'], data.get('fecha_aplicacion'), exp_id)
         resp = {"status": "ok", "count": len(ids), "ids": ids}
         if aviso_asesor:
             resp["aviso"] = aviso_asesor
@@ -277,7 +277,7 @@ def manage_tratamientos():
                                  data.get('parcela_etiqueta'), exp_id)
     conn.commit()
     conn.close()
-    _recalcular_patrones(uid, 'tratamientos', data.get('parcela_id'), data.get('fecha_aplicacion'))
+    _recalcular_patrones(uid, 'tratamientos', data.get('parcela_id'), data.get('fecha_aplicacion'), exp_id)
     resp = {"status": "ok", "id": new_id}
     if aviso_asesor:
         resp["aviso"] = aviso_asesor

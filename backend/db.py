@@ -1112,6 +1112,7 @@ def _seed_if_needed(conn):
             user_id        INTEGER NOT NULL,
             modulo         TEXT NOT NULL,
             parcela_id     INTEGER,
+            explotacion_id INTEGER,
             temporada      TEXT NOT NULL,
             campo          TEXT NOT NULL,
             valor_sugerido TEXT NOT NULL,
@@ -1120,6 +1121,12 @@ def _seed_if_needed(conn):
             actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # `ia_patrones` no está en TABLAS_POR_EXPLOTACION porque no son datos del
+    # agricultor sino una caché que se regenera en cada POST: por eso no lleva
+    # backfill. Los patrones antiguos quedan con explotacion_id NULL y dejan de
+    # casar con las consultas, que es exactamente lo que se quiere.
+    _add_col(c, 'ia_patrones', 'explotacion_id', 'INTEGER')
+
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS ia_alertas (
             id         {_PK},

@@ -263,7 +263,7 @@ def manage_fertilizacion():
                for p in parcelas]
         conn.commit(); conn.close()
         for p in parcelas:
-            _recalcular_patrones(uid, 'fertilizacion', p['id'], data.get('fecha_aplicacion'))
+            _recalcular_patrones(uid, 'fertilizacion', p['id'], data.get('fecha_aplicacion'), exp_id)
         return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
 
     if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid, exp_id):
@@ -273,7 +273,7 @@ def manage_fertilizacion():
     new_id = _insert_fertilizacion(c, uid, data, data.get('parcela_id'),
                                    data.get('parcela_etiqueta'), n_ap, p_ap, k_ap, exp_id)
     conn.commit(); conn.close()
-    _recalcular_patrones(uid, 'fertilizacion', data.get('parcela_id'), data.get('fecha_aplicacion'))
+    _recalcular_patrones(uid, 'fertilizacion', data.get('parcela_id'), data.get('fecha_aplicacion'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
@@ -366,7 +366,7 @@ def manage_riego():
         ids = [_insert_riego(c, uid, data, p['id'], p['nombre_finca'], exp_id) for p in parcelas]
         conn.commit(); conn.close()
         for p in parcelas:
-            _recalcular_patrones(uid, 'riego', p['id'], data.get('fecha'))
+            _recalcular_patrones(uid, 'riego', p['id'], data.get('fecha'), exp_id)
         return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
 
     if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid, exp_id):
@@ -376,7 +376,7 @@ def manage_riego():
     new_id = _insert_riego(c, uid, data, data.get('parcela_id'),
                            data.get('parcela_etiqueta'), exp_id)
     conn.commit(); conn.close()
-    _recalcular_patrones(uid, 'riego', data.get('parcela_id'), data.get('fecha'))
+    _recalcular_patrones(uid, 'riego', data.get('parcela_id'), data.get('fecha'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201
 
 

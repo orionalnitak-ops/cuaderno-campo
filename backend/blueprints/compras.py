@@ -93,7 +93,7 @@ def manage_compras():
           data.get('num_factura'), _to_real(data.get('precio_total')),
           data.get('campana', '2025/2026'), data.get('notas')))
     conn.commit(); new_id = c.lastrowid; conn.close()
-    _recalcular_patrones(uid, 'compras', None, data.get('fecha'))
+    _recalcular_patrones(uid, 'compras', None, data.get('fecha'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201
 
 

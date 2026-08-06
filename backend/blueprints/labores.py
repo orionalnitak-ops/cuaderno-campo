@@ -70,7 +70,7 @@ def manage_labores():
         ids = [_insert_labor(c, uid, data, p['id'], p['nombre_finca'], exp_id) for p in parcelas]
         conn.commit(); conn.close()
         for p in parcelas:
-            _recalcular_patrones(uid, 'labores', p['id'], data.get('fecha'))
+            _recalcular_patrones(uid, 'labores', p['id'], data.get('fecha'), exp_id)
         return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
 
     if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid, exp_id):
@@ -79,7 +79,7 @@ def manage_labores():
 
     new_id = _insert_labor(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'), exp_id)
     conn.commit(); conn.close()
-    _recalcular_patrones(uid, 'labores', data.get('parcela_id'), data.get('fecha'))
+    _recalcular_patrones(uid, 'labores', data.get('parcela_id'), data.get('fecha'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
@@ -188,7 +188,7 @@ def manage_cosecha():
           rend, data.get('destino'), data.get('comprador'),
           _to_real(data.get('precio_unidad')), data.get('notas'), data.get('campana', '2025/2026')))
     conn.commit(); new_id = c.lastrowid; conn.close()
-    _recalcular_patrones(uid, 'cosecha', data.get('parcela_id'), data.get('fecha_inicio'))
+    _recalcular_patrones(uid, 'cosecha', data.get('parcela_id'), data.get('fecha_inicio'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
