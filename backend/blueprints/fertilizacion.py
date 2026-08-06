@@ -184,21 +184,42 @@ def _insert_fertilizacion(c, uid, data, parcela_id, parcela_etiqueta, n_ap, p_ap
     return c.lastrowid
 
 
-def _parcelas_uhc(conn, uhc_id, uid):
-    """Parcelas (id, nombre_finca) de un grupo UHC del usuario, o [] si no existe/no tiene."""
-    return dicts(conn, """
+def _parcelas_uhc(conn, uhc_id, uid, explotacion_id=None):
+    """Parcelas (id, nombre_finca) de un grupo UHC del usuario, o [] si no existe/no tiene.
+
+    Con `explotacion_id` exige que el grupo Y sus parcelas sean de esa finca
+    (feature 013). Se comprueban las dos cosas y no solo el grupo: si algún UHC
+    antiguo quedó con parcelas de dos explotaciones, expandirlo metería registros
+    en la finca equivocada.
+    """
+    sql = """
         SELECT p.id, p.nombre_finca
         FROM uhc_parcelas up
         JOIN parcelas p ON p.id = up.parcela_id
         JOIN unidades_homogeneas u ON u.id = up.uhc_id
         WHERE up.uhc_id = ? AND u.user_id = ? AND u.deleted_at IS NULL
-    """, (uhc_id, uid))
+    """
+    params = [uhc_id, uid]
+    if explotacion_id is not None:
+        sql += " AND u.explotacion_id = ? AND p.explotacion_id = ?"
+        params += [explotacion_id, explotacion_id]
+    return dicts(conn, sql, params)
 
 
-def parcela_es_del_usuario(conn, parcela_id, uid):
+def parcela_es_del_usuario(conn, parcela_id, uid, explotacion_id=None):
     """True si parcela_id existe y pertenece a uid. Evita IDOR: sin esto, cualquier
-    usuario autenticado podría enviar el parcela_id de otro y colgarle registros."""
-    return one(conn, "SELECT id FROM parcelas WHERE id=? AND user_id=?", (parcela_id, uid)) is not None
+    usuario autenticado podría enviar el parcela_id de otro y colgarle registros.
+
+    Con `explotacion_id` comprueba además que la parcela sea de esa finca
+    (feature 013). Sin eso, el aislamiento se salta desde el propio formulario:
+    basta mandar el id de una parcela de la otra explotación del mismo usuario.
+    """
+    sql = "SELECT id FROM parcelas WHERE id=? AND user_id=?"
+    params = [parcela_id, uid]
+    if explotacion_id is not None:
+        sql += " AND explotacion_id=?"
+        params.append(explotacion_id)
+    return one(conn, sql, params) is not None
 
 
 @bp.route('/api/fertilizacion', methods=['GET', 'POST'])
