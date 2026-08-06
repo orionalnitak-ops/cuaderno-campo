@@ -39,7 +39,7 @@ próxima tabla nazca con fuga.
 | `4529433` | 4 | Revisión del cuaderno + bug silencioso de la campaña |
 | `31c4652` | 5 | Alertas del Inicio, voz, cultivos de campaña e histórico |
 | `1dfa976` | 6 | Test genérico de tablas acotadas + 3 fugas que destapó |
-| `PENDIENTE` | 7 | Frontend: campaña y cachés offline al cambiar de finca |
+| `2219aec` | 7 | Frontend: campaña y cachés offline al cambiar de finca |
 
 ### Piezas clave que conviene conocer antes de seguir
 
