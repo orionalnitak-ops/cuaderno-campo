@@ -1,7 +1,7 @@
 # 013 — Progreso y handoff
 
 **Rama:** `fix/aislamiento-explotacion` (base: `main` @ 384c459)
-**Estado:** Fases 0-5 de 8 hechas. El bug que reportó Lourdes YA está arreglado.
+**Estado:** Fases 0-7 de 8 hechas. El bug que reportó Lourdes YA está arreglado.
 **Última actualización:** 2026-08-06 (sesión de tarde)
 
 Este archivo es el punto de entrada para retomar el trabajo en una sesión nueva.
@@ -16,17 +16,19 @@ cd "H:\Proyectos\Cuaderno ex app\backend"
 export PYTHONIOENCODING=utf-8   # sin esto, la consola de Windows (cp1252) rompe
                                 # los tests que imprimen '↔'. No es fallo de lógica.
 for t in test_cumplimiento test_asesores test_ia_patrones test_alta_multirecinto \
-         test_user_id_not_null test_estado_sigpac test_aislamiento_explotacion; do
+         test_user_id_not_null test_estado_sigpac test_aislamiento_explotacion \
+         test_tablas_acotadas; do
   venv/Scripts/python.exe tests/$t.py >/dev/null 2>&1 && echo "$t PASA" || echo "$t FALLA"
 done
 ```
 
-Los 7 pasan a día de hoy. `test_aislamiento_explotacion.py` es el criterio de
-"hecho" de la feature.
+Los 8 pasan a día de hoy. `test_aislamiento_explotacion.py` es el criterio de
+"hecho" de la feature; `test_tablas_acotadas.py` es la red que evita que la
+próxima tabla nazca con fuga.
 
 ---
 
-## Hecho (6 commits)
+## Hecho (8 commits)
 
 | Commit | Fase | Qué |
 |---|---|---|
@@ -36,6 +38,8 @@ Los 7 pasan a día de hoy. `test_aislamiento_explotacion.py` es el criterio de
 | `3996238` | 3 | tratamientos, fertilización, riego, abonado + referencias cruzadas |
 | `4529433` | 4 | Revisión del cuaderno + bug silencioso de la campaña |
 | `31c4652` | 5 | Alertas del Inicio, voz, cultivos de campaña e histórico |
+| `1dfa976` | 6 | Test genérico de tablas acotadas + 3 fugas que destapó |
+| `PENDIENTE` | 7 | Frontend: campaña y cachés offline al cambiar de finca |
 
 ### Piezas clave que conviene conocer antes de seguir
 
@@ -52,7 +56,14 @@ Los 7 pasan a día de hoy. `test_aislamiento_explotacion.py` es el criterio de
   `exports.py` y `export_pdf.py`; `explotacion.py` ya no. No usarlo en código
   nuevo (ver "Trampas" abajo). **Queda pendiente sacarlo también de los dos
   exports**: hasta entonces el PDF y el Excel siguen escondiendo los registros
-  sin parcela.
+  sin parcela. Las compras de esos dos ficheros SÍ se migraron ya
+  (`explotacion_id` propio), porque no colgaban de parcela y el documento oficial
+  listaba las facturas de todas las fincas.
+- **`test_tablas_acotadas.py` analiza el código por FUNCIÓN**: si una consulta
+  nueva no lleva el filtro, hay que acotarla o justificar la excepción por
+  escrito en `EXCEPCIONES`. Hoy solo hay dos: `admin.py` (soporte) y `auth.py`
+  (GDPR). La ruta de la BD en los tests es `db.DATABASE_NAME`, no `DB_PATH`:
+  apuntar mal hace que el test corra contra la BD de desarrollo sin avisar.
 - **`ia_patrones` lleva `explotacion_id` pero NO está en
   `TABLAS_POR_EXPLOTACION`**: es una caché que se regenera en cada POST, no un
   dato del agricultor, así que no lleva backfill (los patrones viejos quedan en
@@ -69,25 +80,7 @@ Los 7 pasan a día de hoy. `test_aislamiento_explotacion.py` es el criterio de
 
 ## Pendiente
 
-### Fase 6 — Test genérico  ← EMPEZAR AQUÍ
-
-Ampliar `test_aislamiento_explotacion.py` con un test que **enumere**
-`TABLAS_POR_EXPLOTACION` y falle si una tabla no tiene la columna o si una
-consulta la ignora. Es lo que evita que la próxima tabla nazca con fuga.
-
-Añadir también, ya que la Fase 5 los tocó: que `exports.py` y `export_pdf.py`
-son los únicos que pueden seguir llamando a `parcela_scope_clause()`, y que
-`ia_patrones` lleva `explotacion_id` aunque no esté en la lista.
-
-### Fase 7 — Frontend
-
-Comprobar que al cambiar de explotación en el selector se refrescan todas las
-pantallas afectadas (criterio de aceptación 9 de la spec). El scoping en sí NO
-necesita cambios de frontend: las llamadas van con cookie y la sesión ya lleva
-`active_explotacion_id`. Tras tocar cualquier `.jsx`: `npm run build` en
-`frontend/`.
-
-### Fase 8 — Verificación con datos reales
+### Fase 8 — Verificación con datos reales  ← EMPEZAR AQUÍ
 
 1. **Copia de seguridad de producción antes de desplegar la migración.**
 2. En local con copia de los datos de Lourdes: que el nº de registros por tabla
@@ -98,6 +91,28 @@ necesita cambios de frontend: las llamadas van con cookie y la sesión ya lleva
    nunca se guardó.
 4. Que Lourdes abra la Revisión con cada explotación y confirme que solo ve lo
    suyo.
+5. Que cambie de finca en el selector y confirme que la campaña y las listas
+   cambian con ella. La Fase 7 se verificó leyendo el código y compilando, **no
+   ejecutando la app**.
+
+---
+
+## Decisión pendiente de Raúl — los registros creados sin cobertura
+
+`pending_records` guarda lo que se anota en el campo sin cobertura, pero **no
+guarda a qué explotación pertenece**: al sincronizar, el servidor lo escribe en
+la que esté activa en ESE momento.
+
+Hoy el riesgo es estrecho, no nulo: cambiar de finca exige llamar al servidor, o
+sea que sin cobertura no se puede cambiar, y la sincronización salta sola al
+recuperarla. La ventana es cambiar de finca entre que vuelve la cobertura y que
+termina de sincronizar. Si pasa, el registro se guarda en la finca equivocada y
+en un cuaderno legal eso es un dato falso, no una molestia.
+
+Arreglarlo bien pide que el registro pendiente viaje con su `explotacion_id` y
+que el POST lo acepte validando que es del usuario — es decir, tocar la frontera
+de seguridad. **No se ha hecho en esta feature**: no estaba en el plan y merece
+su propia decisión. Queda anotado aquí para que no se pierda.
 
 ---
 
@@ -123,7 +138,17 @@ necesita cambios de frontend: las llamadas van con cookie y la sesión ya lleva
 6. **`_SCOPE_ALIASES` de `db.py`:** el alias `'c'` es **cosecha**, no compras.
 7. **Consola de Windows:** los tests que imprimen `↔` fallan en cp1252. Correr
    con `PYTHONIOENCODING=utf-8`.
-8. **`parcela_es_del_usuario()` está duplicada** en `tratamientos.py` y
+8. **Al cambiar de finca no basta con remontar las pantallas.** El `key={explKey}`
+   de `app.jsx` ya lo hacía, pero quedaban dos cosas fuera de React: la campaña
+   activa (es de la explotación, y seguía siendo la de la finca vieja en filtros
+   y exportaciones) y las cachés de IndexedDB, que guardan datos de UNA finca sin
+   decir de cuál. Sin vaciarlas, al quedarse sin cobertura en la finca nueva la
+   app enseñaba las parcelas y los equipos de la anterior. **`pending_records` NO
+   se toca**: son registros del agricultor sin sincronizar.
+9. **El Service Worker no cachea `/api/`** (`service-worker.js:63`), así que por
+   ahí no se cuelan datos de otra finca. Sí cachea `offline-db.js` y `app.js`, de
+   modo que tocarlos obliga a subir `CACHE_NAME` (v49 → v50).
+10. **`parcela_es_del_usuario()` está duplicada** en `tratamientos.py` y
    `fertilizacion.py`. Se mantienen las dos a propósito (unificarlas crea un
    import cruzado entre los dos módulos más grandes). Si se toca una, tocar la otra.
 
@@ -133,8 +158,9 @@ necesita cambios de frontend: las llamadas van con cookie y la sesión ya lleva
 
 - Rama `fix/aislamiento-explotacion` → PR a `main`. Nunca push directo.
 - CI: lint + bandit. Cada PR recibe Security Review de Claude.
-- **Antes de abrir el PR:** terminar la Fase 6 (el test genérico es la garantía
-  de que no queda ninguna fuga) y la Fase 8.2 (recuentos antes/después).
+- **Antes de abrir el PR:** la Fase 8.2 (recuentos antes/después con datos
+  reales). La Fase 6 ya está: `test_tablas_acotadas.py` es la garantía de que no
+  queda ninguna fuga.
 - **Mencionar en el cuerpo del PR:** el aviso del punto 1 de "Trampas", porque
   cambia lo que Lourdes ve, y el paso manual de la Fase 8.3.
 - Este PR toca `db.py`, así que en producción hace falta **reinicio completo de
