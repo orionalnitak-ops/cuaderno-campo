@@ -21,3 +21,6 @@ frontend/node_modules/
 .mcp.json
 # Marketing interno — no se publica
 docs/marketing/
+
+# Recuentos de la verificación 013: llevan datos reales de la explotación
+backend/tools/recuento_013.json
