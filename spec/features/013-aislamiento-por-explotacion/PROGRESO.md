@@ -1,8 +1,8 @@
 # 013 — Progreso y handoff
 
 **Rama:** `fix/aislamiento-explotacion` (base: `main` @ 384c459)
-**Estado:** Fases 0-4 de 8 hechas. El bug que reportó Lourdes YA está arreglado.
-**Última actualización:** 2026-08-06
+**Estado:** Fases 0-5 de 8 hechas. El bug que reportó Lourdes YA está arreglado.
+**Última actualización:** 2026-08-06 (sesión de tarde)
 
 Este archivo es el punto de entrada para retomar el trabajo en una sesión nueva.
 Leer primero `spec.md` (qué y por qué) y `plan.md` (las 8 fases).
@@ -26,7 +26,7 @@ Los 7 pasan a día de hoy. `test_aislamiento_explotacion.py` es el criterio de
 
 ---
 
-## Hecho (5 commits)
+## Hecho (6 commits)
 
 | Commit | Fase | Qué |
 |---|---|---|
@@ -35,6 +35,7 @@ Los 7 pasan a día de hoy. `test_aislamiento_explotacion.py` es el criterio de
 | `80584d3` | 2 | equipos, aplicadores, asesores, compras, UHC, labores, cosecha |
 | `3996238` | 3 | tratamientos, fertilización, riego, abonado + referencias cruzadas |
 | `4529433` | 4 | Revisión del cuaderno + bug silencioso de la campaña |
+| `31c4652` | 5 | Alertas del Inicio, voz, cultivos de campaña e histórico |
 
 ### Piezas clave que conviene conocer antes de seguir
 
@@ -47,8 +48,19 @@ Los 7 pasan a día de hoy. `test_aislamiento_explotacion.py` es el criterio de
   en NULL sale por `logger.error` con tabla y recuento.
 - **Patrón de filtrado**: literal `AND explotacion_id=?`, sin helper. La red
   contra olvidos es el test de la Fase 6, no una abstracción.
-- **`parcela_scope_clause()` está marcado LEGADO**. Solo lo usan `exports.py` y
-  `export_pdf.py`. No usarlo en código nuevo (ver "Trampas" abajo).
+- **`parcela_scope_clause()` está marcado LEGADO**. Desde la Fase 5 solo lo usan
+  `exports.py` y `export_pdf.py`; `explotacion.py` ya no. No usarlo en código
+  nuevo (ver "Trampas" abajo). **Queda pendiente sacarlo también de los dos
+  exports**: hasta entonces el PDF y el Excel siguen escondiendo los registros
+  sin parcela.
+- **`ia_patrones` lleva `explotacion_id` pero NO está en
+  `TABLAS_POR_EXPLOTACION`**: es una caché que se regenera en cada POST, no un
+  dato del agricultor, así que no lleva backfill (los patrones viejos quedan en
+  NULL y dejan de casar, que es lo que se quiere). `ia_alertas` no lleva la
+  columna: todas sus filas tienen `parcela_id`, y se acota por ahí.
+- **`_recalcular_patrones(uid, modulo, parcela_id, fecha, explotacion_id)`**: el
+  parámetro va al final, igual que en `evaluar_cumplimiento`. Hay que pasarlo
+  siempre desde las rutas.
 - **`cumplimiento.py`**: `evaluar_cumplimiento(conn, uid, hoy, campana, explotacion_id)`.
   El parámetro va al final para no romper llamadas antiguas. Dentro se compone
   `expl_sql`/`expl_par` y se concatena a las 11 consultas.
@@ -57,21 +69,15 @@ Los 7 pasan a día de hoy. `test_aislamiento_explotacion.py` es el criterio de
 
 ## Pendiente
 
-### Fase 5 — Alertas del Inicio, voz e imports  ← EMPEZAR AQUÍ
-
-| Fichero | Qué hacer |
-|---|---|
-| `blueprints/ia.py` | `_generar_alertas`, `_recalcular_patrones` y `/api/ia/sugerencias` (:284) y `/api/ia/alertas` (:320) no acotan. Ojo: `_generar_alertas` hace 1+3·N consultas y con 50 parcelas son ~151 dentro del login; no empeorarlo. |
-| `blueprints/nlp.py` | `/api/parse/guardar` (:311) debe escribir la explotación activa en los INSERT. |
-| `blueprints/imports_exports.py` | 3 puntos de INSERT: `/api/import/excel` (:125), `/api/import/gsheet` (:168), `/api/backup/import` (:245). |
-| `blueprints/explotacion.py` | Quitar el caso especial de compras del histórico (:280-282) — el comentario "no se acota por explotación en Fase 1" ya no aplica: compras se acotó en `80584d3`. |
-| `blueprints/parcelas.py` | Revisar que `/api/cultivos-campana` (:281) y el alta multirrecinto (:209) escriban `explotacion_id` en `cultivos_campana`. |
-
-### Fase 6 — Test genérico
+### Fase 6 — Test genérico  ← EMPEZAR AQUÍ
 
 Ampliar `test_aislamiento_explotacion.py` con un test que **enumere**
 `TABLAS_POR_EXPLOTACION` y falle si una tabla no tiene la columna o si una
 consulta la ignora. Es lo que evita que la próxima tabla nazca con fuga.
+
+Añadir también, ya que la Fase 5 los tocó: que `exports.py` y `export_pdf.py`
+son los únicos que pueden seguir llamando a `parcela_scope_clause()`, y que
+`ia_patrones` lleva `explotacion_id` aunque no esté en la lista.
 
 ### Fase 7 — Frontend
 
