@@ -85,7 +85,7 @@ def plan_allows_multi(plan, role, unlimited=False):
 class User(UserMixin):
     def __init__(self, id, email, nombre, role, active,
                  plan='trial', trial_ends_at=None, subscription_ends_at=None,
-                 unlimited_explotaciones=0):
+                 unlimited_explotaciones=0, pago_fallido_desde=None):
         self.id = id
         self.email = email
         self.nombre = nombre
@@ -95,6 +95,9 @@ class User(UserMixin):
         self.trial_ends_at = trial_ends_at
         self.subscription_ends_at = subscription_ends_at
         self.unlimited_explotaciones = bool(unlimited_explotaciones)
+        # Fecha del primer cobro fallido, o None. No afecta al acceso: el
+        # agricultor sigue pudiendo anotar mientras Stripe reintenta.
+        self.pago_fallido_desde = pago_fallido_desde
 
     def plan_is_active(self):
         """True si el usuario puede escribir datos (trial vigente, basic o pro)."""
@@ -124,7 +127,7 @@ def load_user(user_id):
         return None
     return User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
                 u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
-                u.get('unlimited_explotaciones', 0))
+                u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'))
 
 
 @login_manager.unauthorized_handler

@@ -31,7 +31,7 @@ def auth_login():
 
     user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
                 u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
-                u.get('unlimited_explotaciones', 0))
+                u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'))
     login_user(user, remember=True)
     try:
         from blueprints.ia import _generar_alertas
@@ -85,7 +85,7 @@ def auth_register():
     conn.close()
     user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
                 u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
-                u.get('unlimited_explotaciones', 0))
+                u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'))
     login_user(user, remember=True)
     te = user.trial_ends_at
     return jsonify({
@@ -121,6 +121,10 @@ def auth_me():
     if current_user.trial_ends_at:
         te = current_user.trial_ends_at
         trial_ends = te.isoformat() if hasattr(te, 'isoformat') else str(te)
+    pago_fallido = None
+    if current_user.pago_fallido_desde:
+        pf = current_user.pago_fallido_desde
+        pago_fallido = pf.isoformat() if hasattr(pf, 'isoformat') else str(pf)
     return jsonify({
         "id": current_user.id,
         "email": current_user.email,
@@ -131,6 +135,7 @@ def auth_me():
         "plan_raw": current_user.plan,
         "trial_ends_at": trial_ends,
         "plan_active": current_user.plan_is_active(),
+        "pago_fallido_desde": pago_fallido,
         "allows_multi": current_user.plan_allows_multi(),
         "explotaciones_limit": current_user.explotaciones_limit(),
     })

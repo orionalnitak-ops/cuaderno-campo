@@ -449,6 +449,10 @@ function App() {
     const isImpersonating = !!currentUser?.impersonating;
     const planExpired = !isAdmin && currentUser?.plan_active === false;
     const isTrialActive = !isAdmin && currentUser?.plan_raw === 'trial' && currentUser?.plan_active === true;
+    // Cobro fallido con Stripe aún reintentando: NO pierde el acceso, solo se
+    // le avisa. Si además ya está caducado, manda el cartel rojo y este se
+    // calla, para no apilar dos avisos.
+    const pagoFallido = !isAdmin && !planExpired && !!currentUser?.pago_fallido_desde;
     const trialDaysLeft = isTrialActive && currentUser?.trial_ends_at
         ? Math.max(0, Math.ceil((new Date(currentUser.trial_ends_at) - new Date()) / 86400000))
         : 0;
@@ -528,6 +532,27 @@ function App() {
                 </div>
             )}
 
+            {/* ── Cobro fallido: avisa, pero NO quita el acceso ── */}
+            {pagoFallido && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, zIndex: 201,
+                    background: 'linear-gradient(135deg, #92400e, #ea580c)',
+                    color: '#fff', padding: '10px 20px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    gap: 12, fontSize: '0.82rem', fontWeight: 600,
+                }}>
+                    <span>💳 No hemos podido cobrar tu cuota. Revisa tu tarjeta — puedes seguir usando el cuaderno con normalidad.</span>
+                    <button onClick={() => navigate('planes')} style={{
+                        background: 'rgba(255,255,255,0.20)', border: 'none',
+                        borderRadius: 'var(--radius-full)', padding: '6px 14px',
+                        color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.78rem',
+                        whiteSpace: 'nowrap',
+                    }}>
+                        Revisar pago →
+                    </button>
+                </div>
+            )}
+
             {/* ── Impersonation banner ── */}
             {isImpersonating && (
                 <div style={{
@@ -549,7 +574,7 @@ function App() {
             )}
 
             {/* ── Desktop Sidebar ── */}
-            <nav id="sidebar" style={(isImpersonating || planExpired) ? { paddingTop: 40 } : {}}>
+            <nav id="sidebar" style={(isImpersonating || planExpired || pagoFallido) ? { paddingTop: 40 } : {}}>
                 <div className="sidebar-logo">
                     <img className="logo-icon" src="/icon-192.png" alt="" />
                     <span className="logo-text">Cuaderno de Campo</span>
@@ -635,7 +660,7 @@ function App() {
             </nav>
 
             {/* ── Right: TopBar + Screen ── */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, ...((isImpersonating || planExpired) ? { marginTop: 38 } : {}) }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, ...((isImpersonating || planExpired || pagoFallido) ? { marginTop: 38 } : {}) }}>
 
                 {/* Desktop Top Bar */}
                 <header id="topbar">

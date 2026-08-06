@@ -25,6 +25,74 @@ STRIPE_PRICES = {
 # Planes que conceden acceso de pago (usados para validar metadata del webhook).
 _PLANES_PAGO = ('basic', 'pro', 'premium')
 
+# ─────────────────────────────────────────────────────────────────────
+# Qué hacemos con el acceso del agricultor según el estado de Stripe.
+#
+# La distinción que importa es entre "el cobro ha fallado pero Stripe sigue
+# reintentándolo" y "esto ya no se cobra". Stripe reintenta durante días y la
+# mayoría de esos cobros acaban entrando: tarjeta caducada, sin saldo ese día,
+# confirmación del banco que no se vio a tiempo. Cortarle el cuaderno a un
+# agricultor en plena campaña al primer intento fallido lo pierde como cliente
+# por algo que se iba a cobrar solo.
+# ─────────────────────────────────────────────────────────────────────
+ESTADOS_ALTA   = ('active', 'trialing')
+# past_due = ha fallado un cobro y Stripe sigue intentándolo. Mantiene acceso.
+ESTADOS_GRACIA = ('past_due',)
+# Se acabó: cancelada, agotados los reintentos, o el primer pago nunca entró.
+ESTADOS_CORTE  = ('canceled', 'unpaid', 'incomplete_expired')
+
+
+def accion_suscripcion(status):
+    """Traduce el estado de una suscripción de Stripe a lo que hace la app.
+
+    Devuelve 'alta', 'gracia', 'corte', o None si no hay que tocar nada
+    (p. ej. `incomplete`: el primer pago aún no ha entrado, así que no da
+    acceso, pero tampoco tiene por qué quitar el que ya hubiera).
+    """
+    if status in ESTADOS_ALTA:
+        return 'alta'
+    if status in ESTADOS_GRACIA:
+        return 'gracia'
+    if status in ESTADOS_CORTE:
+        return 'corte'
+    return None
+
+
+def aplicar_gracia(conn, user_id, ahora=None):
+    """Marca que hay un cobro caído SIN tocar el plan ni el acceso.
+
+    Solo se guarda la fecha del primer fallo (`WHERE ... IS NULL`), porque
+    Stripe manda un `past_due` por cada reintento y el aviso tiene que poder
+    decir desde cuándo falla, no desde el último intento.
+    """
+    ahora = ahora or datetime.datetime.utcnow()
+    conn.execute(
+        "UPDATE users SET pago_fallido_desde=? WHERE id=? AND pago_fallido_desde IS NULL",
+        (ahora.strftime('%Y-%m-%d %H:%M:%S'), user_id)
+    )
+
+
+def cortar_acceso(conn, user_id, olvidar_suscripcion=False):
+    """Baja al usuario a solo lectura: sigue viendo y descargando su cuaderno,
+    pero no puede anotar nada nuevo (ver guard_active_plan en app.py).
+
+    Limpia también el aviso de impago: si la suscripción ya está cortada, el
+    cartel que toca es el rojo de "renueva", no el naranja de "revisa tu
+    tarjeta".
+    """
+    if olvidar_suscripcion:
+        conn.execute(
+            "UPDATE users SET plan='trial', subscription_ends_at=NULL, "
+            "pago_fallido_desde=NULL, stripe_subscription_id=NULL WHERE id=?",
+            (user_id,)
+        )
+    else:
+        conn.execute(
+            "UPDATE users SET plan='trial', subscription_ends_at=NULL, "
+            "pago_fallido_desde=NULL WHERE id=?",
+            (user_id,)
+        )
+
 
 def _stripe():
     """Devuelve el módulo stripe inicializado, o None si no hay clave configurada."""
@@ -157,26 +225,27 @@ def stripe_webhook():
             uid_meta   = sub.get('metadata', {}).get('user_id')
 
             if uid_meta:
-                if status == 'active':
+                accion = accion_suscripcion(status)
+                if accion == 'alta':
+                    # Pago al día: se limpia cualquier aviso de impago previo,
+                    # o el agricultor que ya ha pagado se quedaría con el
+                    # cartel de "revisa tu tarjeta" para siempre.
                     conn.execute(
-                        "UPDATE users SET plan=?, subscription_ends_at=?, stripe_customer_id=?, stripe_subscription_id=? WHERE id=?",
+                        "UPDATE users SET plan=?, subscription_ends_at=?, stripe_customer_id=?, "
+                        "stripe_subscription_id=?, pago_fallido_desde=NULL WHERE id=?",
                         (plan, sub_end, customer, sub_id, int(uid_meta))
                     )
-                elif status in ('canceled', 'unpaid', 'past_due'):
-                    conn.execute(
-                        "UPDATE users SET plan='trial', subscription_ends_at=NULL WHERE id=?",
-                        (int(uid_meta),)
-                    )
+                elif accion == 'gracia':
+                    aplicar_gracia(conn, int(uid_meta))
+                elif accion == 'corte':
+                    cortar_acceso(conn, int(uid_meta))
                 conn.commit()
 
         elif ev_type == 'customer.subscription.deleted':
             sub      = obj
             uid_meta = sub.get('metadata', {}).get('user_id')
             if uid_meta:
-                conn.execute(
-                    "UPDATE users SET plan='trial', subscription_ends_at=NULL, stripe_subscription_id=NULL WHERE id=?",
-                    (int(uid_meta),)
-                )
+                cortar_acceso(conn, int(uid_meta), olvidar_suscripcion=True)
                 conn.commit()
 
         elif ev_type == 'checkout.session.completed':
@@ -190,7 +259,8 @@ def stripe_webhook():
                     import datetime as _dt
                     sub_end = (_dt.datetime.utcnow() + _dt.timedelta(days=365)).strftime('%Y-%m-%d %H:%M:%S')
                     conn.execute(
-                        "UPDATE users SET plan=?, stripe_customer_id=?, stripe_subscription_id=?, subscription_ends_at=? WHERE id=?",
+                        "UPDATE users SET plan=?, stripe_customer_id=?, stripe_subscription_id=?, "
+                        "subscription_ends_at=?, pago_fallido_desde=NULL WHERE id=?",
                         (plan_meta, customer, sub_id, sub_end, int(uid_meta))
                     )
                 else:
