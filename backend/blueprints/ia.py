@@ -228,10 +228,11 @@ def _generar_alertas(user_id):
             campana = campanas.get(p.get('explotacion_id')) or '2025/2026'
 
             # 1. sin_registro_reciente (solo si ya hay historial)
+            expl = p.get('explotacion_id')
             ultimo = one(conn, """
                 SELECT MAX(fecha_aplicacion) AS ultima FROM tratamientos
-                WHERE user_id=? AND parcela_id=? AND deleted_at IS NULL
-            """, (user_id, pid))
+                WHERE user_id=? AND parcela_id=? AND explotacion_id=? AND deleted_at IS NULL
+            """, (user_id, pid, expl))
             if ultimo and ultimo.get('ultima'):
                 try:
                     dt   = datetime.date.fromisoformat(str(ultimo['ultima'])[:10])
@@ -251,9 +252,9 @@ def _generar_alertas(user_id):
             # 2. plazo_seguridad_proximo (vence en ≤7 días)
             proximos = dicts(conn, """
                 SELECT producto_comercial, fecha_recoleccion_minima FROM tratamientos
-                WHERE user_id=? AND parcela_id=? AND deleted_at IS NULL
+                WHERE user_id=? AND parcela_id=? AND explotacion_id=? AND deleted_at IS NULL
                   AND fecha_recoleccion_minima IS NOT NULL AND fecha_recoleccion_minima != ''
-            """, (user_id, pid))
+            """, (user_id, pid, expl))
             for t in proximos:
                 try:
                     fm   = datetime.date.fromisoformat(str(t['fecha_recoleccion_minima'])[:10])
@@ -280,7 +281,8 @@ def _generar_alertas(user_id):
                 SELECT cc.id FROM cultivos_campana cc
                 JOIN parcelas p ON cc.parcela_id = p.id
                 WHERE cc.parcela_id=? AND cc.campana=? AND p.user_id=?
-            """, (pid, campana, user_id))
+                  AND cc.explotacion_id=?
+            """, (pid, campana, user_id, expl))
             if not cultivo:
                 conn.execute(
                     "DELETE FROM ia_alertas WHERE user_id=? AND tipo=? AND parcela_id=?",

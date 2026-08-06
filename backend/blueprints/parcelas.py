@@ -353,10 +353,15 @@ def manage_cultivos():
 def manage_cultivo(cid):
     uid = get_uid()
     conn = get_db()
-    # Verificar propiedad a través de la parcela (cultivos_campana no tiene user_id propio)
+    exp_id = get_active_explotacion_id(conn)
+    # Verificar propiedad a través de la parcela (cultivos_campana no tiene
+    # user_id propio) Y que sea de la explotación activa: si no, con el id a
+    # mano se edita o se borra el cultivo de la otra finca (feature 013).
+    # Este guardián protege las consultas por `id` que vienen después.
     owner = one(conn, """SELECT cc.id FROM cultivos_campana cc
                          JOIN parcelas p ON cc.parcela_id = p.id
-                         WHERE cc.id=? AND p.user_id=?""", (cid, uid))
+                         WHERE cc.id=? AND p.user_id=? AND cc.explotacion_id=?""",
+                (cid, uid, exp_id))
     if not owner:
         conn.close()
         return jsonify({"error": "No encontrado"}), 404
