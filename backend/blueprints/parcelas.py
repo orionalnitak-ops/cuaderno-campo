@@ -8,7 +8,8 @@ from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from extensions import limiter
 from db import get_db, one, dicts, is_pac_eligible
-from helpers import get_uid, _to_real, get_active_explotacion_id, estado_sigpac, validar_alta_multirecinto
+from helpers import (get_uid, _to_real, get_active_explotacion_id, estado_sigpac,
+                     validar_alta_multirecinto, heredar_cultivos_lenosos)
 from blueprints.ia import _recalcular_patrones
 from blueprints.sigpac import superficie_sigpac_parcela, referencia_catastral_parcela
 
@@ -288,6 +289,12 @@ def manage_cultivos():
     if request.method == 'GET':
         parcela_id = request.args.get('parcela_id')
         campana = request.args.get('campana')
+        # Herencia de leñosos (feature 014): el olivar o el viñedo no cambian de
+        # campaña en campaña, así que se arrastran solos y el agricultor no tiene
+        # que redeclararlos. Idempotente y no pisa nada declarado a mano, por eso
+        # puede vivir en un GET. Ver spec/features/014-cultivos-lenosos-herencia.
+        if campana and heredar_cultivos_lenosos(conn, uid, campana, exp_id):
+            conn.commit()
         # Filtrar siempre por user_id a través de la parcela propietaria, y por
         # la explotación activa (feature 013).
         sql = """SELECT cc.* FROM cultivos_campana cc

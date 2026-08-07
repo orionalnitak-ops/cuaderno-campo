@@ -26,7 +26,7 @@ from flask import Blueprint, jsonify
 from flask_login import login_required
 
 from db import get_db, dicts, one
-from helpers import get_uid, get_active_explotacion_id
+from helpers import get_uid, get_active_explotacion_id, heredar_cultivos_lenosos
 
 bp = Blueprint('cumplimiento', __name__)
 logger = logging.getLogger(__name__)
@@ -204,6 +204,23 @@ def _bloque(bid, titulo, peso, universo, afectados, items, mensaje,
 
 # ── Motor ──────────────────────────────────────────────────────────────────────
 
+def _campana_activa(conn, uid, explotacion_id=None):
+    """Campaña activa de la explotación que se está evaluando.
+
+    De ESA explotación, no de la primera fila del usuario: un
+    `one(... WHERE user_id=?)` a secas devuelve una fila arbitraria cuando el
+    usuario lleva varias explotaciones, y entonces todo se evalúa contra la
+    campaña de otra finca. En silencio: los números salen igual y son mentira.
+    """
+    if explotacion_id:
+        expl = one(conn, "SELECT campana_activa FROM explotacion WHERE id=? AND user_id=?",
+                   (explotacion_id, uid))
+    else:
+        expl = one(conn, "SELECT campana_activa FROM explotacion WHERE user_id=?"
+                         " ORDER BY orden, id LIMIT 1", (uid,))
+    return (expl or {}).get('campana_activa') or '2025/2026'
+
+
 def evaluar_cumplimiento(conn, uid, hoy=None, campana=None, explotacion_id=None):
     """Evalúa el estado del cuaderno. Función pura: no abre/cierra la conexión,
     no toca Flask y no escribe nada.
@@ -220,21 +237,9 @@ def evaluar_cumplimiento(conn, uid, hoy=None, campana=None, explotacion_id=None)
     """
     hoy = hoy or datetime.date.today()
 
-    # 1. campaña activa
-    #
-    # De la explotación que se está evaluando, NO la primera fila del usuario.
-    # Un `one(... WHERE user_id=?)` a secas devuelve una fila arbitraria cuando el
-    # usuario lleva varias explotaciones, y entonces toda la Revisión se evalúa
-    # contra la campaña de otra finca. En silencio: los números salen igual y son
-    # mentira.
+    # 1. campaña activa (ver _campana_activa: la de ESTA explotación)
     if not campana:
-        if explotacion_id:
-            expl = one(conn, "SELECT campana_activa FROM explotacion WHERE id=? AND user_id=?",
-                       (explotacion_id, uid))
-        else:
-            expl = one(conn, "SELECT campana_activa FROM explotacion WHERE user_id=?"
-                             " ORDER BY orden, id LIMIT 1", (uid,))
-        campana = (expl or {}).get('campana_activa') or '2025/2026'
+        campana = _campana_activa(conn, uid, explotacion_id)
 
     # Filtro de explotación. Se compone una sola vez y se concatena a las 11
     # consultas. Es texto LITERAL, nunca construido a partir de input: el id viaja
@@ -598,8 +603,16 @@ def get_cumplimiento():
     conn = get_db()
     try:
         uid = get_uid()
+        exp_id = get_active_explotacion_id(conn)
+        # Herencia de leñosos (feature 014) ANTES de evaluar, y aquí y no dentro
+        # de evaluar_cumplimiento(): el motor es de solo lectura y esa regla no se
+        # rompe. Un olivar no cambia de campaña en campaña, así que redeclararlo
+        # no es una tarea pendiente del agricultor; se arrastra solo. Es
+        # idempotente: en cuanto está heredado, esta llamada no escribe nada.
+        if heredar_cultivos_lenosos(conn, uid, _campana_activa(conn, uid, exp_id), exp_id):
+            conn.commit()
         return jsonify({"ok": True, "data": evaluar_cumplimiento(
-            conn, uid, explotacion_id=get_active_explotacion_id(conn))})
+            conn, uid, explotacion_id=exp_id)})
     except Exception:
         logger.exception("Error calculando cumplimiento")
         return jsonify({"ok": False,
