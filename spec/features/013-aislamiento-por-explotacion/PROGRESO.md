@@ -1,8 +1,9 @@
 # 013 — Progreso y handoff
 
 **Rama:** `fix/aislamiento-explotacion` (base: `main` @ 384c459)
-**Estado:** Fases 0-7 de 8 hechas. El bug que reportó Lourdes YA está arreglado.
-**Última actualización:** 2026-08-06 (sesión de tarde)
+**Estado:** Fases 0-7 hechas + Fase 8 puntos 1-3 verificados sobre datos reales.
+Solo queda que Lourdes lo confirme en la app (puntos 4 y 5). El bug que reportó Lourdes YA está arreglado.
+**Última actualización:** 2026-08-07
 
 Este archivo es el punto de entrada para retomar el trabajo en una sesión nueva.
 Leer primero `spec.md` (qué y por qué) y `plan.md` (las 8 fases).
@@ -80,20 +81,52 @@ próxima tabla nazca con fuga.
 
 ## Pendiente
 
-### Fase 8 — Verificación con datos reales  ← EMPEZAR AQUÍ
+### Fase 8 — Verificación con datos reales
 
-1. **Copia de seguridad de producción antes de desplegar la migración.**
-2. En local con copia de los datos de Lourdes: que el nº de registros por tabla
-   no cambie y que no quede ningún `explotacion_id` NULL.
-3. **Paso manual inevitable:** reasignar a mano los equipos, aplicadores,
-   asesores y facturas de Lourdes que sean de otra finca. El backfill los deja
-   todos en la explotación por defecto porque el dato de a qué finca pertenecían
-   nunca se guardó.
-4. Que Lourdes abra la Revisión con cada explotación y confirme que solo ve lo
-   suyo.
-5. Que cambie de finca en el selector y confirme que la campaña y las listas
-   cambian con ella. La Fase 7 se verificó leyendo el código y compilando, **no
-   ejecutando la app**.
+**Ensayo hecho el 2026-08-07 sobre una copia real de producción. Resultado: limpio.**
+
+Cómo se hizo (repetible): `tools/copia_datos.py` para el volcado,
+`tools/restaurar_datos.py` para meterlo en una BD de ensayo, `init_db()` encima y
+`tools/verificar_013.py antes|despues` para comparar.
+
+```bash
+cd "H:\Proyectos\Cuaderno ex app\backend"
+export DB_PATH=ensayo_013.db PYTHONIOENCODING=utf-8   # BD aparte: no toca la de desarrollo
+rm -f ensayo_013.db
+venv/Scripts/python.exe -c "import db; db.init_db()"
+venv/Scripts/python.exe tools/restaurar_datos.py "H:/Proyectos/_backups-cuaderno/cuaderno-datos-20260806-190052.json"
+venv/Scripts/python.exe tools/verificar_013.py antes
+venv/Scripts/python.exe -c "import db; db.init_db()"     # aplica migración y backfill
+venv/Scripts/python.exe tools/verificar_013.py despues
+```
+
+- [x] **1. Copia de seguridad de producción.** Hecha el 2026-08-06
+      (`cuaderno-datos-20260806-190052.json`, motor postgresql, 246 filas / 21
+      tablas). Vive fuera del repo y lleva datos personales: no moverla dentro.
+- [x] **2. Recuentos antes/después.** Los 13 idénticos, y **cero** filas con
+      `explotacion_id` NULL tras el backfill.
+- [x] **3. El "paso manual inevitable" resultó estar VACÍO.** No hay nada real
+      que reasignar. Lo que el backfill dejó en la explotación por defecto son:
+      los **3 equipos semilla** que crea `_seed_if_needed` sola al dar de alta la
+      cuenta ("Pulverizador terrestre (completar marca y modelo)", "Mochila
+      atomizadora (completar marca)", "Empresa externa / Contratado") y **4
+      compras borradas** (`deleted_at` del 2026-08-06). Aplicadores y asesores
+      del usuario 2: cero. Da igual en qué finca queden.
+- [ ] **4.** Que Lourdes abra la Revisión con cada explotación y confirme que
+      solo ve lo suyo.
+- [ ] **5.** Que cambie de finca en el selector y confirme que la campaña y las
+      listas cambian con ella. La Fase 7 se verificó leyendo el código y
+      compilando, **no ejecutando la app**.
+
+**Límite del ensayo, no olvidarlo:** corre sobre SQLite. Valida la LÓGICA del
+backfill, que es donde estaba el riesgo de perder datos, pero **no** las rutas
+específicas de PostgreSQL (`_add_col` con ALTER, `_harden_user_id_postgres`,
+`_enable_rls_postgres`). Eso solo se prueba desplegando — de ahí que el punto 1
+no sea opcional.
+
+**Mapa de explotaciones del usuario 2** (66 parcelas en 6 fincas), útil para el
+punto 4: [12] Lourdes de Lamo Valencia · 11 · [14] Daniel de Lamo Laguna · 27 ·
+[13] Juani · 14 · [15] José Luis · 6 · [17] Emilio · 6 · [16] Lourdes de Lamo · 2.
 
 ---
 
@@ -123,7 +156,10 @@ su propia decisión. Queda anotado aquí para que no se pierda.
    `parcela_id IN (…)` descarta los NULL. Es decir: hoy el histórico y las
    estadísticas ya esconden los registros sin parcela, en todas las
    explotaciones. **Al migrar a `explotacion_id` esos registros REAPARECEN.**
-   → **Avisar a Lourdes**, o pensará que la app se ha inventado datos.
+   → **COMPROBADO el 2026-08-07 sobre los datos reales: hay CERO registros con
+   `parcela_id` NULL en las seis tablas. No reaparece nada y NO hay que avisar a
+   Lourdes.** El riesgo sigue siendo real para otro agricultor con datos así, pero
+   con los datos de hoy no se materializa.
 2. **`/api/historial` y `/api/stats` ya acotaban.** La única fuga real del
    histórico era `compras`. Lo que no acotaba nada eran los listados CRUD.
 3. **`cultivos_campana` no tiene `user_id`** — cuelga de la parcela y el dueño se
