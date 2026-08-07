@@ -710,15 +710,19 @@ def _section_plan_abonado(conn, user_id, campana, styles, story, explotacion_id=
         styles['note']))
 
 
-def _section_compras(conn, user_id, campana, styles, story):
+def _section_compras(conn, user_id, campana, styles, story, explotacion_id=None):
     import sqlite3
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
+    # Compras no cuelga de parcela, así que `parcela_scope_clause()` nunca la
+    # cubrió: hasta la feature 013 el PDF oficial mezclaba las facturas de todas
+    # las fincas del usuario. Se acota por su propia columna.
     c.execute("""
         SELECT * FROM compras
         WHERE user_id=? AND campana=? AND deleted_at IS NULL
+    """ + (" AND explotacion_id=?" if explotacion_id else "") + """
         ORDER BY fecha ASC
-    """, (user_id, campana))
+    """, (user_id, campana) + ((explotacion_id,) if explotacion_id else ()))
     rows = [dict(r) for r in c.fetchall()]
 
     story.append(PageBreak())
@@ -954,7 +958,7 @@ def export_pdf(user_id, campana='2025/2026', explotacion_id=None):
     story.append(Spacer(1, 10))
 
     # ── Section 8: Compras ──
-    _section_compras(conn, user_id, campana, styles, story)
+    _section_compras(conn, user_id, campana, styles, story, explotacion_id)
 
     # ── Firma / cierre ──
     story.append(Spacer(1, 20))

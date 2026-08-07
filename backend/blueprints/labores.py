@@ -1,16 +1,23 @@
 """
 blueprints/labores.py — /api/labores/*, /api/cosecha/*
+
+Aislamiento por explotación (feature 013): toda consulta filtra por `user_id` Y
+`explotacion_id`, y los POST/PUT validan que la parcela o el grupo UHC sean de la
+explotación activa. Sin esa validación el aislamiento se salta desde el
+formulario mandando el id de una parcela de la otra finca.
 """
 import datetime
 
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, one, dicts
-from helpers import get_uid, _to_real
+from helpers import get_uid, get_active_explotacion_id, _to_real
 from blueprints.ia import _recalcular_patrones
 from blueprints.fertilizacion import _parcelas_uhc, parcela_es_del_usuario
 
 bp = Blueprint('labores', __name__)
+
+SIN_EXPLOTACION = "No tienes ninguna explotación creada"
 
 
 def _validate_labor(data):
@@ -22,13 +29,13 @@ def _validate_labor(data):
     return None
 
 
-def _insert_labor(c, uid, data, parcela_id, parcela_etiqueta):
+def _insert_labor(c, uid, data, parcela_id, parcela_etiqueta, explotacion_id):
     """Inserta un único registro de labor para la parcela dada."""
     c.execute('''
-        INSERT INTO labores (user_id, parcela_id, parcela_etiqueta, fecha,
+        INSERT INTO labores (user_id, explotacion_id, parcela_id, parcela_etiqueta, fecha,
             tipo_labor, descripcion, producto, maquinaria, horas_trabajadas, operario, notas, campana)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-    ''', (uid, parcela_id, parcela_etiqueta, data.get('fecha'),
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, explotacion_id, parcela_id, parcela_etiqueta, data.get('fecha'),
           data.get('tipo_labor'), data.get('descripcion'), data.get('producto'), data.get('maquinaria'),
           _to_real(data.get('horas_trabajadas')), data.get('operario'), data.get('notas'),
           data.get('campana', '2025/2026')))
@@ -40,34 +47,39 @@ def _insert_labor(c, uid, data, parcela_id, parcela_etiqueta):
 def manage_labores():
     uid = get_uid()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
     if request.method == 'GET':
-        rows = dicts(conn, "SELECT * FROM labores WHERE user_id=? ORDER BY fecha DESC", (uid,))
+        rows = dicts(conn, "SELECT * FROM labores WHERE user_id=? AND explotacion_id=?"
+                           " ORDER BY fecha DESC", (uid, exp_id))
         conn.close(); return jsonify(rows)
     data = request.json or {}
     err = _validate_labor(data)
     if err:
         conn.close()
         return jsonify({"error": err}), 400
+    if not exp_id:
+        conn.close()
+        return jsonify({"error": SIN_EXPLOTACION}), 400
     c = conn.cursor()
 
     if data.get('uhc_id'):
-        parcelas = _parcelas_uhc(conn, data['uhc_id'], uid)
+        parcelas = _parcelas_uhc(conn, data['uhc_id'], uid, exp_id)
         if not parcelas:
             conn.close()
             return jsonify({"error": "El grupo UHC no existe o no tiene parcelas asignadas"}), 400
-        ids = [_insert_labor(c, uid, data, p['id'], p['nombre_finca']) for p in parcelas]
+        ids = [_insert_labor(c, uid, data, p['id'], p['nombre_finca'], exp_id) for p in parcelas]
         conn.commit(); conn.close()
         for p in parcelas:
-            _recalcular_patrones(uid, 'labores', p['id'], data.get('fecha'))
+            _recalcular_patrones(uid, 'labores', p['id'], data.get('fecha'), exp_id)
         return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
 
-    if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid):
+    if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
 
-    new_id = _insert_labor(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'))
+    new_id = _insert_labor(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'), exp_id)
     conn.commit(); conn.close()
-    _recalcular_patrones(uid, 'labores', data.get('parcela_id'), data.get('fecha'))
+    _recalcular_patrones(uid, 'labores', data.get('parcela_id'), data.get('fecha'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
@@ -76,25 +88,29 @@ def manage_labores():
 def manage_labor(lid):
     uid = get_uid()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
     if request.method == 'DELETE':
-        conn.execute("DELETE FROM labores WHERE id=? AND user_id=?", (lid, uid))
+        conn.execute("DELETE FROM labores WHERE id=? AND user_id=? AND explotacion_id=?",
+                     (lid, uid, exp_id))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
-        row = one(conn, "SELECT * FROM labores WHERE id=? AND user_id=?", (lid, uid))
+        row = one(conn, "SELECT * FROM labores WHERE id=? AND user_id=? AND explotacion_id=?",
+                  (lid, uid, exp_id))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
     err = _validate_labor(data)
     if err:
         conn.close()
         return jsonify({"error": err}), 400
-    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
     fields = ['parcela_id', 'parcela_etiqueta', 'fecha', 'tipo_labor', 'descripcion',
               'producto', 'maquinaria', 'horas_trabajadas', 'operario', 'notas', 'campana']
     sets = ', '.join(f"{f}=?" for f in fields)
-    conn.execute(f"UPDATE labores SET {sets} WHERE id=? AND user_id=?",
-                 [_to_real(data.get(f)) if f == 'horas_trabajadas' else data.get(f) for f in fields] + [lid, uid])
+    conn.execute(f"UPDATE labores SET {sets} WHERE id=? AND user_id=? AND explotacion_id=?",
+                 [_to_real(data.get(f)) if f == 'horas_trabajadas' else data.get(f) for f in fields]
+                 + [lid, uid, exp_id])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
@@ -103,8 +119,10 @@ def manage_labor(lid):
 def manage_cosecha():
     uid = get_uid()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
     if request.method == 'GET':
-        rows = dicts(conn, "SELECT * FROM cosecha WHERE user_id=? ORDER BY fecha_inicio DESC", (uid,))
+        rows = dicts(conn, "SELECT * FROM cosecha WHERE user_id=? AND explotacion_id=?"
+                           " ORDER BY fecha_inicio DESC", (uid, exp_id))
         conn.close(); return jsonify(rows)
     data = request.json or {}
 
@@ -131,7 +149,12 @@ def manage_cosecha():
         conn.close()
         return jsonify({"error": "Formato de fecha inválido (use YYYY-MM-DD)"}), 400
 
-    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+    # El orden importa: sin explotación activa, `parcela_es_del_usuario` cae en
+    # la rama que NO filtra por explotación, así que se comprueba antes.
+    if not exp_id:
+        conn.close()
+        return jsonify({"error": SIN_EXPLOTACION}), 400
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
 
@@ -140,9 +163,9 @@ def manage_cosecha():
         plazo_activos = dicts(conn, """
             SELECT producto_comercial, fecha_recoleccion_minima
             FROM tratamientos
-            WHERE parcela_id=? AND user_id=? AND deleted_at IS NULL
+            WHERE parcela_id=? AND user_id=? AND explotacion_id=? AND deleted_at IS NULL
               AND fecha_recoleccion_minima > ?
-        """, (data['parcela_id'], uid, data['fecha_inicio']))
+        """, (data['parcela_id'], uid, exp_id, data['fecha_inicio']))
         if plazo_activos:
             nombres = ', '.join(p['producto_comercial'] for p in plazo_activos)
             conn.close()
@@ -156,18 +179,18 @@ def manage_cosecha():
     rend = round(prod / sup, 2) if sup > 0 else None
     c = conn.cursor()
     c.execute('''
-        INSERT INTO cosecha (user_id, parcela_id, parcela_etiqueta, fecha_inicio, fecha_fin,
+        INSERT INTO cosecha (user_id, explotacion_id, parcela_id, parcela_etiqueta, fecha_inicio, fecha_fin,
             cultivo, variedad, superficie_cosechada_ha, produccion_total_valor,
             produccion_total_unidad, rendimiento_kg_ha, destino, comprador,
             precio_unidad, notas, campana)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'),
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, exp_id, data.get('parcela_id'), data.get('parcela_etiqueta'),
           data.get('fecha_inicio'), data.get('fecha_fin'), data.get('cultivo'),
           data.get('variedad'), sup, prod, data.get('produccion_total_unidad', 'kg'),
           rend, data.get('destino'), data.get('comprador'),
           _to_real(data.get('precio_unidad')), data.get('notas'), data.get('campana', '2025/2026')))
     conn.commit(); new_id = c.lastrowid; conn.close()
-    _recalcular_patrones(uid, 'cosecha', data.get('parcela_id'), data.get('fecha_inicio'))
+    _recalcular_patrones(uid, 'cosecha', data.get('parcela_id'), data.get('fecha_inicio'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
@@ -176,14 +199,17 @@ def manage_cosecha():
 def manage_cosecha_one(cid):
     uid = get_uid()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
     if request.method == 'DELETE':
-        conn.execute("DELETE FROM cosecha WHERE id=? AND user_id=?", (cid, uid))
+        conn.execute("DELETE FROM cosecha WHERE id=? AND user_id=? AND explotacion_id=?",
+                     (cid, uid, exp_id))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
-        row = one(conn, "SELECT * FROM cosecha WHERE id=? AND user_id=?", (cid, uid))
+        row = one(conn, "SELECT * FROM cosecha WHERE id=? AND user_id=? AND explotacion_id=?",
+                  (cid, uid, exp_id))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
-    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
     prod = _to_real(data.get('produccion_total_valor')) or 0
@@ -196,6 +222,7 @@ def manage_cosecha_one(cid):
               'rendimiento_kg_ha', 'destino', 'comprador', 'precio_unidad', 'notas', 'campana']
     _real_c = {'precio_unidad'}
     sets = ', '.join(f"{f}=?" for f in fields)
-    conn.execute(f"UPDATE cosecha SET {sets} WHERE id=? AND user_id=?",
-                 [_to_real(data.get(f)) if f in _real_c else data.get(f) for f in fields] + [cid, uid])
+    conn.execute(f"UPDATE cosecha SET {sets} WHERE id=? AND user_id=? AND explotacion_id=?",
+                 [_to_real(data.get(f)) if f in _real_c else data.get(f) for f in fields]
+                 + [cid, uid, exp_id])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})

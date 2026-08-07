@@ -7,10 +7,12 @@ import re
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, one, dicts
-from helpers import get_uid, _to_real
+from helpers import get_uid, get_active_explotacion_id, _to_real
 from blueprints.ia import _recalcular_patrones
 
 bp = Blueprint('compras', __name__)
+
+SIN_EXPLOTACION = "No tienes ninguna explotación creada"
 
 
 def _validate_campana(campana):
@@ -57,10 +59,11 @@ def _validate_compra(data):
 def manage_compras():
     uid = get_uid()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
     if request.method == 'GET':
         campana = request.args.get('campana', '')
-        sql = "SELECT * FROM compras WHERE user_id=? AND deleted_at IS NULL"
-        params = [uid]
+        sql = "SELECT * FROM compras WHERE user_id=? AND explotacion_id=? AND deleted_at IS NULL"
+        params = [uid, exp_id]
         if campana:
             sql += " AND campana=?"
             params.append(campana)
@@ -73,21 +76,24 @@ def manage_compras():
     if err:
         conn.close()
         return jsonify({"error": err}), 400
+    if not exp_id:
+        conn.close()
+        return jsonify({"error": SIN_EXPLOTACION}), 400
 
     c = conn.cursor()
     c.execute('''
-        INSERT INTO compras (user_id, fecha, tipo_producto, producto, num_registro_mapa,
+        INSERT INTO compras (user_id, explotacion_id, fecha, tipo_producto, producto, num_registro_mapa,
             sustancia_activa, proveedor, cantidad_valor, cantidad_unidad, num_lote,
             num_factura, precio_total, campana, notas)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    ''', (uid, data.get('fecha'), data.get('tipo_producto'), data.get('producto'),
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, exp_id, data.get('fecha'), data.get('tipo_producto'), data.get('producto'),
           data.get('num_registro_mapa'), data.get('sustancia_activa'),
           data.get('proveedor'), _to_real(data.get('cantidad_valor')),
           data.get('cantidad_unidad', 'kg'), data.get('num_lote'),
           data.get('num_factura'), _to_real(data.get('precio_total')),
           data.get('campana', '2025/2026'), data.get('notas')))
     conn.commit(); new_id = c.lastrowid; conn.close()
-    _recalcular_patrones(uid, 'compras', None, data.get('fecha'))
+    _recalcular_patrones(uid, 'compras', None, data.get('fecha'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
@@ -96,13 +102,16 @@ def manage_compras():
 def manage_compra(cid):
     uid = get_uid()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
     if request.method == 'DELETE':
         conn.execute(
-            "UPDATE compras SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
-            (cid, uid))
+            "UPDATE compras SET deleted_at=CURRENT_TIMESTAMP"
+            " WHERE id=? AND user_id=? AND explotacion_id=?",
+            (cid, uid, exp_id))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
-        row = one(conn, "SELECT * FROM compras WHERE id=? AND user_id=? AND deleted_at IS NULL", (cid, uid))
+        row = one(conn, "SELECT * FROM compras WHERE id=? AND user_id=? AND explotacion_id=?"
+                        " AND deleted_at IS NULL", (cid, uid, exp_id))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
     err = _validate_compra(data)
@@ -114,6 +123,8 @@ def manage_compra(cid):
               'precio_total', 'campana', 'notas']
     sets = ', '.join(f"{f}=?" for f in fields)
     _real_co = {'cantidad_valor', 'precio_total'}
-    conn.execute(f"UPDATE compras SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
-                 [_to_real(data.get(f)) if f in _real_co else data.get(f) for f in fields] + [cid, uid])
+    conn.execute(f"UPDATE compras SET {sets}"
+                 f" WHERE id=? AND user_id=? AND explotacion_id=? AND deleted_at IS NULL",
+                 [_to_real(data.get(f)) if f in _real_co else data.get(f) for f in fields]
+                 + [cid, uid, exp_id])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})

@@ -169,11 +169,51 @@ def one(conn, sql, params=()):
 _SCOPE_ALIASES = {'', 't', 'f', 'l', 'r', 'c', 'co', 'a', 'cc'}
 
 
+# Tablas con datos del agricultor que se acotan por explotación (feature 013:
+# cada explotación es un cuaderno independiente). Fuente única de verdad: la usan
+# la migración, los índices, el backfill y el test de aislamiento. Añadir aquí
+# cualquier tabla nueva de datos del agricultor.
+#
+# El valor es la columna de la que HEREDAR la explotación en el backfill, o None
+# si la tabla no cuelga de ninguna parcela y hay que caer a la explotación por
+# defecto del usuario.
+TABLAS_POR_EXPLOTACION = {
+    'tratamientos':        'parcela_id',
+    'fertilizacion':       'parcela_id',
+    'riego':               'parcela_id',
+    'abonado':             'parcela_id',
+    'labores':             'parcela_id',
+    'cosecha':             'parcela_id',
+    'cultivos_campana':    'parcela_id',
+    'compras':             None,
+    'equipos':             None,
+    'aplicadores':         None,
+    'asesores':            None,
+    'unidades_homogeneas': None,
+}
+
+# `cultivos_campana` es la única que no tiene `user_id`: cuelga de la parcela y
+# el dueño se comprueba con un JOIN. Así que no puede caer al backfill por
+# usuario, solo heredar de su parcela.
+_SIN_USER_ID = frozenset({'cultivos_campana'})
+
+
 def parcela_scope_clause(explotacion_id, alias=''):
     """Cláusula SQL parametrizada para acotar registros a las parcelas de una explotación.
 
-    Fuente única para el scoping por explotación (evita f-strings repartidas por
-    exports/PDF). Devuelve `(clausula, params)`:
+    LEGADO. Solo lo usan `exports.py` y `export_pdf.py`, que ya funcionaban con
+    él. El resto del código acota con `AND explotacion_id=?` directamente, desde
+    que la feature 013 puso esa columna en todas las tablas de
+    `TABLAS_POR_EXPLOTACION`.
+
+    Ojo con su límite, que es el motivo de que se sustituyera: `parcela_id` es
+    nullable en tratamientos, fertilizacion, labores, riego, cosecha y abonado,
+    y un `parcela_id IN (…)` descarta las filas con NULL. Es decir, este helper
+    OCULTA los registros sin parcela asignada en todas las explotaciones. En un
+    cuaderno legal, un dato que no se ve es peor que un dato mezclado: el
+    agricultor cree que no lo anotó.
+
+    Devuelve `(clausula, params)`:
       - si `explotacion_id` es falsy → ('', ())
       - si no → (" AND <alias>.parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)", (explotacion_id,))
 
@@ -887,10 +927,22 @@ def init_db():
         )
     ''')
 
+    # ── AISLAMIENTO POR EXPLOTACIÓN (feature 013) ──
+    # `explotacion_id` en toda tabla con datos del agricultor. Va aquí, después
+    # de crear todas las tablas y antes de los backfills, porque el backfill de
+    # datos necesita que la columna ya exista.
+    #
+    # Sin DEFAULT, igual que `user_id`: un INSERT que la olvide debe fallar o
+    # dejar NULL y salir en los avisos del backfill, nunca escribir callando en
+    # la finca equivocada.
+    for _tabla in TABLAS_POR_EXPLOTACION:
+        _add_col(c, _tabla, 'explotacion_id', 'INTEGER')
+
     conn.commit()
     _seed_admin(conn)
     _seed_if_needed(conn)
     _backfill_explotaciones(conn)
+    _backfill_explotacion_datos(conn)
     # Al final: ya existen todas las tablas, incluidas las que crea _seed_if_needed.
     _harden_user_id_postgres(conn)
     _enable_rls_postgres(conn)
@@ -926,6 +978,86 @@ def _backfill_explotaciones(conn):
                 "SELECT id FROM explotacion WHERE user_id=? ORDER BY orden, id LIMIT 1", (uid,))
         c.execute("UPDATE parcelas SET explotacion_id=? WHERE user_id=? AND explotacion_id IS NULL",
                   (expl['id'], uid))
+    conn.commit()
+
+
+def _backfill_explotacion_datos(conn):
+    """Asigna una explotación a los registros que nacieron sin ella (feature 013).
+
+    Se ejecuta DESPUÉS de `_backfill_explotaciones()`, que garantiza que toda
+    parcela ya tiene explotación: aquí se hereda de ella.
+
+    Idempotente: solo toca filas con `explotacion_id IS NULL`, así que un segundo
+    arranque no cambia nada.
+
+    Dos pasadas, y el orden importa:
+
+      1. Si la fila cuelga de una parcela, hereda la explotación de esa parcela.
+         Es el dato REAL, no una suposición.
+      2. Lo que quede (tabla sin parcela, o parcela sin asignar) cae a la
+         explotación por defecto del usuario. Aquí sí se está suponiendo: para
+         equipos, facturas, aplicadores y asesores nunca se guardó a qué finca
+         pertenecían, así que caen todos en la principal y hay que repasarlos a
+         mano. No hay forma de deducirlo.
+
+    Lo que quede en NULL tras las dos pasadas se registra con `logger.error`,
+    tabla y recuento, para revisarlo a mano. NO se fuerza `NOT NULL`: decidir qué
+    se hace con los registros de un agricultor no es cosa de una migración
+    automática (mismo criterio que `_harden_user_id_postgres`).
+    """
+    c = conn.cursor()
+
+    for tabla, col_parcela in TABLAS_POR_EXPLOTACION.items():
+        t = _safe_sql_identifier(tabla, 'table name')
+
+        # ── Pasada 1: heredar de la parcela ──
+        if col_parcela:
+            pc = _safe_sql_identifier(col_parcela, 'column name')
+            try:
+                c.execute(f"""
+                    UPDATE {t} SET explotacion_id = (
+                        SELECT p.explotacion_id FROM parcelas p WHERE p.id = {t}.{pc})
+                    WHERE explotacion_id IS NULL AND {pc} IS NOT NULL
+                      AND EXISTS (SELECT 1 FROM parcelas p
+                                   WHERE p.id = {t}.{pc} AND p.explotacion_id IS NOT NULL)
+                """)
+            except Exception as e:
+                logger.error("[013] fallo heredando explotacion_id de la parcela en %s: %s",
+                             tabla, e)
+
+        # ── Pasada 2: explotación por defecto del usuario ──
+        if tabla not in _SIN_USER_ID:
+            try:
+                huerfanos = dicts(conn, f"SELECT DISTINCT user_id FROM {t}"
+                                        f" WHERE explotacion_id IS NULL AND user_id IS NOT NULL")
+                for row in huerfanos:
+                    uid = row['user_id']
+                    expl = one(conn, "SELECT id FROM explotacion WHERE user_id=?"
+                                     " ORDER BY orden, id LIMIT 1", (uid,))
+                    if not expl:
+                        # Usuario con datos pero sin ninguna explotación. No se le
+                        # inventa una aquí: _backfill_explotaciones ya lo hace para
+                        # quien tiene parcelas, y crear fincas fantasma a partir de
+                        # una factura suelta es peor que dejarlo a la vista.
+                        logger.error("[013] %s: el usuario %s tiene registros sin explotación"
+                                     " y no tiene ninguna explotación creada", tabla, uid)
+                        continue
+                    c.execute(f"UPDATE {t} SET explotacion_id=?"
+                              f" WHERE user_id=? AND explotacion_id IS NULL", (expl['id'], uid))
+            except Exception as e:
+                logger.error("[013] fallo asignando la explotación por defecto en %s: %s",
+                             tabla, e)
+
+        # ── Aviso de lo que quede sin asignar ──
+        try:
+            resto = one(conn, f"SELECT COUNT(*) AS n FROM {t} WHERE explotacion_id IS NULL")
+            if resto and resto['n']:
+                logger.error("[013] %s: %s registros siguen sin explotacion_id."
+                             " Revisar a mano antes de fiarse de los listados.",
+                             tabla, resto['n'])
+        except Exception as e:
+            logger.error("[013] no se pudo contar los huérfanos de %s: %s", tabla, e)
+
     conn.commit()
 
 
@@ -980,6 +1112,7 @@ def _seed_if_needed(conn):
             user_id        INTEGER NOT NULL,
             modulo         TEXT NOT NULL,
             parcela_id     INTEGER,
+            explotacion_id INTEGER,
             temporada      TEXT NOT NULL,
             campo          TEXT NOT NULL,
             valor_sugerido TEXT NOT NULL,
@@ -988,6 +1121,12 @@ def _seed_if_needed(conn):
             actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # `ia_patrones` no está en TABLAS_POR_EXPLOTACION porque no son datos del
+    # agricultor sino una caché que se regenera en cada POST: por eso no lleva
+    # backfill. Los patrones antiguos quedan con explotacion_id NULL y dejan de
+    # casar con las consultas, que es exactamente lo que se quiere.
+    _add_col(c, 'ia_patrones', 'explotacion_id', 'INTEGER')
+
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS ia_alertas (
             id         {_PK},
@@ -1041,6 +1180,10 @@ def _seed_if_needed(conn):
         ('idx_aplicadores_user',     'aplicadores',        'user_id'),
         ('idx_cultivos_campana',     'cultivos_campana',   'campana'),
     ]
+    # Un índice por explotación en cada tabla acotada (feature 013): ahora TODA
+    # consulta de datos del agricultor lleva `AND explotacion_id=?`, y sin índice
+    # eso es un escaneo completo por listado.
+    _indexes += [(f'idx_{t}_expl', t, 'explotacion_id') for t in TABLAS_POR_EXPLOTACION]
     for idx_name, table, cols in _indexes:
         # Validar cada identificador contra la allowlist ANTES de interpolar.
         # cols puede ser "col1, col2": se valida parte a parte.

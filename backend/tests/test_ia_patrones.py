@@ -16,6 +16,8 @@ import blueprints.ia as ia
 
 UID = 1
 PARCELA = 7
+EXPL = 3        # explotación activa
+EXPL_OTRA = 4   # otra finca del mismo usuario: sus datos NO deben contar
 
 
 def check(nombre, cond):
@@ -44,7 +46,8 @@ def _db():
     conn.execute("""
         CREATE TABLE tratamientos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER, parcela_id INTEGER, fecha_aplicacion TEXT,
+            user_id INTEGER, parcela_id INTEGER, explotacion_id INTEGER,
+            fecha_aplicacion TEXT,
             producto_comercial TEXT, num_registro_mapa TEXT, sustancia_activa TEXT,
             plaga_objetivo TEXT, dosis_valor REAL, dosis_unidad TEXT,
             equipo_id INTEGER, aplicador_id INTEGER, deleted_at TEXT
@@ -53,23 +56,34 @@ def _db():
     conn.execute("""
         CREATE TABLE ia_patrones (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER, modulo TEXT, parcela_id INTEGER, temporada TEXT,
+            user_id INTEGER, modulo TEXT, parcela_id INTEGER, explotacion_id INTEGER,
+            temporada TEXT,
             campo TEXT, valor_sugerido TEXT, frecuencia INTEGER, ultima_vez TEXT
         )
     """)
     conn.executemany("""
         INSERT INTO tratamientos
-            (user_id, parcela_id, fecha_aplicacion, producto_comercial,
+            (user_id, parcela_id, explotacion_id, fecha_aplicacion, producto_comercial,
              num_registro_mapa, sustancia_activa, plaga_objetivo,
              dosis_valor, dosis_unidad, equipo_id, aplicador_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
     """, [
-        (UID, PARCELA, '2026-04-10', 'Karate Zeon', 'ES-00123', 'lambda-cihalotrin',
+        (UID, PARCELA, EXPL, '2026-04-10', 'Karate Zeon', 'ES-00123', 'lambda-cihalotrin',
          'Pulgón', 0.5, 'l/ha', 3, 9),
-        (UID, PARCELA, '2026-04-20', 'Karate Zeon', 'ES-00123', 'lambda-cihalotrin',
+        (UID, PARCELA, EXPL, '2026-04-20', 'Karate Zeon', 'ES-00123', 'lambda-cihalotrin',
          'Pulgón', 0.5, 'l/ha', 3, 9),
-        (UID, PARCELA, '2026-05-02', 'Karate Zeon', 'ES-00123', 'lambda-cihalotrin',
+        (UID, PARCELA, EXPL, '2026-05-02', 'Karate Zeon', 'ES-00123', 'lambda-cihalotrin',
          'Trips',  0.75, 'l/ha', 3, 9),
+        # Misma parcela_id, otra explotación: si el filtro por explotación falla,
+        # este producto se cuela como el más frecuente y el test lo caza.
+        (UID, PARCELA, EXPL_OTRA, '2026-04-11', 'Otro de la otra finca', 'ES-99999',
+         'azufre', 'Oídio', 2.0, 'kg/ha', 8, 4),
+        (UID, PARCELA, EXPL_OTRA, '2026-04-12', 'Otro de la otra finca', 'ES-99999',
+         'azufre', 'Oídio', 2.0, 'kg/ha', 8, 4),
+        (UID, PARCELA, EXPL_OTRA, '2026-04-13', 'Otro de la otra finca', 'ES-99999',
+         'azufre', 'Oídio', 2.0, 'kg/ha', 8, 4),
+        (UID, PARCELA, EXPL_OTRA, '2026-04-14', 'Otro de la otra finca', 'ES-99999',
+         'azufre', 'Oídio', 2.0, 'kg/ha', 8, 4),
     ])
     conn.commit()
     return conn
@@ -100,7 +114,7 @@ def test_recalculo_completo():
     original = ia.get_db
     ia.get_db = lambda: _NoCloseConn(conn)
     try:
-        ia._recalcular_patrones(UID, 'tratamientos', PARCELA, '2026-05-02')
+        ia._recalcular_patrones(UID, 'tratamientos', PARCELA, '2026-05-02', EXPL)
     finally:
         ia.get_db = original
 
@@ -118,6 +132,8 @@ def test_recalculo_completo():
     check("dosis más frecuente = 0.5", str(rows['dosis_valor']['valor_sugerido']) == '0.5')
     check("equipo_id sugerido = 3", str(rows['equipo_id']['valor_sugerido']) == '3')
     check("plaga más frecuente = Pulgón", rows['plaga_objetivo']['valor_sugerido'] == 'Pulgón')
+    check("no se aprende nada de la otra explotación",
+          all(r['valor_sugerido'] != 'Otro de la otra finca' for r in rows.values()))
 
 
 def test_fallo_aislado_por_campo():
@@ -132,7 +148,7 @@ def test_fallo_aislado_por_campo():
     original = ia.get_db
     ia.get_db = lambda: _NoCloseConn(conn)
     try:
-        ia._recalcular_patrones(UID, 'tratamientos', PARCELA, '2026-05-02')
+        ia._recalcular_patrones(UID, 'tratamientos', PARCELA, '2026-05-02', EXPL)
     finally:
         ia.get_db = original
 

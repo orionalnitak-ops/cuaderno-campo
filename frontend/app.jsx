@@ -181,7 +181,17 @@ function App() {
             .then(r => r.ok ? r.json() : null)
             .then(() => {
                 setExplotaciones(list => list.map(e => ({ ...e, is_active: e.id === eid })));
-                setExplKey(k => k + 1); // fuerza recarga de todas las pantallas con datos acotados
+                // Las cachés offline guardan datos de UNA finca sin decir de cuál:
+                // sin vaciarlas, al perder cobertura en la nueva se verían las
+                // parcelas y los equipos de la anterior (feature 013).
+                if (window.OfflineDB?.clearCachesConsulta) window.OfflineDB.clearCachesConsulta();
+                // Cada explotación tiene su propia campaña activa. Sin recargarla,
+                // los filtros y las exportaciones seguirían con la de la finca vieja.
+                fetch('/api/explotacion', { credentials: 'include' })
+                    .then(r => r.ok ? r.json() : {})
+                    .then(expl => { if (expl?.campana_activa) setCampana(expl.campana_activa); })
+                    .catch(() => {})
+                    .finally(() => setExplKey(k => k + 1)); // remonta todas las pantallas
             })
             .catch(() => {});
     }, []);

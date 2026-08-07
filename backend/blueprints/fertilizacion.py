@@ -1,5 +1,9 @@
 """
 blueprints/fertilizacion.py — /api/fertilizacion/*, /api/riego/*, /api/abonado/*
+
+Aislamiento por explotación (feature 013): toda consulta de los tres módulos
+filtra por `user_id` Y `explotacion_id`, y los POST/PUT validan que la parcela o
+el grupo UHC sean de la explotación activa antes de guardar.
 """
 import datetime
 import re
@@ -7,10 +11,12 @@ import re
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, one, dicts
-from helpers import get_uid, _to_real
+from helpers import get_uid, get_active_explotacion_id, _to_real
 from blueprints.ia import _recalcular_patrones
 
 bp = Blueprint('fertilizacion', __name__)
+
+SIN_EXPLOTACION = "No tienes ninguna explotación creada"
 
 
 # ─────────────────────────────────────────────
@@ -166,16 +172,17 @@ def _validate_abonado(data):
 # FERTILIZACIÓN
 # ─────────────────────────────────────────────
 
-def _insert_fertilizacion(c, uid, data, parcela_id, parcela_etiqueta, n_ap, p_ap, k_ap):
+def _insert_fertilizacion(c, uid, data, parcela_id, parcela_etiqueta, n_ap, p_ap, k_ap,
+                          explotacion_id):
     """Inserta un único registro de fertilización para la parcela dada."""
     c.execute('''
         INSERT INTO fertilizacion (
-            user_id, parcela_id, parcela_etiqueta, fecha_aplicacion,
+            user_id, explotacion_id, parcela_id, parcela_etiqueta, fecha_aplicacion,
             tipo_fertilizante, producto, riqueza_npk,
             dosis_valor, dosis_unidad, densidad_g_ml, metodo_aplicacion, notas, campana,
             n_aplicado, p2o5_aplicado, k2o_aplicado
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    ''', (uid, parcela_id, parcela_etiqueta, data.get('fecha_aplicacion'),
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, explotacion_id, parcela_id, parcela_etiqueta, data.get('fecha_aplicacion'),
           data.get('tipo_fertilizante'), data.get('producto'), data.get('riqueza_npk'),
           _to_real(data.get('dosis_valor')), data.get('dosis_unidad', 'kg/ha'),
           _to_real(data.get('densidad_g_ml')),
@@ -184,21 +191,42 @@ def _insert_fertilizacion(c, uid, data, parcela_id, parcela_etiqueta, n_ap, p_ap
     return c.lastrowid
 
 
-def _parcelas_uhc(conn, uhc_id, uid):
-    """Parcelas (id, nombre_finca) de un grupo UHC del usuario, o [] si no existe/no tiene."""
-    return dicts(conn, """
+def _parcelas_uhc(conn, uhc_id, uid, explotacion_id=None):
+    """Parcelas (id, nombre_finca) de un grupo UHC del usuario, o [] si no existe/no tiene.
+
+    Con `explotacion_id` exige que el grupo Y sus parcelas sean de esa finca
+    (feature 013). Se comprueban las dos cosas y no solo el grupo: si algún UHC
+    antiguo quedó con parcelas de dos explotaciones, expandirlo metería registros
+    en la finca equivocada.
+    """
+    sql = """
         SELECT p.id, p.nombre_finca
         FROM uhc_parcelas up
         JOIN parcelas p ON p.id = up.parcela_id
         JOIN unidades_homogeneas u ON u.id = up.uhc_id
         WHERE up.uhc_id = ? AND u.user_id = ? AND u.deleted_at IS NULL
-    """, (uhc_id, uid))
+    """
+    params = [uhc_id, uid]
+    if explotacion_id is not None:
+        sql += " AND u.explotacion_id = ? AND p.explotacion_id = ?"
+        params += [explotacion_id, explotacion_id]
+    return dicts(conn, sql, params)
 
 
-def parcela_es_del_usuario(conn, parcela_id, uid):
+def parcela_es_del_usuario(conn, parcela_id, uid, explotacion_id=None):
     """True si parcela_id existe y pertenece a uid. Evita IDOR: sin esto, cualquier
-    usuario autenticado podría enviar el parcela_id de otro y colgarle registros."""
-    return one(conn, "SELECT id FROM parcelas WHERE id=? AND user_id=?", (parcela_id, uid)) is not None
+    usuario autenticado podría enviar el parcela_id de otro y colgarle registros.
+
+    Con `explotacion_id` comprueba además que la parcela sea de esa finca
+    (feature 013). Sin eso, el aislamiento se salta desde el propio formulario:
+    basta mandar el id de una parcela de la otra explotación del mismo usuario.
+    """
+    sql = "SELECT id FROM parcelas WHERE id=? AND user_id=?"
+    params = [parcela_id, uid]
+    if explotacion_id is not None:
+        sql += " AND explotacion_id=?"
+        params.append(explotacion_id)
+    return one(conn, sql, params) is not None
 
 
 @bp.route('/api/fertilizacion', methods=['GET', 'POST'])
@@ -206,8 +234,10 @@ def parcela_es_del_usuario(conn, parcela_id, uid):
 def manage_fertilizacion():
     uid = get_uid()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
     if request.method == 'GET':
-        rows = dicts(conn, "SELECT * FROM fertilizacion WHERE user_id=? AND deleted_at IS NULL ORDER BY fecha_aplicacion DESC", (uid,))
+        rows = dicts(conn, "SELECT * FROM fertilizacion WHERE user_id=? AND explotacion_id=?"
+                           " AND deleted_at IS NULL ORDER BY fecha_aplicacion DESC", (uid, exp_id))
         conn.close(); return jsonify(rows)
 
     data = request.json or {}
@@ -216,28 +246,34 @@ def manage_fertilizacion():
         conn.close()
         return jsonify({"error": err}), 400
 
+    if not exp_id:
+        conn.close()
+        return jsonify({"error": SIN_EXPLOTACION}), 400
+
     n_ap, p_ap, k_ap = _calc_npk(data.get('riqueza_npk'), data.get('dosis_valor'),
                                   data.get('dosis_unidad', 'kg/ha'), data.get('densidad_g_ml'))
     c = conn.cursor()
 
     if data.get('uhc_id'):
-        parcelas = _parcelas_uhc(conn, data['uhc_id'], uid)
+        parcelas = _parcelas_uhc(conn, data['uhc_id'], uid, exp_id)
         if not parcelas:
             conn.close()
             return jsonify({"error": "El grupo UHC no existe o no tiene parcelas asignadas"}), 400
-        ids = [_insert_fertilizacion(c, uid, data, p['id'], p['nombre_finca'], n_ap, p_ap, k_ap) for p in parcelas]
+        ids = [_insert_fertilizacion(c, uid, data, p['id'], p['nombre_finca'], n_ap, p_ap, k_ap, exp_id)
+               for p in parcelas]
         conn.commit(); conn.close()
         for p in parcelas:
-            _recalcular_patrones(uid, 'fertilizacion', p['id'], data.get('fecha_aplicacion'))
+            _recalcular_patrones(uid, 'fertilizacion', p['id'], data.get('fecha_aplicacion'), exp_id)
         return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
 
-    if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid):
+    if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
 
-    new_id = _insert_fertilizacion(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'), n_ap, p_ap, k_ap)
+    new_id = _insert_fertilizacion(c, uid, data, data.get('parcela_id'),
+                                   data.get('parcela_etiqueta'), n_ap, p_ap, k_ap, exp_id)
     conn.commit(); conn.close()
-    _recalcular_patrones(uid, 'fertilizacion', data.get('parcela_id'), data.get('fecha_aplicacion'))
+    _recalcular_patrones(uid, 'fertilizacion', data.get('parcela_id'), data.get('fecha_aplicacion'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
@@ -246,20 +282,23 @@ def manage_fertilizacion():
 def manage_fertilizacion_one(fid):
     uid = get_uid()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
     if request.method == 'DELETE':
         conn.execute(
-            "UPDATE fertilizacion SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
-            (fid, uid))
+            "UPDATE fertilizacion SET deleted_at=CURRENT_TIMESTAMP"
+            " WHERE id=? AND user_id=? AND explotacion_id=?",
+            (fid, uid, exp_id))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
-        row = one(conn, "SELECT * FROM fertilizacion WHERE id=? AND user_id=? AND deleted_at IS NULL", (fid, uid))
+        row = one(conn, "SELECT * FROM fertilizacion WHERE id=? AND user_id=? AND explotacion_id=?"
+                        " AND deleted_at IS NULL", (fid, uid, exp_id))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
     err = _validate_fertilizacion(data)
     if err:
         conn.close()
         return jsonify({"error": err}), 400
-    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
     n_ap, p_ap, k_ap = _calc_npk(data.get('riqueza_npk'), data.get('dosis_valor'),
@@ -272,8 +311,9 @@ def manage_fertilizacion_one(fid):
     _real_f = {'dosis_valor', 'densidad_g_ml'}
     npk_map = {'n_aplicado': n_ap, 'p2o5_aplicado': p_ap, 'k2o_aplicado': k_ap}
     values = [_to_real(data.get(f)) if f in _real_f else npk_map.get(f, data.get(f)) for f in fields]
-    conn.execute(f"UPDATE fertilizacion SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
-                 values + [fid, uid])
+    conn.execute(f"UPDATE fertilizacion SET {sets}"
+                 f" WHERE id=? AND user_id=? AND explotacion_id=? AND deleted_at IS NULL",
+                 values + [fid, uid, exp_id])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
@@ -281,14 +321,14 @@ def manage_fertilizacion_one(fid):
 # RIEGO
 # ─────────────────────────────────────────────
 
-def _insert_riego(c, uid, data, parcela_id, parcela_etiqueta):
+def _insert_riego(c, uid, data, parcela_id, parcela_etiqueta, explotacion_id):
     """Inserta un único registro de riego para la parcela dada."""
     c.execute('''
         INSERT INTO riego (
-            user_id, parcela_id, parcela_etiqueta, fecha,
+            user_id, explotacion_id, parcela_id, parcela_etiqueta, fecha,
             tipo_riego, volumen_m3, horas_riego, fuente_agua, notas, campana
-        ) VALUES (?,?,?,?,?,?,?,?,?,?)
-    ''', (uid, parcela_id, parcela_etiqueta, data.get('fecha'),
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, explotacion_id, parcela_id, parcela_etiqueta, data.get('fecha'),
           data.get('tipo_riego'), _to_real(data.get('volumen_m3')),
           _to_real(data.get('horas_riego')), data.get('fuente_agua'), data.get('notas'),
           data.get('campana', '2025/2026')))
@@ -300,9 +340,11 @@ def _insert_riego(c, uid, data, parcela_id, parcela_etiqueta):
 def manage_riego():
     uid = get_uid()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
     if request.method == 'GET':
         campana = request.args.get('campana', '2025/2026')
-        rows = dicts(conn, "SELECT * FROM riego WHERE user_id=? AND campana=? AND deleted_at IS NULL ORDER BY fecha DESC", (uid, campana))
+        rows = dicts(conn, "SELECT * FROM riego WHERE user_id=? AND explotacion_id=? AND campana=?"
+                           " AND deleted_at IS NULL ORDER BY fecha DESC", (uid, exp_id, campana))
         conn.close(); return jsonify(rows)
 
     data = request.json or {}
@@ -310,27 +352,31 @@ def manage_riego():
     if err:
         conn.close()
         return jsonify({"error": err}), 400
+    if not exp_id:
+        conn.close()
+        return jsonify({"error": SIN_EXPLOTACION}), 400
 
     c = conn.cursor()
 
     if data.get('uhc_id'):
-        parcelas = _parcelas_uhc(conn, data['uhc_id'], uid)
+        parcelas = _parcelas_uhc(conn, data['uhc_id'], uid, exp_id)
         if not parcelas:
             conn.close()
             return jsonify({"error": "El grupo UHC no existe o no tiene parcelas asignadas"}), 400
-        ids = [_insert_riego(c, uid, data, p['id'], p['nombre_finca']) for p in parcelas]
+        ids = [_insert_riego(c, uid, data, p['id'], p['nombre_finca'], exp_id) for p in parcelas]
         conn.commit(); conn.close()
         for p in parcelas:
-            _recalcular_patrones(uid, 'riego', p['id'], data.get('fecha'))
+            _recalcular_patrones(uid, 'riego', p['id'], data.get('fecha'), exp_id)
         return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
 
-    if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid):
+    if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
 
-    new_id = _insert_riego(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'))
+    new_id = _insert_riego(c, uid, data, data.get('parcela_id'),
+                           data.get('parcela_etiqueta'), exp_id)
     conn.commit(); conn.close()
-    _recalcular_patrones(uid, 'riego', data.get('parcela_id'), data.get('fecha'))
+    _recalcular_patrones(uid, 'riego', data.get('parcela_id'), data.get('fecha'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
@@ -339,20 +385,23 @@ def manage_riego():
 def manage_riego_one(rid):
     uid = get_uid()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
     if request.method == 'DELETE':
         conn.execute(
-            "UPDATE riego SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
-            (rid, uid))
+            "UPDATE riego SET deleted_at=CURRENT_TIMESTAMP"
+            " WHERE id=? AND user_id=? AND explotacion_id=?",
+            (rid, uid, exp_id))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
-        row = one(conn, "SELECT * FROM riego WHERE id=? AND user_id=? AND deleted_at IS NULL", (rid, uid))
+        row = one(conn, "SELECT * FROM riego WHERE id=? AND user_id=? AND explotacion_id=?"
+                        " AND deleted_at IS NULL", (rid, uid, exp_id))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
     err = _validate_riego(data)
     if err:
         conn.close()
         return jsonify({"error": err}), 400
-    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
     fields = ['parcela_id', 'parcela_etiqueta', 'fecha', 'tipo_riego', 'volumen_m3',
@@ -360,8 +409,9 @@ def manage_riego_one(rid):
     sets = ', '.join(f"{f}=?" for f in fields)
     numeric = {'volumen_m3', 'horas_riego'}
     values = [_to_real(data.get(f)) if f in numeric else data.get(f) for f in fields]
-    conn.execute(f"UPDATE riego SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
-                 values + [rid, uid])
+    conn.execute(f"UPDATE riego SET {sets}"
+                 f" WHERE id=? AND user_id=? AND explotacion_id=? AND deleted_at IS NULL",
+                 values + [rid, uid, exp_id])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})
 
 
@@ -374,9 +424,12 @@ def manage_riego_one(rid):
 def manage_abonado():
     uid = get_uid()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
     if request.method == 'GET':
         campana = request.args.get('campana', '2025/2026')
-        rows = dicts(conn, "SELECT * FROM abonado WHERE user_id=? AND campana=? AND deleted_at IS NULL ORDER BY fecha_preparacion DESC", (uid, campana))
+        rows = dicts(conn, "SELECT * FROM abonado WHERE user_id=? AND explotacion_id=? AND campana=?"
+                           " AND deleted_at IS NULL ORDER BY fecha_preparacion DESC",
+                     (uid, exp_id, campana))
         conn.close(); return jsonify(rows)
 
     data = request.json or {}
@@ -384,19 +437,24 @@ def manage_abonado():
     if err:
         conn.close()
         return jsonify({"error": err}), 400
-    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+    # El orden importa: sin explotación activa, `parcela_es_del_usuario` cae en
+    # la rama que NO filtra por explotación, así que se comprueba antes.
+    if not exp_id:
+        conn.close()
+        return jsonify({"error": SIN_EXPLOTACION}), 400
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
 
     c = conn.cursor()
     c.execute('''
         INSERT INTO abonado (
-            user_id, parcela_id, parcela_etiqueta, cultivo, cultivo_anterior,
+            user_id, explotacion_id, parcela_id, parcela_etiqueta, cultivo, cultivo_anterior,
             rendimiento_esperado_kg_ha, n_necesario_kg_ha, p_necesario_kg_ha,
             k_necesario_kg_ha, fecha_preparacion, datos_suelo,
             abono_recomendado, dosis_recomendada_kg_ha, notas, campana
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    ''', (uid, data.get('parcela_id'), data.get('parcela_etiqueta'),
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, exp_id, data.get('parcela_id'), data.get('parcela_etiqueta'),
           data.get('cultivo'), data.get('cultivo_anterior'),
           data.get('rendimiento_esperado_kg_ha') or None,
           data.get('n_necesario_kg_ha'), data.get('p_necesario_kg_ha'), data.get('k_necesario_kg_ha'),
@@ -412,20 +470,23 @@ def manage_abonado():
 def manage_abonado_one(aid):
     uid = get_uid()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
     if request.method == 'DELETE':
         conn.execute(
-            "UPDATE abonado SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
-            (aid, uid))
+            "UPDATE abonado SET deleted_at=CURRENT_TIMESTAMP"
+            " WHERE id=? AND user_id=? AND explotacion_id=?",
+            (aid, uid, exp_id))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     if request.method == 'GET':
-        row = one(conn, "SELECT * FROM abonado WHERE id=? AND user_id=? AND deleted_at IS NULL", (aid, uid))
+        row = one(conn, "SELECT * FROM abonado WHERE id=? AND user_id=? AND explotacion_id=?"
+                        " AND deleted_at IS NULL", (aid, uid, exp_id))
         conn.close(); return jsonify(row or {})
     data = request.json or {}
     err = _validate_abonado(data)
     if err:
         conn.close()
         return jsonify({"error": err}), 400
-    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid):
+    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
     fields = ['parcela_id', 'parcela_etiqueta', 'cultivo', 'cultivo_anterior',
@@ -436,6 +497,7 @@ def manage_abonado_one(aid):
                'k_necesario_kg_ha', 'dosis_recomendada_kg_ha'}
     sets = ', '.join(f"{f}=?" for f in fields)
     values = [data.get(f) or None if f in numeric else data.get(f) for f in fields]
-    conn.execute(f"UPDATE abonado SET {sets} WHERE id=? AND user_id=? AND deleted_at IS NULL",
-                 values + [aid, uid])
+    conn.execute(f"UPDATE abonado SET {sets}"
+                 f" WHERE id=? AND user_id=? AND explotacion_id=? AND deleted_at IS NULL",
+                 values + [aid, uid, exp_id])
     conn.commit(); conn.close(); return jsonify({"status": "ok"})

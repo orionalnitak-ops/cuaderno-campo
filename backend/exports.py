@@ -308,11 +308,15 @@ def export_excel(user_id, campana='2025/2026', explotacion_id=None):
     # HOJA 8 — COMPRAS / VENTAS (solo si hay datos)
     # Obligatorio por RD 1311/2012 Anexo III Sección 5 cuando hay trazabilidad comercial
     # ══════════════════════════════════════════
+    # Compras no cuelga de parcela, así que `parcela_scope_clause()` nunca la
+    # cubrió: hasta la feature 013 el Excel oficial mezclaba las facturas de
+    # todas las fincas del usuario. Se acota por su propia columna.
     compras = dicts(conn, """
         SELECT * FROM compras
         WHERE user_id=? AND campana=? AND deleted_at IS NULL
+    """ + (" AND explotacion_id=?" if explotacion_id else "") + """
         ORDER BY fecha ASC
-    """, (user_id, campana))
+    """, (user_id, campana) + ((explotacion_id,) if explotacion_id else ()))
     if compras:
         ws8 = wb.create_sheet("COMPRAS-VENTAS")
         cmp_cols = ["ID", "Fecha", "Tipo Producto", "Producto", "Nº Reg. MAPA",

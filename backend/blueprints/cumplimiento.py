@@ -6,13 +6,16 @@ de lo que ya anotó. El motor no escribe nada en la BD.
 
 Ver spec/features/011-revision-cuaderno/spec.md.
 
-Dos reglas de este módulo que conviene no romper:
+Tres reglas de este módulo que conviene no romper:
 
   1. `evaluar_cumplimiento()` recibe la conexión y la fecha, y no toca Flask.
      Es lo que permite testearlo contra sqlite3.connect(':memory:'), igual que
      `_check_asesor` en tratamientos.py.
   2. Este módulo importa SOLO de `db` y `helpers`. `compras.py` ya importa de
      `ia.py`, así que cualquier import cruzado de más abre un ciclo.
+  3. Las 11 consultas se acotan a la explotación activa (feature 013). Cada
+     explotación es un cuaderno independiente: sus equipos, sus facturas y sus
+     personas son suyos. Si se añade una consulta nueva, lleva `expl_sql`.
 """
 import datetime
 import logging
@@ -23,7 +26,7 @@ from flask import Blueprint, jsonify
 from flask_login import login_required
 
 from db import get_db, dicts, one
-from helpers import get_uid
+from helpers import get_uid, get_active_explotacion_id
 
 bp = Blueprint('cumplimiento', __name__)
 logger = logging.getLogger(__name__)
@@ -201,9 +204,14 @@ def _bloque(bid, titulo, peso, universo, afectados, items, mensaje,
 
 # ── Motor ──────────────────────────────────────────────────────────────────────
 
-def evaluar_cumplimiento(conn, uid, hoy=None, campana=None):
+def evaluar_cumplimiento(conn, uid, hoy=None, campana=None, explotacion_id=None):
     """Evalúa el estado del cuaderno. Función pura: no abre/cierra la conexión,
     no toca Flask y no escribe nada.
+
+    `explotacion_id` acota la evaluación a UNA explotación (feature 013). Es el
+    reporte de Lourdes: con una finca seleccionada, la pantalla le listaba las
+    partes faltantes de todas. Va al final de la firma para no romper las llamadas
+    que ya existían en los tests.
 
     Hace un número FIJO de consultas (11), independiente del número de parcelas.
     `_generar_alertas` de ia.py hace 1+3·N y con 50 parcelas son ~151 consultas
@@ -213,13 +221,31 @@ def evaluar_cumplimiento(conn, uid, hoy=None, campana=None):
     hoy = hoy or datetime.date.today()
 
     # 1. campaña activa
+    #
+    # De la explotación que se está evaluando, NO la primera fila del usuario.
+    # Un `one(... WHERE user_id=?)` a secas devuelve una fila arbitraria cuando el
+    # usuario lleva varias explotaciones, y entonces toda la Revisión se evalúa
+    # contra la campaña de otra finca. En silencio: los números salen igual y son
+    # mentira.
     if not campana:
-        expl = one(conn, "SELECT campana_activa FROM explotacion WHERE user_id=?", (uid,))
+        if explotacion_id:
+            expl = one(conn, "SELECT campana_activa FROM explotacion WHERE id=? AND user_id=?",
+                       (explotacion_id, uid))
+        else:
+            expl = one(conn, "SELECT campana_activa FROM explotacion WHERE user_id=?"
+                             " ORDER BY orden, id LIMIT 1", (uid,))
         campana = (expl or {}).get('campana_activa') or '2025/2026'
+
+    # Filtro de explotación. Se compone una sola vez y se concatena a las 11
+    # consultas. Es texto LITERAL, nunca construido a partir de input: el id viaja
+    # siempre por placeholder, igual que _CAMPANA_SQL.
+    expl_sql = " AND explotacion_id=?" if explotacion_id else ""
+    expl_par = (explotacion_id,) if explotacion_id else ()
 
     # 2. parcelas activas (para etiquetar y como universo de cultivo_campana)
     parcelas = dicts(conn,
-        "SELECT id, nombre_finca FROM parcelas WHERE user_id=? AND activa=1", (uid,))
+        "SELECT id, nombre_finca FROM parcelas WHERE user_id=? AND activa=1" + expl_sql,
+        (uid,) + expl_par)
     nombre_parcela = {p['id']: (p.get('nombre_finca') or f"Parcela {p['id']}") for p in parcelas}
 
     camp_sql = _CAMPANA_SQL          # constante de módulo, ver arriba
@@ -237,9 +263,9 @@ def evaluar_cumplimiento(conn, uid, hoy=None, campana=None):
                COUNT(*) AS veces,
                SUM(CASE WHEN {camp_sql} THEN 1 ELSE 0 END) AS veces_campana
         FROM tratamientos
-        WHERE user_id=? AND deleted_at IS NULL
+        WHERE user_id=? AND deleted_at IS NULL{expl_sql}
         GROUP BY equipo_id, aplicador_id, asesor_id
-    """, camp_par + (uid,))
+    """, camp_par + (uid,) + expl_par)
     equipos_usados     = {u['equipo_id']    for u in uso if u.get('equipo_id') and u['veces_campana']}
     aplicadores_usados = {u['aplicador_id'] for u in uso if u.get('aplicador_id') and u['veces_campana']}
     asesores_usados    = {u['asesor_id']    for u in uso if u.get('asesor_id') and u['veces_campana']}
@@ -248,8 +274,7 @@ def evaluar_cumplimiento(conn, uid, hoy=None, campana=None):
     # 4. equipos
     equipos = dicts(conn, """
         SELECT id, descripcion, tipo, marca, modelo, num_registro_roma, fecha_iteaf
-        FROM equipos WHERE user_id=?
-    """, (uid,))
+        FROM equipos WHERE user_id=?""" + expl_sql, (uid,) + expl_par)
     def _es_plantilla(e):
         """Fila de equipo que nadie ha rellenado ni usado jamás.
 
@@ -327,18 +352,19 @@ def evaluar_cumplimiento(conn, uid, hoy=None, campana=None):
     # 5. compras de TODAS las campañas: puedes aplicar en 2025/26 algo comprado
     #    en 2024/25, y filtrar por campaña generaría falsos positivos masivos.
     compras = dicts(conn,
-        "SELECT producto, num_registro_mapa FROM compras WHERE user_id=? AND deleted_at IS NULL",
-        (uid,))
+        "SELECT producto, num_registro_mapa FROM compras"
+        " WHERE user_id=? AND deleted_at IS NULL" + expl_sql,
+        (uid,) + expl_par)
     # 6. productos realmente aplicados, ya agrupados (no una fila por tratamiento)
     aplicados = dicts(conn, f"""
         SELECT producto_comercial, num_registro_mapa,
                COUNT(*) AS veces, MAX(fecha_aplicacion) AS ultima
         FROM tratamientos
         WHERE user_id=? AND deleted_at IS NULL AND {camp_sql}
-          AND COALESCE(TRIM(producto_comercial), '') <> ''
+          AND COALESCE(TRIM(producto_comercial), '') <> ''{expl_sql}
         GROUP BY producto_comercial, num_registro_mapa
         ORDER BY COUNT(*) DESC
-    """, (uid,) + camp_par)
+    """, (uid,) + camp_par + expl_par)
 
     if not compras:
         # Salvaguarda crítica para la adopción: sin esto, quien no use el módulo
@@ -385,21 +411,21 @@ def evaluar_cumplimiento(conn, uid, hoy=None, campana=None):
 
     # ── ROPO de las personas que firman tus tratamientos ──
     # 7. fichas activas de aplicadores y asesores
-    personas = dicts(conn, """
+    personas = dicts(conn, f"""
         SELECT 'aplicador' AS rol, id, nombre, num_ropo FROM aplicadores
-         WHERE user_id=? AND activo=1
+         WHERE user_id=? AND activo=1{expl_sql}
         UNION ALL
         SELECT 'asesor' AS rol, id, nombre, num_ropo FROM asesores
-         WHERE user_id=? AND activo=1
-    """, (uid, uid))
+         WHERE user_id=? AND activo=1{expl_sql}
+    """, (uid,) + expl_par + (uid,) + expl_par)
     # 8. asesor antiguo escrito a mano: sin ficha, luego sin ROPO por definición
     legacy = dicts(conn, f"""
         SELECT TRIM(asesor) AS nombre, COUNT(*) AS veces
         FROM tratamientos
         WHERE user_id=? AND deleted_at IS NULL AND {camp_sql}
-          AND asesor_id IS NULL AND COALESCE(TRIM(asesor), '') <> ''
+          AND asesor_id IS NULL AND COALESCE(TRIM(asesor), '') <> ''{expl_sql}
         GROUP BY TRIM(asesor)
-    """, (uid,) + camp_par)
+    """, (uid,) + camp_par + expl_par)
 
     items_ropo = []
     for p in personas:
@@ -436,12 +462,14 @@ def evaluar_cumplimiento(conn, uid, hoy=None, campana=None):
 
     # ── Cultivo de campaña por parcela ──
     # 9. parcelas con cultivo declarado esta campaña
+    # El filtro va sobre p.explotacion_id (la parcela) y no sobre cc: es el dato
+    # fiable, porque `parcelas` tiene la explotación desde antes de esta feature.
     con_cultivo = {r['parcela_id'] for r in dicts(conn, """
         SELECT DISTINCT cc.parcela_id
         FROM cultivos_campana cc
         JOIN parcelas p ON p.id = cc.parcela_id
-        WHERE p.user_id=? AND cc.campana=?
-    """, (uid, campana))}
+        WHERE p.user_id=? AND cc.campana=?""" + (" AND p.explotacion_id=?" if explotacion_id else "")
+        , (uid, campana) + expl_par)}
     items_cult = [{
         'clave': f"parc-{pid}", 'etiqueta': nombre,
         'detalle': f"Sin cultivo declarado en {campana}", 'severidad': 'aviso',
@@ -467,10 +495,10 @@ def evaluar_cumplimiento(conn, uid, hoy=None, campana=None):
         SELECT parcela_id, producto_comercial, fecha_recoleccion_minima
         FROM tratamientos
         WHERE user_id=? AND deleted_at IS NULL
-          AND fecha_recoleccion_minima >= ? AND fecha_recoleccion_minima <= ?
+          AND fecha_recoleccion_minima >= ? AND fecha_recoleccion_minima <= ?""" + expl_sql + """
         ORDER BY fecha_recoleccion_minima
     """, (uid, hoy.isoformat(),
-          (hoy + datetime.timedelta(days=DIAS_PLAZO_SEGURIDAD)).isoformat()))
+          (hoy + datetime.timedelta(days=DIAS_PLAZO_SEGURIDAD)).isoformat()) + expl_par)
     items_plazo = [{
         'clave': f"plazo-{p.get('parcela_id')}-{_norm(p.get('producto_comercial'))}",
         'etiqueta': p.get('producto_comercial') or '(sin nombre)',
@@ -493,9 +521,9 @@ def evaluar_cumplimiento(conn, uid, hoy=None, campana=None):
     ultimos = dicts(conn, """
         SELECT parcela_id, MAX(fecha_aplicacion) AS ultima
         FROM tratamientos
-        WHERE user_id=? AND deleted_at IS NULL AND parcela_id IS NOT NULL
+        WHERE user_id=? AND deleted_at IS NULL AND parcela_id IS NOT NULL""" + expl_sql + """
         GROUP BY parcela_id
-    """, (uid,))
+    """, (uid,) + expl_par)
     items_reg = []
     for r in ultimos:
         f = _parse_fecha(r.get('ultima'))
@@ -569,7 +597,9 @@ def get_cumplimiento():
     # propio semáforo en lugar del agricultor al que está dando soporte.
     conn = get_db()
     try:
-        return jsonify({"ok": True, "data": evaluar_cumplimiento(conn, get_uid())})
+        uid = get_uid()
+        return jsonify({"ok": True, "data": evaluar_cumplimiento(
+            conn, uid, explotacion_id=get_active_explotacion_id(conn))})
     except Exception:
         logger.exception("Error calculando cumplimiento")
         return jsonify({"ok": False,

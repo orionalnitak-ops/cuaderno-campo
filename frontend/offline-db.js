@@ -95,6 +95,22 @@
       return tx('pending_records', 'readwrite', s => s.delete(localId));
     },
 
+    // Vaciar las cachés de consulta al cambiar de explotación (feature 013).
+    // Guardan datos de UNA finca sin decir de cuál, así que si no se limpian, al
+    // quedarse sin cobertura en la finca nueva la app enseña las parcelas, los
+    // equipos y las personas de la anterior. NO toca `pending_records`: eso son
+    // registros del agricultor sin sincronizar y borrarlos sería perder su trabajo.
+    clearCachesConsulta() {
+      const stores = ['parcelas_cache', 'historial_cache', 'equipos_cache',
+                      'aplicadores_cache', 'asesores_cache'];
+      return openDB().then(db => new Promise((resolve) => {
+        const t = db.transaction(stores, 'readwrite');
+        stores.forEach(s => t.objectStore(s).clear());
+        t.oncomplete = () => resolve();
+        t.onerror = () => { console.warn('[OfflineDB] clearCachesConsulta:', t.error); resolve(); };
+      })).catch(() => {});
+    },
+
     // Cache parcelas list (called when loaded online)
     cacheParcelas(records) {
       return openDB().then(db => new Promise((resolve) => {

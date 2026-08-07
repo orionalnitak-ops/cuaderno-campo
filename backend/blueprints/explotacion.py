@@ -5,7 +5,7 @@ import datetime
 
 from flask import Blueprint, jsonify, request, session
 from flask_login import login_required, current_user
-from db import get_db, one, dicts, is_pac_eligible, parcela_scope_clause
+from db import get_db, one, dicts, is_pac_eligible
 from helpers import get_uid, get_active_explotacion_id, resolve_default_explotacion
 
 bp = Blueprint('explotacion', __name__)
@@ -167,8 +167,10 @@ def stats():
     campana = request.args.get('campana', '2025/2026')
     exp_id = get_active_explotacion_id(conn)
 
-    # Filtro parametrizado por parcelas de la explotación activa (helper único, sin f-strings)
-    pf, pp = parcela_scope_clause(exp_id)
+    # Filtro por explotación activa. Se acota por la columna `explotacion_id` de
+    # cada tabla, no por sus parcelas: `parcela_scope_clause()` es LEGADO y
+    # escondía los registros sin parcela asignada (feature 013).
+    pf, pp = " AND explotacion_id=?", (exp_id,)
 
     all_p = dicts(conn, "SELECT uso_sigpac FROM parcelas WHERE user_id=? AND explotacion_id=? AND activa=1", (uid, exp_id))
     pac_count = sum(1 for p in all_p if is_pac_eligible(p['uso_sigpac']))
@@ -228,8 +230,10 @@ def historial():
     campana = request.args.get('campana', '')
     exp_id = get_active_explotacion_id(conn)
 
-    # Filtro parametrizado por parcelas de la explotación activa (helper único, sin f-strings)
-    pf, pp = parcela_scope_clause(exp_id)
+    # Filtro por explotación activa. Se acota por la columna `explotacion_id` de
+    # cada tabla, no por sus parcelas: `parcela_scope_clause()` es LEGADO y
+    # escondía los registros sin parcela asignada (feature 013).
+    pf, pp = " AND explotacion_id=?", (exp_id,)
 
     records = []
 
@@ -278,8 +282,7 @@ def historial():
                             '_resumen': f"{r.get('cultivo','')} — {r.get('produccion_total_valor','')} {r.get('produccion_total_unidad','')}"})
 
     if modulo in ('todos', 'compras'):
-        # Compras es un libro a nivel de usuario (no cuelga de parcela); no se acota por explotación en Fase 1.
-        rows = dicts(conn, "SELECT * FROM compras WHERE user_id=? AND deleted_at IS NULL ORDER BY fecha DESC", (uid,))
+        rows = dicts(conn, "SELECT * FROM compras WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha DESC", (uid,) + pp)
         for r in apply_filters(rows, 'fecha'):
             records.append({**r, '_modulo': 'compras', '_fecha': r.get('fecha', ''),
                             '_resumen': f"{r.get('tipo_producto','')} — {r.get('producto','')} · {r.get('proveedor','')}"})

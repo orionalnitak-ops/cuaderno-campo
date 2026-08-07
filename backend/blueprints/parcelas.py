@@ -261,8 +261,9 @@ def alta_multirecinto():
 
         for u in norm['uhcs']:
             c.execute(
-                "INSERT INTO unidades_homogeneas (user_id, nombre, cultivo, campana, notas) VALUES (?,?,?,?,?)",
-                (uid, u['nombre'], u['cultivo'], norm['campana'], '')
+                "INSERT INTO unidades_homogeneas (user_id, explotacion_id, nombre, cultivo, campana, notas)"
+                " VALUES (?,?,?,?,?,?)",
+                (uid, exp_id, u['nombre'], u['cultivo'], norm['campana'], '')
             )
             uhc_id = c.lastrowid
             for num in u['recintos']:
@@ -283,14 +284,16 @@ def alta_multirecinto():
 def manage_cultivos():
     uid = get_uid()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
     if request.method == 'GET':
         parcela_id = request.args.get('parcela_id')
         campana = request.args.get('campana')
-        # Filtrar siempre por user_id a través de la parcela propietaria
+        # Filtrar siempre por user_id a través de la parcela propietaria, y por
+        # la explotación activa (feature 013).
         sql = """SELECT cc.* FROM cultivos_campana cc
                  JOIN parcelas p ON cc.parcela_id = p.id
-                 WHERE p.user_id=?"""
-        params = [uid]
+                 WHERE p.user_id=? AND cc.explotacion_id=?"""
+        params = [uid, exp_id]
         if parcela_id:
             sql += " AND cc.parcela_id=?"; params.append(parcela_id)
         if campana:
@@ -305,7 +308,9 @@ def manage_cultivos():
     if not parcela_id:
         conn.close()
         return jsonify({"error": "Parcela es obligatoria"}), 400
-    parcela = one(conn, "SELECT id, superficie_ha FROM parcelas WHERE id=? AND user_id=?", (parcela_id, uid))
+    parcela = one(conn, "SELECT id, superficie_ha FROM parcelas"
+                        " WHERE id=? AND user_id=? AND explotacion_id=?",
+                  (parcela_id, uid, exp_id))
     if not parcela:
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 404
@@ -327,11 +332,11 @@ def manage_cultivos():
     c = conn.cursor()
     c.execute('''
         INSERT INTO cultivos_campana
-            (parcela_id, campana, cultivo, cultivo_iacs_cod, variedad, fecha_siembra,
-             fecha_recoleccion_prevista, superficie_cultivada_ha, notas,
+            (parcela_id, explotacion_id, campana, cultivo, cultivo_iacs_cod, variedad,
+             fecha_siembra, fecha_recoleccion_prevista, superficie_cultivada_ha, notas,
              kg_sembrados, precio_kg_compra)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)
-    ''', (parcela_id, data.get('campana'), data.get('cultivo'),
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (parcela_id, exp_id, data.get('campana'), data.get('cultivo'),
           data.get('cultivo_iacs_cod'),
           data.get('variedad'), data.get('fecha_siembra'),
           data.get('fecha_recoleccion_prevista'), _to_real(data.get('superficie_cultivada_ha')),
@@ -339,7 +344,7 @@ def manage_cultivos():
           _to_real(data.get('kg_sembrados')), _to_real(data.get('precio_kg_compra'))))
     new_id = c.lastrowid
     conn.commit(); conn.close()
-    _recalcular_patrones(uid, 'cultivo_campana', parcela_id, data.get('fecha_siembra'))
+    _recalcular_patrones(uid, 'cultivo_campana', parcela_id, data.get('fecha_siembra'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
@@ -348,10 +353,15 @@ def manage_cultivos():
 def manage_cultivo(cid):
     uid = get_uid()
     conn = get_db()
-    # Verificar propiedad a través de la parcela (cultivos_campana no tiene user_id propio)
+    exp_id = get_active_explotacion_id(conn)
+    # Verificar propiedad a través de la parcela (cultivos_campana no tiene
+    # user_id propio) Y que sea de la explotación activa: si no, con el id a
+    # mano se edita o se borra el cultivo de la otra finca (feature 013).
+    # Este guardián protege las consultas por `id` que vienen después.
     owner = one(conn, """SELECT cc.id FROM cultivos_campana cc
                          JOIN parcelas p ON cc.parcela_id = p.id
-                         WHERE cc.id=? AND p.user_id=?""", (cid, uid))
+                         WHERE cc.id=? AND p.user_id=? AND cc.explotacion_id=?""",
+                (cid, uid, exp_id))
     if not owner:
         conn.close()
         return jsonify({"error": "No encontrado"}), 404

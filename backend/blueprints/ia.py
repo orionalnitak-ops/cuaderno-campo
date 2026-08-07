@@ -6,7 +6,7 @@ import logging
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, dicts, one, USE_PG
-from helpers import get_uid
+from helpers import get_uid, get_active_explotacion_id
 # Umbrales compartidos con la "Revisión del cuaderno". Si divergen, esa pantalla
 # y estos recordatorios se contradicen delante del agricultor.
 # Nota: las dos evalúan las mismas reglas por caminos distintos (aquí una fila
@@ -108,9 +108,14 @@ def _cond_no_vacio(campo, prefijo=''):
     return f"{col} IS NOT NULL AND {col} != ''"
 
 
-def _recalcular_patrones(user_id, modulo, parcela_id, fecha_str):
+def _recalcular_patrones(user_id, modulo, parcela_id, fecha_str, explotacion_id=None):
     """Recalcula el valor más frecuente de cada campo para user+módulo+parcela+temporada.
-    Llamar al final de cada POST exitoso en todos los módulos."""
+    Llamar al final de cada POST exitoso en todos los módulos.
+
+    `explotacion_id` va al final para no romper llamadas antiguas, pero hay que
+    pasarlo siempre desde las rutas (feature 013): sin él, los patrones sin
+    parcela (`parcela_id IS NULL`) agregan datos de TODAS las fincas del usuario
+    y le sugieren en una explotación lo que hizo en otra."""
     if modulo not in CAMPOS_MODULO:
         return
     campos    = CAMPOS_MODULO[modulo]
@@ -124,6 +129,11 @@ def _recalcular_patrones(user_id, modulo, parcela_id, fecha_str):
     meses     = TEMPORADA_MESES[temporada]
     mes_expr  = _mes_in_expr(fecha_col, meses)
     soft_del  = " AND deleted_at IS NULL" if modulo in _HAS_DELETED_AT else ""
+    # Feature 013: el agregado se acota a la explotación. Sin esto, el patrón
+    # global del usuario (parcela_id NULL) suma los registros de todas sus fincas.
+    expl_sql  = " AND explotacion_id=?"    if explotacion_id else ""
+    expl_cc   = " AND cc.explotacion_id=?" if explotacion_id else ""
+    expl_par  = [explotacion_id]           if explotacion_id else []
 
     conn = get_db()
     try:
@@ -142,30 +152,30 @@ def _recalcular_patrones(user_id, modulo, parcela_id, fecha_str):
                         JOIN parcelas p ON cc.parcela_id = p.id
                         WHERE p.user_id=? AND cc.parcela_id=?
                           AND {_cond_no_vacio(campo, 'cc.')}
-                          AND {mes_expr}
+                          AND {mes_expr}{expl_cc}
                         GROUP BY cc.{campo} ORDER BY cnt DESC, ultima DESC LIMIT 1
                     """
-                    params = [user_id, parcela_id] + list(meses)
+                    params = [user_id, parcela_id] + list(meses) + expl_par
                 elif parcela_id:
                     sql = f"""
                         SELECT {campo} AS val, COUNT(*) AS cnt, MAX({fecha_col}) AS ultima
                         FROM {tabla}
                         WHERE user_id=? AND parcela_id=?
                           AND {_cond_no_vacio(campo)}
-                          {soft_del} AND {mes_expr}
+                          {soft_del} AND {mes_expr}{expl_sql}
                         GROUP BY {campo} ORDER BY cnt DESC, ultima DESC LIMIT 1
                     """
-                    params = [user_id, parcela_id] + list(meses)
+                    params = [user_id, parcela_id] + list(meses) + expl_par
                 else:
                     sql = f"""
                         SELECT {campo} AS val, COUNT(*) AS cnt, MAX({fecha_col}) AS ultima
                         FROM {tabla}
                         WHERE user_id=?
                           AND {_cond_no_vacio(campo)}
-                          {soft_del} AND {mes_expr}
+                          {soft_del} AND {mes_expr}{expl_sql}
                         GROUP BY {campo} ORDER BY cnt DESC, ultima DESC LIMIT 1
                     """
-                    params = [user_id] + list(meses)
+                    params = [user_id] + list(meses) + expl_par
 
                 row = one(conn, sql, params)
                 if not row or row.get('val') is None:
@@ -176,12 +186,15 @@ def _recalcular_patrones(user_id, modulo, parcela_id, fecha_str):
                     DELETE FROM ia_patrones
                     WHERE user_id=? AND modulo=? AND temporada=? AND campo=?
                       AND (parcela_id=? OR (parcela_id IS NULL AND ? IS NULL))
-                """, (user_id, modulo, temporada, campo, parcela_id, parcela_id))
+                      AND (explotacion_id=? OR (explotacion_id IS NULL AND ? IS NULL))
+                """, (user_id, modulo, temporada, campo, parcela_id, parcela_id,
+                      explotacion_id, explotacion_id))
                 conn.execute("""
                     INSERT INTO ia_patrones
-                        (user_id, modulo, parcela_id, temporada, campo, valor_sugerido, frecuencia, ultima_vez)
-                    VALUES (?,?,?,?,?,?,?,?)
-                """, (user_id, modulo, parcela_id, temporada, campo,
+                        (user_id, modulo, parcela_id, explotacion_id, temporada, campo,
+                         valor_sugerido, frecuencia, ultima_vez)
+                    VALUES (?,?,?,?,?,?,?,?,?)
+                """, (user_id, modulo, parcela_id, explotacion_id, temporada, campo,
                       str(row['val']), row['cnt'], row['ultima']))
                 conn.commit()
             except Exception:
@@ -196,23 +209,30 @@ def _generar_alertas(user_id):
     """Regenera alertas activas del usuario. Llamar en cada login exitoso."""
     conn = get_db()
     try:
-        hoy     = datetime.date.today()
-        expl    = one(conn, "SELECT campana_activa FROM explotacion WHERE user_id=?", (user_id,))
-        campana = (expl or {}).get('campana_activa') or '2025/2026'
+        hoy = datetime.date.today()
+        # Una campaña por explotación: con `one(... WHERE user_id=?)` se cogía una
+        # fila arbitraria y las parcelas de una finca se evaluaban contra la
+        # campaña de otra (feature 013).
+        campanas = {e['id']: (e.get('campana_activa') or '2025/2026')
+                    for e in dicts(conn,
+                        "SELECT id, campana_activa FROM explotacion WHERE user_id=?",
+                        (user_id,))}
 
         parcelas = dicts(conn,
-            "SELECT id, nombre_finca FROM parcelas WHERE user_id=? AND activa=1",
+            "SELECT id, nombre_finca, explotacion_id FROM parcelas WHERE user_id=? AND activa=1",
             (user_id,))
 
         for p in parcelas:
-            pid    = p['id']
-            nombre = p.get('nombre_finca') or f"Parcela {pid}"
+            pid     = p['id']
+            nombre  = p.get('nombre_finca') or f"Parcela {pid}"
+            campana = campanas.get(p.get('explotacion_id')) or '2025/2026'
 
             # 1. sin_registro_reciente (solo si ya hay historial)
+            expl = p.get('explotacion_id')
             ultimo = one(conn, """
                 SELECT MAX(fecha_aplicacion) AS ultima FROM tratamientos
-                WHERE user_id=? AND parcela_id=? AND deleted_at IS NULL
-            """, (user_id, pid))
+                WHERE user_id=? AND parcela_id=? AND explotacion_id=? AND deleted_at IS NULL
+            """, (user_id, pid, expl))
             if ultimo and ultimo.get('ultima'):
                 try:
                     dt   = datetime.date.fromisoformat(str(ultimo['ultima'])[:10])
@@ -232,9 +252,9 @@ def _generar_alertas(user_id):
             # 2. plazo_seguridad_proximo (vence en ≤7 días)
             proximos = dicts(conn, """
                 SELECT producto_comercial, fecha_recoleccion_minima FROM tratamientos
-                WHERE user_id=? AND parcela_id=? AND deleted_at IS NULL
+                WHERE user_id=? AND parcela_id=? AND explotacion_id=? AND deleted_at IS NULL
                   AND fecha_recoleccion_minima IS NOT NULL AND fecha_recoleccion_minima != ''
-            """, (user_id, pid))
+            """, (user_id, pid, expl))
             for t in proximos:
                 try:
                     fm   = datetime.date.fromisoformat(str(t['fecha_recoleccion_minima'])[:10])
@@ -261,7 +281,8 @@ def _generar_alertas(user_id):
                 SELECT cc.id FROM cultivos_campana cc
                 JOIN parcelas p ON cc.parcela_id = p.id
                 WHERE cc.parcela_id=? AND cc.campana=? AND p.user_id=?
-            """, (pid, campana, user_id))
+                  AND cc.explotacion_id=?
+            """, (pid, campana, user_id, expl))
             if not cultivo:
                 conn.execute(
                     "DELETE FROM ia_alertas WHERE user_id=? AND tipo=? AND parcela_id=?",
@@ -300,17 +321,20 @@ def get_sugerencias():
 
     temporada = _temporada()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
 
     if parcela_id:
         rows = dicts(conn, """
             SELECT id, campo, valor_sugerido FROM ia_patrones
             WHERE user_id=? AND modulo=? AND parcela_id=? AND temporada=?
-        """, (uid, modulo, parcela_id, temporada))
+              AND explotacion_id=?
+        """, (uid, modulo, parcela_id, temporada, exp_id))
     else:
         rows = dicts(conn, """
             SELECT id, campo, valor_sugerido FROM ia_patrones
             WHERE user_id=? AND modulo=? AND parcela_id IS NULL AND temporada=?
-        """, (uid, modulo, temporada))
+              AND explotacion_id=?
+        """, (uid, modulo, temporada, exp_id))
 
     conn.close()
     data = {r['campo']: {'patron_id': r['id'], 'valor': r['valor_sugerido']} for r in rows}
@@ -322,10 +346,15 @@ def get_sugerencias():
 def get_alertas():
     uid  = get_uid()
     conn = get_db()
+    exp_id = get_active_explotacion_id(conn)
+    # `ia_alertas` no lleva `explotacion_id`: todas sus filas nacen con
+    # `parcela_id`, así que la parcela ya dice de qué finca es. Se acota por ahí
+    # en vez de añadir una columna a una tabla que se regenera en cada login.
     rows = dicts(conn, """
         SELECT id, tipo, parcela_id, modulo, mensaje, creada_en, expira_en
         FROM ia_alertas
         WHERE user_id=? AND leida=0
+          AND parcela_id IN (SELECT id FROM parcelas WHERE explotacion_id=?)
           AND (expira_en IS NULL OR expira_en > CURRENT_TIMESTAMP)
         ORDER BY
           CASE tipo
@@ -334,7 +363,7 @@ def get_alertas():
             ELSE 3
           END, creada_en DESC
         LIMIT 3
-    """, (uid,))
+    """, (uid, exp_id))
     conn.close()
     return jsonify({"ok": True, "data": rows})
 
