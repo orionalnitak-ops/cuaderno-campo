@@ -1045,13 +1045,83 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
 }
 
 // ── 4. COSECHA / PRODUCCIÓN ──
+// ── Desglose del reparto de la cosecha entre las parcelas de un grupo UHC ──
+// Espeja EXACTAMENTE `repartir_por_superficie()` de backend/helpers.py: proporcional
+// a la superficie, la última parcela absorbe el redondeo, y si falta alguna
+// superficie se reparte a partes iguales entre todas. Si los dos cálculos se
+// separan, el agricultor vería un desglose y se guardaría otro.
+function repartirCosecha(total, parcelas) {
+    if (!parcelas.length) return {};
+    const t = parseFloat(String(total).replace(',', '.'));
+    if (!t || t <= 0) return {};
+    let sups = parcelas.map(p => {
+        const s = parseFloat(String(p.superficie_ha).replace(',', '.'));
+        return (!isNaN(s) && s > 0) ? s : null;
+    });
+    if (sups.some(s => s === null)) sups = parcelas.map(() => 1);
+    const suma = sups.reduce((a, b) => a + b, 0);
+    const out = {};
+    let acc = 0;
+    parcelas.forEach((p, i) => {
+        const v = (i === parcelas.length - 1)
+            ? Math.round((t - acc) * 100) / 100
+            : Math.round(t * sups[i] / suma * 100) / 100;
+        if (i < parcelas.length - 1) acc += v;
+        out[p.id] = v;
+    });
+    return out;
+}
+
+function RepartoCosecha({ parcelas, total, unidad, visible }) {
+    if (!visible || !parcelas.length) return null;
+    const reparto = repartirCosecha(total, parcelas);
+    const hayTotal = Object.keys(reparto).length > 0;
+    const sinSuperficie = parcelas.some(p => !(parseFloat(String(p.superficie_ha).replace(',', '.')) > 0));
+    return (
+        <div style={{ background: 'var(--surface-container-low)', borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: 6 }}>
+                🌾 Se guardará una cosecha en cada una de estas {parcelas.length} parcelas
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--on-surface-variant)', marginBottom: 10 }}>
+                {sinSuperficie
+                    ? 'Alguna parcela no tiene superficie registrada, así que la producción se reparte a partes iguales. Revísalo.'
+                    : 'La producción se reparte según la superficie de cada parcela. Es una estimación: si tienes el dato exacto de cada una, regístralas por separado.'}
+            </div>
+            <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse' }}>
+                <tbody>
+                    {parcelas.map(p => (
+                        <tr key={p.id} style={{ borderTop: '1px solid var(--outline-variant)' }}>
+                            <td style={{ padding: '5px 0' }}>{p.nombre_finca}</td>
+                            <td style={{ padding: '5px 0', textAlign: 'right', color: 'var(--on-surface-variant)' }}>
+                                {p.superficie_ha ? `${p.superficie_ha} ha` : 'sin superficie'}
+                            </td>
+                            <td style={{ padding: '5px 0', textAlign: 'right', fontWeight: 700, minWidth: 90 }}>
+                                {hayTotal ? `${reparto[p.id]} ${unidad || 'kg'}` : '—'}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+            {!hayTotal && (
+                <div style={{ fontSize: '0.78rem', color: 'var(--on-surface-variant)', marginTop: 8 }}>
+                    Escribe la producción total del grupo para ver el reparto.
+                </div>
+            )}
+        </div>
+    );
+}
+
 function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
     const [saving, setSaving]       = React.useState(false);
     const [rendimiento, setRendimiento] = React.useState('');
     const [sugerencias, setSugerencias] = React.useState({});
+    const [modoUHC, setModoUHC]     = React.useState(false);
+    const [uhcList, setUhcList]     = React.useState([]);
+    const [uhcParcelas, setUhcParcelas] = React.useState([]);
     const [f, setF] = React.useState({
         parcela_id: record?.parcela_id || '', parcela_etiqueta: record?.parcela_etiqueta || '',
+        uhc_id: record?.uhc_id || '',
         fecha_inicio: record?.fecha_inicio || today, fecha_fin: record?.fecha_fin || '',
         cultivo: record?.cultivo || '', variedad: record?.variedad || '',
         superficie_cosechada_ha: record?.superficie_cosechada_ha || '',
@@ -1118,8 +1188,26 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
         }
     };
 
+    React.useEffect(() => {
+        fetch(`/api/uhc?campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setUhcList(Array.isArray(d) ? d : []))
+            .catch(() => {});
+    }, [campana]);
+
+    // Las parcelas del grupo, con su superficie, para poder enseñar el desglose
+    // ANTES de guardar. El reparto que vale es el que calcula el backend; esto es
+    // solo para que el agricultor vea lo que va a escribir en su cuaderno.
+    React.useEffect(() => {
+        if (!f.uhc_id) { setUhcParcelas([]); return; }
+        fetch(`/api/uhc/${f.uhc_id}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setUhcParcelas(Array.isArray(d?.parcelas) ? d.parcelas : []))
+            .catch(() => setUhcParcelas([]));
+    }, [f.uhc_id]);
+
     const save = async () => {
-        if (!f.parcela_id || !f.fecha_inicio) { alert('Rellena: parcela y fecha de inicio'); return; }
+        if ((!f.parcela_id && !f.uhc_id) || !f.fecha_inicio) { alert('Rellena: parcela (o grupo) y fecha de inicio'); return; }
         setSaving(true);
         try {
             const url = isEdit ? `/api/cosecha/${record.id}` : '/api/cosecha';
@@ -1128,15 +1216,27 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                 : await window.OfflineSync.post('/api/cosecha', f);
             if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar la cosecha'); setSaving(false); return; }
             postFeedback();
-            onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte' : '✅ Cosecha guardada');
+            const d = await res.json().catch(() => ({}));
+            onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte'
+                  : d.count > 1 ? `✅ Cosecha guardada en ${d.count} parcelas`
+                  : '✅ Cosecha guardada');
         } catch { alert('Error al guardar la cosecha'); setSaving(false); }
     };
 
     return (
         <div>
-            <FieldGroup label="Parcela *">
-                <ParcelSelect parcelas={parcelas} value={f.parcela_id} onChange={v => set('parcela_id', v)} />
-            </FieldGroup>
+            {/* Editando se toca UNA cosecha concreta: el grupo solo sirve al crear. */}
+            {isEdit ? (
+                <FieldGroup label="Parcela *">
+                    <ParcelSelect parcelas={parcelas} value={f.parcela_id} onChange={v => set('parcela_id', v)} />
+                </FieldGroup>
+            ) : (
+                <ParcelOrUhcSelect modoUHC={modoUHC} setModoUHC={setModoUHC} parcelas={parcelas} uhcList={uhcList}
+                    parcelaId={f.parcela_id} uhcId={f.uhc_id}
+                    onParcela={v => set('parcela_id', v)} onUhc={v => set('uhc_id', v)} />
+            )}
+            <RepartoCosecha parcelas={uhcParcelas} total={f.produccion_total_valor}
+                unidad={f.produccion_total_unidad} visible={modoUHC && !!f.uhc_id} />
             <div className="responsive-grid cols-2">
                 <FieldGroup label="Fecha inicio *">
                     <input type="date" className="input-field" value={f.fecha_inicio} onChange={e => set('fecha_inicio', e.target.value)} />
@@ -1157,10 +1257,14 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                             onConfirm={v => set('variedad', v)} />
                         <SugChip campo="variedad" sugerencias={sugerencias} valorActual={f.variedad} />
                     </FieldGroup>
-                    <FieldGroup label="Superficie cosechada (ha)">
-                        <ZoomInput label="Superficie cosechada (ha)" value={f.superficie_cosechada_ha} placeholder="3.25" inputMode="decimal"
-                            onConfirm={v => set('superficie_cosechada_ha', v)} />
-                    </FieldGroup>
+                    {/* Con grupo, cada fila lleva la superficie REAL de su parcela: pedirla
+                        aquí sería un campo que el agricultor rellena y el backend ignora. */}
+                    {!(modoUHC && f.uhc_id) && (
+                        <FieldGroup label="Superficie cosechada (ha)">
+                            <ZoomInput label="Superficie cosechada (ha)" value={f.superficie_cosechada_ha} placeholder="3.25" inputMode="decimal"
+                                onConfirm={v => set('superficie_cosechada_ha', v)} />
+                        </FieldGroup>
+                    )}
                     <FieldGroup label={`Producción total${rendimiento ? ` → ${rendimiento}` : ''}`}>
                         <div style={{ display: 'flex', gap: 8 }}>
                             <ZoomInput label="Producción total" value={f.produccion_total_valor} placeholder="12500" inputMode="decimal"

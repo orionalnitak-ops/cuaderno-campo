@@ -193,15 +193,19 @@ def _insert_fertilizacion(c, uid, data, parcela_id, parcela_etiqueta, n_ap, p_ap
 
 
 def _parcelas_uhc(conn, uhc_id, uid, explotacion_id=None):
-    """Parcelas (id, nombre_finca) de un grupo UHC del usuario, o [] si no existe/no tiene.
+    """Parcelas (id, nombre_finca, superficie_ha) de un grupo UHC, o [] si no existe/no tiene.
 
     Con `explotacion_id` exige que el grupo Y sus parcelas sean de esa finca
     (feature 013). Se comprueban las dos cosas y no solo el grupo: si algún UHC
     antiguo quedó con parcelas de dos explotaciones, expandirlo metería registros
     en la finca equivocada.
+
+    `superficie_ha` la necesita el reparto de cantidades absolutas en cosecha y en
+    cultivo campaña (feature 016). A los módulos que replican valores por hectárea
+    les sobra, pero devolverla siempre evita tener dos variantes de esta consulta.
     """
     sql = """
-        SELECT p.id, p.nombre_finca
+        SELECT p.id, p.nombre_finca, p.superficie_ha
         FROM uhc_parcelas up
         JOIN parcelas p ON p.id = up.parcela_id
         JOIN unidades_homogeneas u ON u.id = up.uhc_id

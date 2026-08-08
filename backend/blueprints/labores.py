@@ -11,13 +11,75 @@ import datetime
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, one, dicts
-from helpers import get_uid, get_active_explotacion_id, _to_real
+from helpers import (get_uid, get_active_explotacion_id, _to_real,
+                     repartir_por_superficie)
 from blueprints.ia import _recalcular_patrones
 from blueprints.fertilizacion import _parcelas_uhc, parcela_es_del_usuario
 
 bp = Blueprint('labores', __name__)
 
 SIN_EXPLOTACION = "No tienes ninguna explotación creada"
+
+
+def _plazo_seguridad_bloquea(conn, parcela_ids, uid, exp_id, fecha_inicio, etiquetas=None):
+    """Mensaje de error si alguna parcela tiene un plazo de seguridad sin vencer, o None.
+
+    Cosechar antes de que venza el plazo de seguridad de un fitosanitario es una
+    infracción, así que esto no es un aviso: corta el registro.
+
+    Con un grupo UHC se comprueban TODAS sus parcelas y basta con que UNA esté en
+    plazo para rechazar el grupo entero. No se guarda "las que se puede y las que
+    no": un guardado parcial silencioso deja al agricultor creyendo que registró
+    ocho parcelas cuando registró siete. Por eso el mensaje nombra la parcela y el
+    producto — si no, Lourdes no puede saber qué desbloquear.
+    """
+    if not parcela_ids or not fecha_inicio:
+        return None
+    nombres = {p['id']: p.get('nombre_finca') for p in (etiquetas or [])}
+    ph = ', '.join(['?'] * len(parcela_ids))
+    activos = dicts(conn, f"""
+        SELECT parcela_id, producto_comercial, fecha_recoleccion_minima
+        FROM tratamientos
+        WHERE parcela_id IN ({ph}) AND user_id=? AND explotacion_id=? AND deleted_at IS NULL
+          AND fecha_recoleccion_minima > ?
+        ORDER BY parcela_id
+    """, list(parcela_ids) + [uid, exp_id, fecha_inicio])
+    if not activos:
+        return None
+
+    detalle = []
+    for a in activos:
+        finca = nombres.get(a['parcela_id'])
+        prod = a['producto_comercial']
+        detalle.append(f"{finca}: {prod} (hasta el {a['fecha_recoleccion_minima']})"
+                       if finca else prod)
+    if len(parcela_ids) > 1:
+        return ("No se puede registrar la cosecha del grupo: hay plazo de seguridad sin vencer en "
+                + '; '.join(detalle) + ". Registra esas parcelas aparte cuando venza el plazo.")
+    return ("No se puede registrar la cosecha: plazo de seguridad no vencido para: "
+            + ', '.join(detalle)
+            + ". Espera hasta que pasen los plazos indicados en los tratamientos.")
+
+
+def _insert_cosecha(c, uid, data, parcela_id, parcela_etiqueta, exp_id, sup, prod):
+    """Inserta una cosecha para UNA parcela y devuelve su id.
+
+    `sup` y `prod` van aparte de `data` a propósito: en el registro por grupo cada
+    parcela lleva SU superficie y SU parte de la producción, no las del formulario.
+    """
+    rend = round(prod / sup, 2) if sup > 0 else None
+    c.execute('''
+        INSERT INTO cosecha (user_id, explotacion_id, parcela_id, parcela_etiqueta, fecha_inicio, fecha_fin,
+            cultivo, variedad, superficie_cosechada_ha, produccion_total_valor,
+            produccion_total_unidad, rendimiento_kg_ha, destino, comprador,
+            precio_unidad, notas, campana)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, exp_id, parcela_id, parcela_etiqueta,
+          data.get('fecha_inicio'), data.get('fecha_fin'), data.get('cultivo'),
+          data.get('variedad'), sup, prod, data.get('produccion_total_unidad', 'kg'),
+          rend, data.get('destino'), data.get('comprador'),
+          _to_real(data.get('precio_unidad')), data.get('notas'), data.get('campana', '2025/2026')))
+    return c.lastrowid
 
 
 def _validate_labor(data):
@@ -154,42 +216,55 @@ def manage_cosecha():
     if not exp_id:
         conn.close()
         return jsonify({"error": SIN_EXPLOTACION}), 400
-    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
+
+    if not data.get('parcela_id') and not data.get('uhc_id'):
+        conn.close()
+        return jsonify({"error": "Se requiere una parcela o un grupo UHC"}), 400
+
+    c = conn.cursor()
+
+    # ── Registro por grupo UHC (feature 016) ──────────────────────────────────
+    # A diferencia del plan de abonado, aquí NO se puede replicar: la producción
+    # y la superficie cosechada son cantidades ABSOLUTAS. Copiar 3.000 kg en las
+    # 4 parcelas de un grupo escribiría 12.000 kg en un documento legal.
+    if data.get('uhc_id'):
+        parcelas = _parcelas_uhc(conn, data['uhc_id'], uid, exp_id)
+        if not parcelas:
+            conn.close()
+            return jsonify({"error": "El grupo UHC no existe o no tiene parcelas asignadas"}), 400
+
+        err = _plazo_seguridad_bloquea(conn, [p['id'] for p in parcelas], uid, exp_id,
+                                       data.get('fecha_inicio'), etiquetas=parcelas)
+        if err:
+            conn.close()
+            return jsonify({"error": err}), 400
+
+        reparto = repartir_por_superficie(data.get('produccion_total_valor'), parcelas)
+        ids = []
+        for p in parcelas:
+            # La superficie cosechada de cada fila es la REAL de esa parcela, no
+            # un reparto: la superficie no se estima, ya la tenemos.
+            ids.append(_insert_cosecha(c, uid, data, p['id'], p['nombre_finca'], exp_id,
+                                       sup=_to_real(p.get('superficie_ha')) or 0,
+                                       prod=reparto.get(p['id'], 0)))
+        conn.commit(); conn.close()
+        for p in parcelas:
+            _recalcular_patrones(uid, 'cosecha', p['id'], data.get('fecha_inicio'), exp_id)
+        return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
+
+    if not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
 
-    # Bloquear cosecha si hay tratamientos con plazo de seguridad no vencido en la misma parcela
-    if data.get('parcela_id') and data.get('fecha_inicio'):
-        plazo_activos = dicts(conn, """
-            SELECT producto_comercial, fecha_recoleccion_minima
-            FROM tratamientos
-            WHERE parcela_id=? AND user_id=? AND explotacion_id=? AND deleted_at IS NULL
-              AND fecha_recoleccion_minima > ?
-        """, (data['parcela_id'], uid, exp_id, data['fecha_inicio']))
-        if plazo_activos:
-            nombres = ', '.join(p['producto_comercial'] for p in plazo_activos)
-            conn.close()
-            return jsonify({"error": (
-                f"No se puede registrar la cosecha: plazo de seguridad no vencido para: {nombres}. "
-                "Espera hasta que pasen los plazos indicados en los tratamientos."
-            )}), 400
+    err = _plazo_seguridad_bloquea(conn, [data['parcela_id']], uid, exp_id, data.get('fecha_inicio'))
+    if err:
+        conn.close()
+        return jsonify({"error": err}), 400
 
-    prod = _to_real(data.get('produccion_total_valor')) or 0
-    sup  = _to_real(data.get('superficie_cosechada_ha')) or 0
-    rend = round(prod / sup, 2) if sup > 0 else None
-    c = conn.cursor()
-    c.execute('''
-        INSERT INTO cosecha (user_id, explotacion_id, parcela_id, parcela_etiqueta, fecha_inicio, fecha_fin,
-            cultivo, variedad, superficie_cosechada_ha, produccion_total_valor,
-            produccion_total_unidad, rendimiento_kg_ha, destino, comprador,
-            precio_unidad, notas, campana)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    ''', (uid, exp_id, data.get('parcela_id'), data.get('parcela_etiqueta'),
-          data.get('fecha_inicio'), data.get('fecha_fin'), data.get('cultivo'),
-          data.get('variedad'), sup, prod, data.get('produccion_total_unidad', 'kg'),
-          rend, data.get('destino'), data.get('comprador'),
-          _to_real(data.get('precio_unidad')), data.get('notas'), data.get('campana', '2025/2026')))
-    conn.commit(); new_id = c.lastrowid; conn.close()
+    new_id = _insert_cosecha(c, uid, data, data.get('parcela_id'), data.get('parcela_etiqueta'), exp_id,
+                             sup=_to_real(data.get('superficie_cosechada_ha')) or 0,
+                             prod=_to_real(data.get('produccion_total_valor')) or 0)
+    conn.commit(); conn.close()
     _recalcular_patrones(uid, 'cosecha', data.get('parcela_id'), data.get('fecha_inicio'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201
 
