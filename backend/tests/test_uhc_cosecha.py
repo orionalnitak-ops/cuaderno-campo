@@ -242,6 +242,12 @@ def test_plazo_seguridad_parcela_suelta():
           _plazo_seguridad_bloquea(conn, [1], UID, EXPL, None) is None)
     check("sin parcelas no revienta",
           _plazo_seguridad_bloquea(conn, [], UID, EXPL, HOY) is None)
+    check("acepta un id que viene como texto del payload",
+          _plazo_seguridad_bloquea(conn, ['1'], UID, EXPL, HOY) is not None)
+    # Fail-closed: si el id no es identificable, no se puede AFIRMAR que el plazo
+    # haya vencido. Un control legal que falla en abierto da falsa seguridad.
+    check("un id no numérico BLOQUEA, no deja pasar",
+          _plazo_seguridad_bloquea(conn, ['no soy un id'], UID, EXPL, HOY) is not None)
     conn.close()
 
 

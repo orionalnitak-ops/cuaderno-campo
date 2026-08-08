@@ -203,7 +203,18 @@ def _parcelas_uhc(conn, uhc_id, uid, explotacion_id=None):
     `superficie_ha` la necesita el reparto de cantidades absolutas en cosecha y en
     cultivo campaña (feature 016). A los módulos que replican valores por hectárea
     les sobra, pero devolverla siempre evita tener dos variantes de esta consulta.
+
+    `uhc_id` llega del payload de la petición en las cinco rutas que llaman aquí,
+    así que se castea a entero EN ESTE SITIO y no en cada una: un `uhc_id` que no
+    sea un número (lista, dict, texto) no es un problema de inyección —va por
+    placeholder— pero en PostgreSQL revienta la consulta y devuelve un 500 en vez
+    de un error legible. Tratarlo como "grupo inexistente" es la respuesta honesta.
+    Señalado por el Security Review del PR #51.
     """
+    try:
+        uhc_id = int(uhc_id)
+    except (TypeError, ValueError):
+        return []
     sql = """
         SELECT p.id, p.nombre_finca, p.superficie_ha
         FROM uhc_parcelas up

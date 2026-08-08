@@ -35,6 +35,18 @@ def _plazo_seguridad_bloquea(conn, parcela_ids, uid, exp_id, fecha_inicio, etiqu
     """
     if not parcela_ids or not fecha_inicio:
         return None
+    # Los ids se castean a entero antes de construir el `IN`. Los valores viajan
+    # por placeholder y la interpolación solo decide CUÁNTOS `?` hay, así que no
+    # hay inyección — pero en la rama de parcela suelta el id viene del payload, y
+    # una consulta que no puede degradarse el día que alguien la toque vale los dos
+    # renglones. Señalado por el Security Review del PR #51.
+    try:
+        parcela_ids = [int(pid) for pid in parcela_ids]
+    except (TypeError, ValueError):
+        # Fail-closed: si no se puede ni identificar la parcela, NO se puede
+        # afirmar que su plazo de seguridad haya vencido. Un control legal que
+        # falla en abierto es peor que no tenerlo, porque da falsa seguridad.
+        return "No se ha podido comprobar el plazo de seguridad de la parcela"
     nombres = {p['id']: p.get('nombre_finca') for p in (etiquetas or [])}
     ph = ', '.join(['?'] * len(parcela_ids))
     activos = dicts(conn, f"""

@@ -164,6 +164,19 @@ def test_aislamiento():
 
     check("un grupo inexistente no devuelve nada",
           _parcelas_uhc(conn, 999, UID, EXPL) == [])
+
+    # El `uhc_id` llega del payload: si no es un número se trata como grupo
+    # inexistente en vez de reventar la consulta con un 500 (Security Review #51).
+    check("un id de grupo como texto numérico sí funciona",
+          [p['id'] for p in _parcelas_uhc(conn, '100', UID, EXPL)] == [1])
+    check("un id de grupo no numérico no devuelve nada",
+          _parcelas_uhc(conn, 'DROP TABLE parcelas', UID, EXPL) == [])
+    check("un id de grupo que es una lista no revienta",
+          _parcelas_uhc(conn, [1, 2], UID, EXPL) == [])
+    check("un id de grupo None no revienta",
+          _parcelas_uhc(conn, None, UID, EXPL) == [])
+    check("y las parcelas siguen ahí", len(_abonados(conn)) == 0
+          and conn.execute("SELECT COUNT(*) FROM parcelas").fetchone()[0] == 3)
     conn.close()
 
 
