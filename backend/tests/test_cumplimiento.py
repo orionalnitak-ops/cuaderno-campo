@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from blueprints.cumplimiento import (  # noqa: E402
     _color, _es_exento, _estado_iteaf, _norm, evaluar_cumplimiento,
 )
+from helpers import heredar_cultivos_lenosos, campana_activa  # noqa: E402
 
 UID = 1
 OTRO_UID = 2
@@ -52,7 +53,8 @@ CREATE TABLE explotacion (
     id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, campana_activa TEXT,
     orden INTEGER DEFAULT 0);
 CREATE TABLE parcelas (
-    id INTEGER PRIMARY KEY, user_id INTEGER, nombre_finca TEXT, activa INTEGER DEFAULT 1);
+    id INTEGER PRIMARY KEY, user_id INTEGER, explotacion_id INTEGER,
+    nombre_finca TEXT, activa INTEGER DEFAULT 1);
 CREATE TABLE tratamientos (
     id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, parcela_id INTEGER,
     fecha_aplicacion TEXT, producto_comercial TEXT, num_registro_mapa TEXT,
@@ -69,7 +71,9 @@ CREATE TABLE aplicadores (
 CREATE TABLE asesores (
     id INTEGER PRIMARY KEY, user_id INTEGER, nombre TEXT, num_ropo TEXT, activo INTEGER DEFAULT 1);
 CREATE TABLE cultivos_campana (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, parcela_id INTEGER, campana TEXT);
+    id INTEGER PRIMARY KEY AUTOINCREMENT, parcela_id INTEGER, explotacion_id INTEGER,
+    campana TEXT, cultivo TEXT, cultivo_iacs_cod TEXT, variedad TEXT,
+    superficie_cultivada_ha REAL);
 """
 
 
@@ -394,6 +398,49 @@ def test_ropo():
     conn.close()
 
 
+# ── E bis · leñosos: el aviso desaparece porque el dato está (feature 014) ────
+
+def test_lenosos_no_pendientes():
+    print("E bis · parcelas de leñoso en la Revisión:")
+    conn = _db()
+    _parcela(conn, 1, nombre='El Olivar')     # olivar declarado la campaña pasada
+    _parcela(conn, 2, nombre='La Cebada')     # herbáceo declarado la campaña pasada
+    conn.execute("INSERT INTO cultivos_campana (parcela_id, explotacion_id, campana,"
+                 " cultivo, cultivo_iacs_cod) VALUES (?,?,?,?,?)",
+                 (1, None, '2024/2025', 'Olivar', '1820'))
+    conn.execute("INSERT INTO cultivos_campana (parcela_id, explotacion_id, campana,"
+                 " cultivo, cultivo_iacs_cod) VALUES (?,?,?,?,?)",
+                 (2, None, '2024/2025', 'Cebada', '430'))
+    conn.commit()
+
+    antes = bloque(evaluar_cumplimiento(conn, UID, hoy=HOY), 'cultivo_campana')
+    check("sin heredar, las 2 parcelas salen pendientes", antes['afectados'] == 2)
+
+    heredar_cultivos_lenosos(conn, UID, CAMPANA, None)
+    conn.commit()
+
+    b = bloque(evaluar_cumplimiento(conn, UID, hoy=HOY), 'cultivo_campana')
+    etiquetas = [i['etiqueta'] for i in b['items']]
+    check("el olivar deja de estar pendiente", 'El Olivar' not in etiquetas)
+    check("la cebada SIGUE pendiente (ahí sí cambia el cultivo)", 'La Cebada' in etiquetas)
+    check("queda 1 pendiente, no 2", b['afectados'] == 1)
+    conn.close()
+
+
+def test_campana_activa_helper():
+    print("E ter · campana_activa sale de la explotación pedida:")
+    conn = _db()
+    conn.execute("INSERT INTO explotacion (id, user_id, campana_activa, orden)"
+                 " VALUES (?,?,?,?)", (99, UID, '2030/2031', 5))
+    conn.commit()
+    check("con explotacion_id, la de esa finca",
+          campana_activa(conn, UID, 99) == '2030/2031')
+    check("sin explotacion_id, la primera por orden", campana_activa(conn, UID) == CAMPANA)
+    check("de otro usuario no devuelve la mía",
+          campana_activa(conn, OTRO_UID) == '2025/2026')  # fallback, no la de UID
+    conn.close()
+
+
 # ── E · aislamiento entre agricultores ────────────────────────────────────────
 
 def test_aislamiento():
@@ -474,6 +521,8 @@ def run():
     test_equipo_plantilla()
     test_informativos()
     test_ropo()
+    test_lenosos_no_pendientes()
+    test_campana_activa_helper()
     test_aislamiento()
     test_sin_n_mas_1()
     print("test_cumplimiento: TODO OK")

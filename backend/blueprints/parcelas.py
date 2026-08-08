@@ -8,7 +8,9 @@ from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from extensions import limiter
 from db import get_db, one, dicts, is_pac_eligible
-from helpers import get_uid, _to_real, get_active_explotacion_id, estado_sigpac, validar_alta_multirecinto
+from helpers import (get_uid, _to_real, get_active_explotacion_id, estado_sigpac,
+                     validar_alta_multirecinto, heredar_cultivos_lenosos,
+                     campana_activa)
 from blueprints.ia import _recalcular_patrones
 from blueprints.sigpac import superficie_sigpac_parcela, referencia_catastral_parcela
 
@@ -288,6 +290,21 @@ def manage_cultivos():
     if request.method == 'GET':
         parcela_id = request.args.get('parcela_id')
         campana = request.args.get('campana')
+        # Herencia de leñosos (feature 014): el olivar o el viñedo no cambian de
+        # campaña en campaña, así que se arrastran solos y el agricultor no tiene
+        # que redeclararlos. Ver spec/features/014-cultivos-lenosos-herencia.
+        #
+        # Se hereda SIEMPRE en la campaña activa de la explotación, y NUNCA en la
+        # que venga en `?campana=`. El Security Review del PR #48 avisó de que
+        # esto es una escritura en un GET, y por tanto disparable desde fuera:
+        # basta un `<img src=".../api/cultivos-campana?campana=3000/3001">` en
+        # una página cualquiera para que el navegador de un usuario logueado la
+        # ejecute. Si el parámetro mandara, eso crearía filas heredadas en una
+        # campaña inventada — datos falsos en un documento legal. Ignorándolo, lo
+        # peor que puede provocar un tercero es que se herede en la campaña en la
+        # que se habría heredado igualmente al abrir la app.
+        if heredar_cultivos_lenosos(conn, uid, campana_activa(conn, uid, exp_id), exp_id):
+            conn.commit()
         # Filtrar siempre por user_id a través de la parcela propietaria, y por
         # la explotación activa (feature 013).
         sql = """SELECT cc.* FROM cultivos_campana cc
