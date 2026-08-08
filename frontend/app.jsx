@@ -551,7 +551,7 @@ function App() {
             {/* ── Desktop Sidebar ── */}
             <nav id="sidebar" style={(isImpersonating || planExpired) ? { paddingTop: 40 } : {}}>
                 <div className="sidebar-logo">
-                    <div className="logo-icon">🌿</div>
+                    <img className="logo-icon" src="/icon-192.png" alt="" />
                     <span className="logo-text">Cuaderno de Campo</span>
                 </div>
                 <div style={{ padding: '8px 0', flex: 1, overflowY: 'auto' }}>
