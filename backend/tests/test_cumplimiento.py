@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from blueprints.cumplimiento import (  # noqa: E402
     _color, _es_exento, _estado_iteaf, _norm, evaluar_cumplimiento,
 )
-from helpers import heredar_cultivos_lenosos  # noqa: E402
+from helpers import heredar_cultivos_lenosos, campana_activa  # noqa: E402
 
 UID = 1
 OTRO_UID = 2
@@ -427,6 +427,20 @@ def test_lenosos_no_pendientes():
     conn.close()
 
 
+def test_campana_activa_helper():
+    print("E ter · campana_activa sale de la explotación pedida:")
+    conn = _db()
+    conn.execute("INSERT INTO explotacion (id, user_id, campana_activa, orden)"
+                 " VALUES (?,?,?,?)", (99, UID, '2030/2031', 5))
+    conn.commit()
+    check("con explotacion_id, la de esa finca",
+          campana_activa(conn, UID, 99) == '2030/2031')
+    check("sin explotacion_id, la primera por orden", campana_activa(conn, UID) == CAMPANA)
+    check("de otro usuario no devuelve la mía",
+          campana_activa(conn, OTRO_UID) == '2025/2026')  # fallback, no la de UID
+    conn.close()
+
+
 # ── E · aislamiento entre agricultores ────────────────────────────────────────
 
 def test_aislamiento():
@@ -508,6 +522,7 @@ def run():
     test_informativos()
     test_ropo()
     test_lenosos_no_pendientes()
+    test_campana_activa_helper()
     test_aislamiento()
     test_sin_n_mas_1()
     print("test_cumplimiento: TODO OK")

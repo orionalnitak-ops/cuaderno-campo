@@ -241,6 +241,26 @@ def es_cultivo_lenoso(cod_iacs):
 _CAMPOS_HEREDABLES = ('cultivo', 'cultivo_iacs_cod', 'variedad', 'superficie_cultivada_ha')
 
 
+def campana_activa(conn, uid, explotacion_id=None):
+    """Campaña activa de UNA explotación concreta.
+
+    De ESA explotación, no de la primera fila del usuario: un
+    `one(... WHERE user_id=?)` a secas devuelve una fila arbitraria cuando el
+    usuario lleva varias explotaciones, y entonces todo se evalúa contra la
+    campaña de otra finca. En silencio: los números salen igual y son mentira.
+
+    Vive en helpers y no en cumplimiento.py porque la usan los dos: el motor de
+    la Revisión y la herencia de leñosos.
+    """
+    if explotacion_id:
+        expl = one(conn, "SELECT campana_activa FROM explotacion WHERE id=? AND user_id=?",
+                   (explotacion_id, uid))
+    else:
+        expl = one(conn, "SELECT campana_activa FROM explotacion WHERE user_id=?"
+                         " ORDER BY orden, id LIMIT 1", (uid,))
+    return (expl or {}).get('campana_activa') or '2025/2026'
+
+
 def heredar_cultivos_lenosos(conn, uid, campana, explotacion_id):
     """Copia a `campana` la declaración de cultivo de las parcelas de leñoso.
 
