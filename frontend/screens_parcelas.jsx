@@ -252,6 +252,16 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
 
     const [parcelas, setParcelas]   = useState([]);
     const [selected, setSelected]   = useState(null);
+    // Feature 015: parcelas de leñoso sin cultivo declarado. `sug` es lo que
+    // devuelve /api/cultivos-campana/sugerencias; `sugElegido` guarda qué cultivo
+    // ha elegido el agricultor para cada grupo que hay que preguntar.
+    const [sug, setSug]             = useState(null);
+    const [sugElegido, setSugElegido] = useState({});
+    // Solo para el uso 'VO' (viñedo-olivar): son DOS cultivos en el mismo recinto,
+    // así que hace falta el segundo cultivo y el reparto de superficie.
+    const [sugElegidoB, setSugElegidoB] = useState('');
+    const [sugPct, setSugPct]       = useState('');
+    const [sugGuardando, setSugGuardando] = useState(false);
     const [showForm, setShowForm]   = useState(false);
     const [tab, setTab]             = useState('parcela');
     const [loading, setLoading]     = useState(true);
@@ -682,6 +692,87 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
     };
     useEffect(() => { fetchParcelas(); }, []);
 
+    // ── Feature 015: leñosos sin declarar ──
+    // Un olivar no cambia de campaña en campaña y SIGPAC ya dice que la parcela
+    // es olivar, así que en vez de marcarlas como "pendientes" y que las teclee
+    // una a una, se le proponen y confirma. Falla en silencio a propósito: si el
+    // servidor no responde (sin cobertura, por ejemplo), simplemente no sale el
+    // aviso; la pantalla de parcelas tiene que seguir funcionando igual.
+    const fetchSugerencias = () => {
+        fetch('/api/cultivos-campana/sugerencias', { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setSug(d && d.ok && d.grupos && d.grupos.length ? d : null))
+            .catch(() => setSug(null));
+    };
+    useEffect(() => { fetchSugerencias(); }, []);
+
+    const totalSugeridas = sug
+        ? sug.grupos.reduce((n, g) => n + g.parcelas.length, 0) : 0;
+
+    // Confirmar un grupo. Para los que hay que preguntar, sin respuesta no se
+    // manda nada: en un cuaderno legal no se declara un cultivo a medias.
+    const confirmarGrupo = async (grupo) => {
+        const cod = grupo.necesita_pregunta ? sugElegido[grupo.uso] : grupo.propuesta.cod;
+        if (!cod) { showToast('Elige primero qué cultivo es'); return; }
+
+        // Una declaración por parcela… salvo en la mixta, que lleva dos cultivos y
+        // hay que repartirle la superficie. El resto se la queda entera.
+        const esMixta = grupo.uso === 'VO';
+        let pct = 100;
+        if (esMixta) {
+            if (!sugElegidoB) { showToast('Elige también el segundo cultivo'); return; }
+            if (sugElegidoB === cod) { showToast('Los dos cultivos no pueden ser el mismo'); return; }
+            pct = parseFloat(String(sugPct).replace(',', '.'));
+            if (!(pct > 0 && pct < 100)) {
+                showToast('Pon qué porcentaje ocupa el primer cultivo (entre 1 y 99)');
+                return;
+            }
+        }
+        const declaraciones = [];
+        grupo.parcelas.forEach(p => {
+            const sup = p.superficie_ha;
+            if (!esMixta) {
+                declaraciones.push({ parcela_id: p.id, cultivo_iacs_cod: cod,
+                                     superficie_cultivada_ha: sup });
+                return;
+            }
+            // El segundo cultivo se lleva EL RESTO, no el porcentaje complementario:
+            // así redondear no deja hectáreas sin declarar ni se pasa del total.
+            const a = sup != null ? Math.round(sup * pct) / 100 : null;
+            declaraciones.push({ parcela_id: p.id, cultivo_iacs_cod: cod,
+                                 superficie_cultivada_ha: a });
+            declaraciones.push({ parcela_id: p.id, cultivo_iacs_cod: sugElegidoB,
+                                 superficie_cultivada_ha: (sup != null && a != null)
+                                     ? Math.round((sup - a) * 10000) / 10000 : null });
+        });
+
+        setSugGuardando(true);
+        try {
+            const res = await fetch('/api/cultivos-campana/declarar-lote', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ declaraciones }),
+            });
+            const d = await res.json();
+            if (d && d.ok) {
+                showToast(d.creadas === 1
+                    ? '1 parcela declarada'
+                    : `${d.creadas} parcelas declaradas`);
+                if (d.rechazadas) {
+                    showToast(`${d.rechazadas} no se pudieron declarar: ${(d.motivos || []).join('; ')}`);
+                }
+                fetchSugerencias();
+            } else {
+                showToast((d && d.error) || 'No se pudo declarar');
+            }
+        } catch {
+            showToast('Sin conexión: inténtalo cuando vuelvas a tener cobertura');
+        } finally {
+            setSugGuardando(false);
+        }
+    };
+
 
     // SIGPAC: load provincias on form open
     useEffect(() => {
@@ -916,6 +1007,96 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
                         </div>
                     </div>
                 </div>
+
+                {/* ── Leñosos sin declarar (feature 015) ── */}
+                {sug && totalSugeridas > 0 && (
+                    <div style={{ background:'#fffbeb', borderBottom:'1px solid #fde68a', padding:'14px 16px' }}>
+                        <div style={{ fontFamily:'Manrope', fontWeight:800, fontSize:'0.92rem', color:'#92400e' }}>
+                            🌳 {totalSugeridas} {totalSugeridas === 1 ? 'parcela' : 'parcelas'} sin cultivo declarado
+                        </div>
+                        <div style={{ fontSize:'0.8rem', color:'#a16207', margin:'4px 0 12px', lineHeight:1.45 }}>
+                            El olivar y la viña no cambian de un año para otro, así que basta
+                            con que lo confirmes una vez.
+                        </div>
+
+                        {sug.grupos.map(g => (
+                            <div key={g.uso} style={{
+                                background:'#fff', border:'1px solid #fde68a', borderRadius:12,
+                                padding:'12px 14px', marginBottom:10,
+                            }}>
+                                <div style={{ fontWeight:700, fontSize:'0.86rem', color:'#1f2937' }}>
+                                    {g.etiqueta} · {g.parcelas.length} {g.parcelas.length === 1 ? 'parcela' : 'parcelas'}
+                                </div>
+
+                                {g.necesita_pregunta ? (
+                                    <>
+                                        <div style={{ fontSize:'0.78rem', color:'#6b7280', margin:'6px 0 8px' }}>
+                                            {g.uso === 'VO'
+                                                ? 'Aquí hay dos cultivos en la misma parcela. Dime cuáles son y cuánto ocupa cada uno.'
+                                                : '¿Cuál de estos es? Hace falta saberlo para el cuaderno oficial.'}
+                                        </div>
+                                        <select className="input-field" style={{ marginBottom:10 }}
+                                            value={sugElegido[g.uso] || ''}
+                                            onChange={e => setSugElegido(s => ({ ...s, [g.uso]: e.target.value }))}>
+                                            <option value="">{g.uso === 'VO' ? 'Cultivo principal…' : 'Seleccionar…'}</option>
+                                            {g.opciones.map(o => (
+                                                <option key={o.cod} value={o.cod}>{o.nombre}</option>
+                                            ))}
+                                        </select>
+                                        {g.uso === 'VO' && (
+                                            <>
+                                                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                                                    <input className="input-field" type="number" inputMode="decimal"
+                                                        min="1" max="99" placeholder="80" value={sugPct}
+                                                        onChange={e => setSugPct(e.target.value)}
+                                                        style={{ width:90, marginBottom:0 }} />
+                                                    <span style={{ fontSize:'0.8rem', color:'#6b7280' }}>
+                                                        % del cultivo principal
+                                                    </span>
+                                                </div>
+                                                <select className="input-field" style={{ marginBottom:10 }}
+                                                    value={sugElegidoB}
+                                                    onChange={e => setSugElegidoB(e.target.value)}>
+                                                    <option value="">El resto es…</option>
+                                                    {g.opciones.map(o => (
+                                                        <option key={o.cod} value={o.cod}>{o.nombre}</option>
+                                                    ))}
+                                                </select>
+                                            </>
+                                        )}
+                                    </>
+                                ) : (
+                                    <div style={{ fontSize:'0.78rem', color:'#6b7280', margin:'6px 0 10px' }}>
+                                        Según SIGPAC {g.parcelas.length === 1 ? 'es' : 'son'} <strong>{g.propuesta.cultivo}</strong>.
+                                    </div>
+                                )}
+
+                                <button
+                                    onClick={() => confirmarGrupo(g)}
+                                    disabled={sugGuardando || (g.necesita_pregunta && !sugElegido[g.uso])}
+                                    className="btn-primary"
+                                    style={{
+                                        width:'100%', padding:'12px', minHeight:44, fontSize:'0.88rem',
+                                        opacity: (sugGuardando || (g.necesita_pregunta && !sugElegido[g.uso])) ? 0.5 : 1,
+                                    }}>
+                                    {sugGuardando ? 'Guardando…'
+                                        : g.necesita_pregunta
+                                            ? `Confirmar ${g.parcelas.length}`
+                                            : `Confirmar ${g.parcelas.length} de ${g.propuesta.cultivo.toLowerCase()}`}
+                                </button>
+
+                                <details style={{ marginTop:8 }}>
+                                    <summary style={{ fontSize:'0.76rem', color:'#6b7280', cursor:'pointer' }}>
+                                        Ver cuáles son
+                                    </summary>
+                                    <div style={{ fontSize:'0.76rem', color:'#6b7280', marginTop:6, lineHeight:1.6 }}>
+                                        {g.parcelas.map(p => p.nombre).join(' · ')}
+                                    </div>
+                                </details>
+                            </div>
+                        ))}
+                    </div>
+                )}
 
                 {/* Acceso a Grupos UHC (única entrada en móvil: la barra inferior no tiene hueco) */}
                 {onNavigate && (
