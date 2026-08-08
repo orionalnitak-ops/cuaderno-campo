@@ -10,7 +10,7 @@ from extensions import limiter
 from db import get_db, one, dicts, is_pac_eligible
 from helpers import (get_uid, _to_real, get_active_explotacion_id, estado_sigpac,
                      validar_alta_multirecinto, heredar_cultivos_lenosos,
-                     campana_activa)
+                     campana_activa, sugerencias_lenosos, declarar_cultivos_lote)
 from blueprints.ia import _recalcular_patrones
 from blueprints.sigpac import superficie_sigpac_parcela, referencia_catastral_parcela
 
@@ -363,6 +363,55 @@ def manage_cultivos():
     conn.commit(); conn.close()
     _recalcular_patrones(uid, 'cultivo_campana', parcela_id, data.get('fecha_siembra'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201
+
+
+@bp.route('/api/cultivos-campana/sugerencias', methods=['GET'])
+@login_required
+def sugerencias_cultivos():
+    """Qué parcelas de leñoso están sin declarar y qué se le propone (feature 015).
+
+    Solo lectura: aquí no se escribe nada. Decide el agricultor.
+    """
+    conn = get_db()
+    try:
+        uid = get_uid()
+        data = sugerencias_lenosos(conn, uid, get_active_explotacion_id(conn))
+        return jsonify({"ok": True, **data})
+    finally:
+        conn.close()
+
+
+@bp.route('/api/cultivos-campana/declarar-lote', methods=['POST'])
+@login_required
+def declarar_lote_cultivos():
+    """Declara de una vez los cultivos que el agricultor ha confirmado (feature 015).
+
+    POST y no GET: esto escribe. La lección de la 014 fue justo esa — que el
+    efecto sea idempotente no convierte una escritura en un GET seguro.
+
+    Ni la campaña ni el nombre del cultivo se aceptan del cliente: la campaña sale
+    de la explotación y el nombre del catálogo IACS. Del cliente solo viene QUÉ
+    parcela y QUÉ código, y las dos cosas se validan contra la BD.
+    """
+    data = request.json or {}
+    declaraciones = data.get('declaraciones')
+    if not isinstance(declaraciones, list) or not declaraciones:
+        return jsonify({"ok": False, "error": "No hay nada que declarar"}), 400
+    if len(declaraciones) > 500:
+        # Tope de cordura: la explotación más grande que manejamos anda por 120
+        # parcelas. Un lote de miles solo puede ser un error o un abuso.
+        return jsonify({"ok": False, "error": "Demasiadas declaraciones de una vez"}), 400
+
+    conn = get_db()
+    try:
+        uid = get_uid()
+        exp_id = get_active_explotacion_id(conn)
+        res = declarar_cultivos_lote(conn, uid, exp_id, declaraciones)
+        if res['creadas']:
+            conn.commit()
+        return jsonify({"ok": True, **res})
+    finally:
+        conn.close()
 
 
 @bp.route('/api/cultivos-campana/<int:cid>', methods=['GET', 'PUT', 'DELETE'])
