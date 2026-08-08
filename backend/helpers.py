@@ -207,20 +207,24 @@ def validar_alta_multirecinto(data):
 # propósito: el backend no puede depender de un array de JSX, y esta lista es
 # dato normativo estable, no configuración. Si se añade un leñoso al catálogo
 # del frontend, hay que añadirlo también aquí.
-CULTIVOS_LENOSOS_IACS = frozenset({
-    '1710',  # Almendro
-    '1711',  # Viñedo vinificación
-    '1712',  # Viñedo uva de mesa
-    '1720',  # Melocotonero / Nectarino
-    '1730',  # Ciruelo
-    '1740',  # Pistachero
-    '1750',  # Higuera
-    '1760',  # Nogal
-    '1770',  # Cerezo / Guindo
-    '1820',  # Olivar
-    '1830',  # Naranjo
-    '1840',  # Limonero
-})
+#
+# Es un dict código -> nombre y no un set porque el nombre también hace falta:
+# `cultivos_campana` guarda las dos cosas, y el nombre tiene que salir de aquí y
+# no del cliente, para que no se cuele texto libre en un documento legal.
+CULTIVOS_LENOSOS_IACS = {
+    '1710': 'Almendro',
+    '1711': 'Viñedo vinificación',
+    '1712': 'Viñedo uva de mesa',
+    '1720': 'Melocotonero / Nectarino',
+    '1730': 'Ciruelo',
+    '1740': 'Pistachero',
+    '1750': 'Higuera',
+    '1760': 'Nogal',
+    '1770': 'Cerezo / Guindo',
+    '1820': 'Olivar',
+    '1830': 'Naranjo',
+    '1840': 'Limonero',
+}
 
 
 def es_cultivo_lenoso(cod_iacs):
@@ -320,3 +324,173 @@ def heredar_cultivos_lenosos(conn, uid, campana, explotacion_id):
     conn.cursor().executemany(
         f"INSERT INTO cultivos_campana ({cols}) VALUES ({ph})", filas)
     return len(filas)
+
+
+# ── Declarar leñosos a partir del uso SIGPAC (feature 015) ────────────────────
+# Lourdes tenía 23 parcelas de olivar, viñedo y almendro sin cultivo declarado, y
+# las 23 le salían marcadas en la Revisión. El dato de que son olivar YA lo tiene
+# la app en `parcelas.uso_sigpac`, que viene del registro oficial: pedírselo a mano
+# parcela por parcela es pedirle que teclee lo que ya sabemos.
+# Ver spec/features/015-declarar-lenosos-desde-sigpac/.
+#
+# El valor es el código IACS que se propone sin preguntar, o None si el uso es
+# leñoso pero NO se puede deducir el cultivo. En un documento legal no se adivina:
+# si hay duda se pregunta, y hasta entonces la parcela sigue contando como pendiente.
+USO_SIGPAC_LENOSO = {
+    'OV': '1820',   # Olivar → sin ambigüedad
+    'VI': None,     # Viñedo → vinificación (1711) o uva de mesa (1712). Hay que
+                    #   preguntar: la de vinificación arrastra datos de destino de
+                    #   la producción que la de mesa no lleva, así que el cuaderno
+                    #   las trata distinto y no vale elegir por el agricultor.
+    'FY': None,     # Frutales → "frutal" no es una especie; IACS pide el árbol.
+    'VO': None,     # Viñedo-Olivar → dos cultivos en el mismo recinto, hay que
+                    #   repartir la superficie entre los dos.
+}
+
+# Opciones que se ofrecen cuando hay que preguntar.
+_OPCIONES_USO = {
+    'VI': ('1711', '1712'),
+    'VO': ('1711', '1712', '1820'),
+    'FY': ('1710', '1720', '1730', '1740', '1750', '1760', '1770', '1830', '1840'),
+}
+
+_ETIQUETA_USO = {'OV': 'Olivar', 'VI': 'Viñedo', 'VO': 'Viñedo y olivar',
+                 'FY': 'Frutales'}
+
+# El uso SIGPAC llega sucio: en la BD de producción conviven 'OV - OLIVAR' y
+# 'OV-OLIVAR', más cadenas vacías y algún NULL. Por eso NUNCA se compara la cadena
+# entera, solo el código de dos letras del principio. Y por eso no vale un
+# startswith: 'VO' (viñedo-olivar) y 'VI' (viñedo) son usos distintos, y
+# confundirlos declararía el cultivo equivocado.
+_USO_RE = re.compile(r'^\s*([A-Za-z]{2})\b')
+
+
+def codigo_uso_sigpac(valor):
+    """'OV - OLIVAR' -> 'OV'. Devuelve '' si no hay un código reconocible."""
+    if not valor or not isinstance(valor, str):
+        return ''
+    m = _USO_RE.match(valor)
+    return m.group(1).upper() if m else ''
+
+
+def sugerencias_lenosos(conn, uid, explotacion_id):
+    """Parcelas de leñoso sin cultivo declarado, agrupadas por uso SIGPAC.
+
+    SOLO LEE. Quien decide es el agricultor: esto prepara lo que se le va a
+    proponer, y nada se escribe hasta que confirma con `declarar_cultivos_lote`.
+
+    La campaña NO es un parámetro: se saca de la explotación. Que quien llama
+    pudiera elegirla es justo el fallo que el Security Review destapó en la 014.
+    """
+    campana = campana_activa(conn, uid, explotacion_id)
+
+    expl_sql = " AND p.explotacion_id = ?" if explotacion_id else ""
+    expl_par = (explotacion_id,) if explotacion_id else ()
+
+    pendientes = dicts(conn, f"""
+        SELECT p.id, p.nombre_finca, p.uso_sigpac, p.superficie_ha
+        FROM parcelas p
+        WHERE p.user_id = ?{expl_sql} AND p.activa = 1
+          AND NOT EXISTS (SELECT 1 FROM cultivos_campana cc
+                          WHERE cc.parcela_id = p.id AND cc.campana = ?)
+        ORDER BY p.nombre_finca, p.id
+    """, (uid,) + expl_par + (campana,))
+
+    grupos = {}
+    for p in pendientes:
+        uso = codigo_uso_sigpac(p.get('uso_sigpac'))
+        if uso not in USO_SIGPAC_LENOSO:
+            continue          # herbáceo, sin uso o uso desconocido: no se propone
+        cod = USO_SIGPAC_LENOSO[uso]
+        g = grupos.setdefault(uso, {
+            'uso': uso,
+            'etiqueta': _ETIQUETA_USO.get(uso, uso),
+            'propuesta': ({'cod': cod, 'cultivo': CULTIVOS_LENOSOS_IACS[cod]}
+                          if cod else None),
+            'necesita_pregunta': cod is None,
+            'opciones': [{'cod': c, 'nombre': CULTIVOS_LENOSOS_IACS[c]}
+                         for c in _OPCIONES_USO.get(uso, ())],
+            'parcelas': [],
+        })
+        g['parcelas'].append({'id': p['id'],
+                              'nombre': p.get('nombre_finca') or f"Parcela {p['id']}",
+                              'superficie_ha': p.get('superficie_ha')})
+
+    return {'campana': campana,
+            'grupos': [grupos[u] for u in ('OV', 'VI', 'VO', 'FY') if u in grupos]}
+
+
+def declarar_cultivos_lote(conn, uid, explotacion_id, declaraciones):
+    """Crea las declaraciones de cultivo que el agricultor ha confirmado.
+
+    Recibe EXACTAMENTE qué declarar; el servidor no rellena huecos por su cuenta
+    ni deduce cultivos. Devuelve {'creadas', 'saltadas', 'rechazadas', 'motivos'}.
+
+    Una entrada mala no aborta el lote: se rechaza esa y se sigue. Con 23 parcelas
+    de golpe, tirar las 22 buenas por una mala sería la peor UX posible.
+
+    Reglas duras:
+      - La campaña NO se recibe: se saca de la explotación. Así es imposible
+        escribir en una campaña equivocada, la pida quien la pida. Un cliente
+        malicioso que mandara `campana=3000/3001` no tiene por dónde entrar.
+      - La parcela se comprueba contra `user_id` Y `explotacion_id` en la MISMA
+        consulta. Es la lección 4 de la feature 013: lo crítico no son los
+        listados, son las referencias cruzadas.
+      - El código IACS tiene que estar en el catálogo de leñosos. Nada de texto
+        libre, y el nombre del cultivo sale del catálogo, no del cliente.
+      - No pisa una declaración existente.
+      - La superficie declarada no puede pasar de la de la parcela.
+    """
+    res = {'creadas': 0, 'saltadas': 0, 'rechazadas': 0, 'motivos': []}
+    campana = campana_activa(conn, uid, explotacion_id)
+    res['campana'] = campana
+
+    def _rechaza(motivo):
+        res['rechazadas'] += 1
+        if motivo not in res['motivos']:
+            res['motivos'].append(motivo)
+
+    # Superficie ya comprometida por parcela, para poder repartir una parcela mixta
+    # entre dos cultivos dentro del MISMO lote sin pasarse de su superficie.
+    comprometida = {}
+
+    for d in (declaraciones or []):
+        d = d or {}
+        cod = str(d.get('cultivo_iacs_cod') or '').strip()
+        if cod not in CULTIVOS_LENOSOS_IACS:
+            _rechaza('Cultivo no válido')
+            continue
+
+        parcela = one(conn,
+                      "SELECT id, superficie_ha FROM parcelas"
+                      " WHERE id=? AND user_id=? AND explotacion_id=? AND activa=1",
+                      (d.get('parcela_id'), uid, explotacion_id))
+        if not parcela:
+            _rechaza('Parcela no encontrada en esta explotación')
+            continue
+
+        pid = parcela['id']
+        if one(conn, "SELECT id FROM cultivos_campana WHERE parcela_id=? AND campana=?"
+                     " AND cultivo_iacs_cod=?", (pid, campana, cod)):
+            res['saltadas'] += 1
+            continue
+
+        sup = _to_real(d.get('superficie_cultivada_ha'))
+        if sup and parcela.get('superficie_ha'):
+            if pid not in comprometida:
+                fila = one(conn, "SELECT COALESCE(SUM(superficie_cultivada_ha),0) AS t"
+                                 " FROM cultivos_campana WHERE parcela_id=? AND campana=?",
+                           (pid, campana))
+                comprometida[pid] = float(fila['t']) if fila else 0.0
+            if comprometida[pid] + sup > parcela['superficie_ha'] + 0.01:
+                _rechaza('La superficie declarada supera la de la parcela')
+                continue
+            comprometida[pid] += sup
+
+        conn.execute(
+            "INSERT INTO cultivos_campana (parcela_id, explotacion_id, campana,"
+            " cultivo, cultivo_iacs_cod, superficie_cultivada_ha) VALUES (?,?,?,?,?,?)",
+            (pid, explotacion_id, campana, CULTIVOS_LENOSOS_IACS[cod], cod, sup))
+        res['creadas'] += 1
+
+    return res
