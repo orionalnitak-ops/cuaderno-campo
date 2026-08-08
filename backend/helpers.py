@@ -507,3 +507,59 @@ def declarar_cultivos_lote(conn, uid, explotacion_id, declaraciones):
         res['creadas'] += 1
 
     return res
+
+
+# ── Registrar por grupo UHC: repartir cantidades absolutas (feature 016) ──────
+
+def repartir_por_superficie(total, parcelas):
+    """Reparte una cantidad TOTAL entre las parcelas de un grupo, según su superficie.
+
+    Devuelve {parcela_id: cantidad}.
+
+    Por qué existe: al registrar por grupo UHC, el backend expande el grupo a una
+    fila por parcela. Los campos por hectárea (dosis, N/P/K) se replican tal cual,
+    pero los ABSOLUTOS no: si el agricultor teclea 3.000 kg cosechados en un grupo
+    de 4 parcelas y se replican, el cuaderno acaba diciendo 12.000 kg. Eso es un
+    dato falso en un documento legal.
+
+    El reparto es una ESTIMACIÓN, no una medición — es lo que el agricultor haría a
+    mano en un grupo homogéneo. La UI se lo dice antes de guardar; quien quiera el
+    dato exacto tiene el modo parcela a parcela.
+
+    Dos reglas que no son obvias:
+
+    - **La última parcela absorbe el redondeo.** Repartir a 2 decimales pierde
+      céntimos (1000/3 = 333,33 x3 = 999,99). La suma de lo repartido tiene que ser
+      EXACTAMENTE lo que tecleó el agricultor: es el criterio 3 de la spec.
+    - **Si alguna superficie falta, se reparte a partes iguales** — todas, no solo
+      la que falta. Proporcionalmente, una parcela sin superficie se llevaría 0 kg,
+      que es peor mentira que el reparto igualitario. No se inventa una superficie.
+    """
+    if not parcelas:
+        return {}
+
+    total = _to_real(total) or 0.0
+    if total <= 0:
+        return {p['id']: 0.0 for p in parcelas}
+
+    # Superficie negativa = dato corrupto; se trata como ausente y dispara el
+    # reparto igualitario, en vez de restar de la suma y descuadrarlo todo.
+    sups = []
+    for p in parcelas:
+        s = _to_real(p.get('superficie_ha'))
+        sups.append(s if (s is not None and s > 0) else None)
+
+    if any(s is None for s in sups):
+        sups = [1.0] * len(parcelas)
+
+    suma = sum(sups)
+    reparto = {}
+    acumulado = 0.0
+    for i, p in enumerate(parcelas):
+        if i == len(parcelas) - 1:
+            cantidad = round(total - acumulado, 2)
+        else:
+            cantidad = round(total * sups[i] / suma, 2)
+            acumulado += cantidad
+        reparto[p['id']] = cantidad
+    return reparto
