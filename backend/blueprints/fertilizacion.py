@@ -146,7 +146,6 @@ def _validate_campana(campana):
 
 def _validate_abonado(data):
     required = {
-        'parcela_id':               'Parcela',
         'cultivo':                  'Cultivo',
         'cultivo_anterior':         'Cultivo anterior',
         'rendimiento_esperado_kg_ha': 'Rendimiento esperado',
@@ -157,6 +156,8 @@ def _validate_abonado(data):
         'k_necesario_kg_ha':        'K necesario',
     }
     missing = [label for field, label in required.items() if not str(data.get(field, '')).strip()]
+    if not data.get('parcela_id') and not data.get('uhc_id'):
+        missing.append('Parcela o Grupo UHC')
     if missing:
         return f"Campos obligatorios: {', '.join(missing)}"
     try:
@@ -419,6 +420,30 @@ def manage_riego_one(rid):
 # PLAN DE ABONADO
 # ─────────────────────────────────────────────
 
+def _insert_abonado(c, uid, data, parcela_id, parcela_etiqueta, exp_id):
+    """Inserta un plan de abonado para UNA parcela y devuelve su id.
+
+    Extraído del POST para poder reutilizarlo desde la rama de grupo UHC sin
+    duplicar la lista de columnas: dos INSERT idénticos se desincronizan en cuanto
+    alguien añade un campo a uno solo. Mismo patrón que `_insert_fertilizacion`.
+    """
+    c.execute('''
+        INSERT INTO abonado (
+            user_id, explotacion_id, parcela_id, parcela_etiqueta, cultivo, cultivo_anterior,
+            rendimiento_esperado_kg_ha, n_necesario_kg_ha, p_necesario_kg_ha,
+            k_necesario_kg_ha, fecha_preparacion, datos_suelo,
+            abono_recomendado, dosis_recomendada_kg_ha, notas, campana
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ''', (uid, exp_id, parcela_id, parcela_etiqueta,
+          data.get('cultivo'), data.get('cultivo_anterior'),
+          data.get('rendimiento_esperado_kg_ha') or None,
+          data.get('n_necesario_kg_ha'), data.get('p_necesario_kg_ha'), data.get('k_necesario_kg_ha'),
+          data.get('fecha_preparacion'), data.get('datos_suelo'),
+          data.get('abono_recomendado'), data.get('dosis_recomendada_kg_ha') or None,
+          data.get('notas'), data.get('campana', '2025/2026')))
+    return c.lastrowid
+
+
 @bp.route('/api/abonado', methods=['GET', 'POST'])
 @login_required
 def manage_abonado():
@@ -442,26 +467,28 @@ def manage_abonado():
     if not exp_id:
         conn.close()
         return jsonify({"error": SIN_EXPLOTACION}), 400
-    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
+    c = conn.cursor()
+
+    # Registro por grupo UHC: se expande a un plan por parcela (feature 016). Todos
+    # los campos del plan de abonado son POR HECTÁREA (N/P/K necesarios, dosis
+    # recomendada, rendimiento esperado), así que se replican tal cual — aquí no
+    # hay nada que repartir, al contrario que en cosecha o en cultivo campaña.
+    if data.get('uhc_id'):
+        parcelas = _parcelas_uhc(conn, data['uhc_id'], uid, exp_id)
+        if not parcelas:
+            conn.close()
+            return jsonify({"error": "El grupo UHC no existe o no tiene parcelas asignadas"}), 400
+        ids = [_insert_abonado(c, uid, data, p['id'], p['nombre_finca'], exp_id) for p in parcelas]
+        conn.commit(); conn.close()
+        return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
+
+    if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
 
-    c = conn.cursor()
-    c.execute('''
-        INSERT INTO abonado (
-            user_id, explotacion_id, parcela_id, parcela_etiqueta, cultivo, cultivo_anterior,
-            rendimiento_esperado_kg_ha, n_necesario_kg_ha, p_necesario_kg_ha,
-            k_necesario_kg_ha, fecha_preparacion, datos_suelo,
-            abono_recomendado, dosis_recomendada_kg_ha, notas, campana
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    ''', (uid, exp_id, data.get('parcela_id'), data.get('parcela_etiqueta'),
-          data.get('cultivo'), data.get('cultivo_anterior'),
-          data.get('rendimiento_esperado_kg_ha') or None,
-          data.get('n_necesario_kg_ha'), data.get('p_necesario_kg_ha'), data.get('k_necesario_kg_ha'),
-          data.get('fecha_preparacion'), data.get('datos_suelo'),
-          data.get('abono_recomendado'), data.get('dosis_recomendada_kg_ha') or None,
-          data.get('notas'), data.get('campana', '2025/2026')))
-    conn.commit(); new_id = c.lastrowid; conn.close()
+    new_id = _insert_abonado(c, uid, data, data.get('parcela_id'),
+                             data.get('parcela_etiqueta'), exp_id)
+    conn.commit(); conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
 
 
@@ -486,7 +513,14 @@ def manage_abonado_one(aid):
     if err:
         conn.close()
         return jsonify({"error": err}), 400
-    if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
+    # `_validate_abonado` acepta parcela O grupo, porque al CREAR se admiten los dos
+    # (feature 016). Editar es otra cosa: se toca un plan concreto, que ya está
+    # atado a su parcela. Sin esta comprobación, un PUT con solo `uhc_id` dejaría
+    # `parcela_id = NULL` y el plan quedaría huérfano en el cuaderno.
+    if not data.get('parcela_id'):
+        conn.close()
+        return jsonify({"error": "La parcela es obligatoria al editar un plan de abonado"}), 400
+    if not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
     fields = ['parcela_id', 'parcela_etiqueta', 'cultivo', 'cultivo_anterior',

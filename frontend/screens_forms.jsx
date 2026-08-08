@@ -1532,9 +1532,12 @@ function calcNpkAbonado(cultivo) {
 function FormAbonado({ parcelas, record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
     const [saving, setSaving] = React.useState(false);
+    const [modoUHC, setModoUHC] = React.useState(false);
+    const [uhcList, setUhcList] = React.useState([]);
     const [f, setF] = React.useState({
         parcela_id:                  record?.parcela_id                  || '',
         parcela_etiqueta:            record?.parcela_etiqueta            || '',
+        uhc_id:                      record?.uhc_id                      || '',
         cultivo:                     record?.cultivo                     || '',
         cultivo_anterior:            record?.cultivo_anterior            || '',
         rendimiento_esperado_kg_ha:  record?.rendimiento_esperado_kg_ha  || '',
@@ -1562,9 +1565,16 @@ function FormAbonado({ parcelas, record, campana, onClose, isEdit }) {
         setF(x => ({ ...x, n_necesario_kg_ha: n, p_necesario_kg_ha: p, k_necesario_kg_ha: k }));
     }, [f.cultivo]);
 
+    React.useEffect(() => {
+        fetch(`/api/uhc?campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setUhcList(Array.isArray(d) ? d : []))
+            .catch(() => {});
+    }, [campana]);
+
     const save = async () => {
-        if (!f.parcela_id || !f.cultivo || !f.cultivo_anterior || !f.rendimiento_esperado_kg_ha || !f.fecha_preparacion) {
-            alert('Rellena: parcela, cultivo, cultivo anterior, rendimiento y fecha'); return;
+        if ((!f.parcela_id && !f.uhc_id) || !f.cultivo || !f.cultivo_anterior || !f.rendimiento_esperado_kg_ha || !f.fecha_preparacion) {
+            alert('Rellena: parcela (o grupo), cultivo, cultivo anterior, rendimiento y fecha'); return;
         }
         setSaving(true);
         try {
@@ -1586,7 +1596,11 @@ function FormAbonado({ parcelas, record, campana, onClose, isEdit }) {
                 setSaving(false);
                 return;
             }
-            onClose('✅ Plan de abonado guardado');
+            // Con grupo UHC el backend crea un plan por parcela: decir cuántos, que
+            // el agricultor sepa qué acaba de escribir en su cuaderno.
+            const d = await res.json().catch(() => ({}));
+            onClose(d.count > 1 ? `✅ Plan de abonado guardado en ${d.count} parcelas`
+                                : '✅ Plan de abonado guardado');
         } catch (e) {
             alert('Error al guardar: ' + e.message);
             setSaving(false);
@@ -1597,9 +1611,16 @@ function FormAbonado({ parcelas, record, campana, onClose, isEdit }) {
 
     return (
         <div>
-            <FieldGroup label="Parcela *">
-                <ParcelSelect parcelas={parcelas} value={f.parcela_id} onChange={v => set('parcela_id', v)} />
-            </FieldGroup>
+            {/* Editando se toca UN plan concreto: el grupo solo tiene sentido al crear. */}
+            {isEdit ? (
+                <FieldGroup label="Parcela *">
+                    <ParcelSelect parcelas={parcelas} value={f.parcela_id} onChange={v => set('parcela_id', v)} />
+                </FieldGroup>
+            ) : (
+                <ParcelOrUhcSelect modoUHC={modoUHC} setModoUHC={setModoUHC} parcelas={parcelas} uhcList={uhcList}
+                    parcelaId={f.parcela_id} uhcId={f.uhc_id}
+                    onParcela={v => set('parcela_id', v)} onUhc={v => set('uhc_id', v)} />
+            )}
 
             <div className="responsive-grid cols-2">
                 <FieldGroup label="Cultivo *">
