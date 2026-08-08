@@ -174,6 +174,24 @@ def test_sugerencias_aislamiento():
     conn.close()
 
 
+def test_sin_explotacion():
+    print("D bis · sin explotación no se propone ni se escribe nada:")
+    conn = _db()
+    _parcela(conn, 1, 'OV - OLIVAR')
+    conn.commit()
+
+    res = sugerencias_lenosos(conn, UID, None)
+    check("no propone nada", res['grupos'] == [])
+
+    r = declarar_cultivos_lote(conn, UID, None,
+                               [{'parcela_id': 1, 'cultivo_iacs_cod': '1820'}])
+    conn.commit()
+    check("no declara nada", r['creadas'] == 0)
+    check("y dice por qué", 'No hay ninguna explotación seleccionada' in r['motivos'])
+    check("no ha escrito en la BD", _filas(conn) == [])
+    conn.close()
+
+
 # ── C · declarar en lote ──────────────────────────────────────────────────────
 
 def test_declarar_lote():
@@ -309,6 +327,7 @@ def run():
     test_sugerencias()
     test_sugerencias_no_repite_lo_declarado()
     test_sugerencias_aislamiento()
+    test_sin_explotacion()
     test_declarar_lote()
     test_declarar_lote_valida()
     test_declarar_lote_idempotente()

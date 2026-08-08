@@ -382,19 +382,25 @@ def sugerencias_lenosos(conn, uid, explotacion_id):
     La campaña NO es un parámetro: se saca de la explotación. Que quien llama
     pudiera elegirla es justo el fallo que el Security Review destapó en la 014.
     """
+    # Sin explotación no hay nada que proponer: las parcelas cuelgan siempre de
+    # una. Salir aquí no es solo una guarda, es lo que permite que la consulta de
+    # abajo sea SQL ESTÁTICA, sin el `expl_sql` condicional que se usa en otros
+    # sitios del proyecto. Señalado por el Security Review del PR #49: el patrón
+    # no es explotable, pero una consulta que no cambia de forma no puede
+    # degradarse el día que alguien le añada otro filtro.
+    if not explotacion_id:
+        return {'campana': None, 'grupos': []}
+
     campana = campana_activa(conn, uid, explotacion_id)
 
-    expl_sql = " AND p.explotacion_id = ?" if explotacion_id else ""
-    expl_par = (explotacion_id,) if explotacion_id else ()
-
-    pendientes = dicts(conn, f"""
+    pendientes = dicts(conn, """
         SELECT p.id, p.nombre_finca, p.uso_sigpac, p.superficie_ha
         FROM parcelas p
-        WHERE p.user_id = ?{expl_sql} AND p.activa = 1
+        WHERE p.user_id = ? AND p.explotacion_id = ? AND p.activa = 1
           AND NOT EXISTS (SELECT 1 FROM cultivos_campana cc
                           WHERE cc.parcela_id = p.id AND cc.campana = ?)
         ORDER BY p.nombre_finca, p.id
-    """, (uid,) + expl_par + (campana,))
+    """, (uid, explotacion_id, campana))
 
     grupos = {}
     for p in pendientes:
@@ -442,6 +448,13 @@ def declarar_cultivos_lote(conn, uid, explotacion_id, declaraciones):
       - La superficie declarada no puede pasar de la de la parcela.
     """
     res = {'creadas': 0, 'saltadas': 0, 'rechazadas': 0, 'motivos': []}
+    if not explotacion_id:
+        # Igual que en sugerencias_lenosos: sin explotación no hay dónde escribir.
+        # La comprobación de la parcela ya lo rechazaría todo, pero decirlo aquí
+        # es más honesto que devolver 23 rechazos sin explicar por qué.
+        res['rechazadas'] = len(declaraciones or [])
+        res['motivos'].append('No hay ninguna explotación seleccionada')
+        return res
     campana = campana_activa(conn, uid, explotacion_id)
     res['campana'] = campana
 
