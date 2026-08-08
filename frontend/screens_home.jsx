@@ -505,7 +505,7 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
                                     onChange={e => setNlpTipoRiego(e.target.value)}
                                     style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '2px solid var(--primary)', fontSize: '0.95rem', boxSizing: 'border-box', background: 'var(--surface)' }}
                                 >
-                                    {['Goteo','Aspersión','Gravedad','Pivot','Otro'].map(t => (
+                                    {['Aspersión','Goteo','Gravedad','Pivot','Otro'].map(t => (
                                         <option key={t} value={t}>{t}</option>
                                     ))}
                                 </select>

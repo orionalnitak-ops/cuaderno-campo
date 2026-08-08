@@ -1301,8 +1301,8 @@ function FormCompra({ record, campana, onClose, isEdit }) {
                     <option value="combustible">Combustible</option>
                     <option value="fertilizante">Fertilizante / Abono</option>
                     <option value="fitosanitario">Fitosanitario</option>
-                    <option value="otro">Otro insumo</option>
                     <option value="semilla">Semilla / Material vegetal</option>
+                    <option value="otro">Otro insumo</option>
                 </select>
             </FieldGroup>
 
@@ -1472,7 +1472,7 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
                 <FieldGroup label="Tipo de riego *">
                     <select className="input-field" value={f.tipo_riego} onChange={e => set('tipo_riego', e.target.value)}>
                         <option value="">Seleccionar…</option>
-                        {['Aspersión', 'Goteo', 'Gravedad', 'Otro', 'Pivot'].map(t => <option key={t}>{t}</option>)}
+                        {['Aspersión', 'Goteo', 'Gravedad', 'Pivot', 'Otro'].map(t => <option key={t}>{t}</option>)}
                     </select>
                     <SugChip campo="tipo_riego" sugerencias={sugerencias} valorActual={f.tipo_riego} />
                 </FieldGroup>
@@ -1495,7 +1495,7 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
                 <FieldGroup label="Fuente de agua">
                     <select className="input-field" value={f.fuente_agua} onChange={e => set('fuente_agua', e.target.value)}>
                         <option value="">Seleccionar…</option>
-                        {['Balsa', 'Comunidad de regantes', 'Otro', 'Pozo propio', 'Río'].map(s => <option key={s}>{s}</option>)}
+                        {['Balsa', 'Comunidad de regantes', 'Pozo propio', 'Río', 'Otro'].map(s => <option key={s}>{s}</option>)}
                     </select>
                 </FieldGroup>
                 <FieldGroup label="Notas">
