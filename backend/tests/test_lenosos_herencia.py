@@ -15,7 +15,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from helpers import (  # noqa: E402
-    CULTIVOS_LENOSOS_IACS, es_cultivo_lenoso, heredar_cultivos_lenosos,
+    CULTIVOS_LENOSOS_IACS, _CAMPOS_HEREDABLES, es_cultivo_lenoso,
+    heredar_cultivos_lenosos,
 )
 
 UID = 1
@@ -91,6 +92,60 @@ def test_catalogo():
     check("acepta int además de str", es_cultivo_lenoso(1820))
     check("tolera espacios", es_cultivo_lenoso(' 1820 '))
     check("son los 12 del grupo Leñosos", len(CULTIVOS_LENOSOS_IACS) == 12)
+
+
+# ── A bis · los nombres de columna que se interpolan en el SQL ────────────────
+
+def test_campos_heredables_son_literales():
+    """Red contra la fragilidad que señaló el Security Review del PR #48.
+
+    `_CAMPOS_HEREDABLES` se interpola con f-string en dos consultas, porque los
+    nombres de columna NO admiten placeholder `?`. Hoy no es explotable: es una
+    constante de literales que no toca input de usuario. Lo que hay que mantener
+    cierto es justo eso, y de ahí este test.
+
+    Se fija la tupla EXACTA a propósito. Validarla contra una lista blanca
+    derivada de ella misma no protegería de nada: si alguien la adultera, la
+    lista blanca se adultera con ella y la comprobación nunca falla. Este test
+    sí falla, y falla en el CI. Mismo criterio que `test_fragmento_sql_es_literal`
+    con `_CAMPANA_SQL` en test_cumplimiento.py.
+    """
+    print("A bis · los nombres de columna interpolados siguen siendo literales:")
+    esperados = ('cultivo', 'cultivo_iacs_cod', 'variedad', 'superficie_cultivada_ha')
+    check("la tupla es exactamente la esperada", _CAMPOS_HEREDABLES == esperados)
+    check("es una tupla, no algo mutable", isinstance(_CAMPOS_HEREDABLES, tuple))
+    for c in _CAMPOS_HEREDABLES:
+        check(f"'{c}' es un identificador simple, sin comas, comillas ni espacios",
+              isinstance(c, str) and c.isidentifier())
+    # Ninguna es una fecha: heredar la fecha del año pasado sería inventar un dato.
+    check("no se cuela ninguna fecha",
+          not any('fecha' in c for c in _CAMPOS_HEREDABLES))
+
+
+# ── A ter · campaña malformada (Security Review del PR #48) ───────────────────
+
+def test_campana_malformada():
+    print("A ter · una campaña malformada no escribe nada:")
+    for basura in ('../../../etc', '2025', 'zzz', "2025/2026'; DROP TABLE parcelas--",
+                   '2025-2026', '', None, 99):
+        conn = _db()
+        _parcela(conn, 1)
+        _cultivo(conn, 1, ANTERIOR, OLIVAR)
+        conn.commit()
+        n = heredar_cultivos_lenosos(conn, UID, basura, EXPL)
+        conn.commit()
+        filas = [r for r in conn.execute("SELECT 1 FROM cultivos_campana")]
+        check(f"{basura!r} no hereda nada", n == 0)
+        check(f"{basura!r} no crea filas nuevas", len(filas) == 1)
+        conn.close()
+    # Y la campaña buena sigue funcionando, no sea que la validación lo mate todo.
+    conn = _db()
+    _parcela(conn, 1)
+    _cultivo(conn, 1, ANTERIOR, OLIVAR)
+    conn.commit()
+    check("una campaña con formato válido sí hereda",
+          heredar_cultivos_lenosos(conn, UID, ACTUAL, EXPL) == 1)
+    conn.close()
 
 
 # ── B · la herencia (criterios 1, 2, 8) ───────────────────────────────────────
@@ -270,6 +325,8 @@ def test_coste_constante():
 def run():
     print("test_lenosos_herencia:")
     test_catalogo()
+    test_campos_heredables_son_literales()
+    test_campana_malformada()
     test_hereda_lenoso()
     test_herbaceo_no_se_hereda()
     test_idempotente()

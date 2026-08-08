@@ -260,7 +260,13 @@ def heredar_cultivos_lenosos(conn, uid, campana, explotacion_id):
 
     Devuelve el nº de filas heredadas.
     """
-    if not campana:
+    # La campaña llega del query string en el GET de /api/cultivos-campana. No hay
+    # inyección (viaja por placeholder en las tres consultas), pero una campaña
+    # malformada crearía filas heredadas con una campaña inventada, y esto es un
+    # documento legal. La comprobación va AQUÍ y no en la ruta a propósito: así
+    # cubre a los dos sitios que llaman y a los que vengan, sin que nadie tenga
+    # que acordarse. Señalado por el Security Review del PR #48.
+    if not campana or not _CAMPANA_RE.match(str(campana)):
         return 0
     # El filtro de explotación es OPCIONAL, no un `= ?` a secas: con
     # explotacion_id=None, `explotacion_id = NULL` no casa con ninguna fila en SQL
