@@ -1933,6 +1933,10 @@ function ExistingCultivoRow({ cv, onDeleted, onUpdated }) {
 function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
     const [saving, setSaving] = React.useState(false);
     const [parcela_id, setParcelaId] = React.useState(record?.parcela_id || '');
+    const [modoUHC, setModoUHC] = React.useState(false);
+    const [uhcList, setUhcList] = React.useState([]);
+    const [uhcId, setUhcId] = React.useState('');
+    const [uhcParcelas, setUhcParcelas] = React.useState([]);
     const [parcelaHa, setParcelaHa] = React.useState(null);
     const [existingHa, setExistingHa] = React.useState(0);
     const [existingCultivos, setExistingCultivos] = React.useState([]);
@@ -1980,6 +1984,33 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
             .catch(() => {});
     }, [parcela_id, isEdit]);
 
+    React.useEffect(() => {
+        fetch(`/api/uhc?campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setUhcList(Array.isArray(d) ? d : []))
+            .catch(() => {});
+    }, [campana]);
+
+    // Las parcelas del grupo, para poder decir en cuántas se va a declarar. Una
+    // UHC ya es un conjunto de parcelas del mismo cultivo, así que su `cultivo`
+    // precarga el campo — el código IACS sigue habiendo que elegirlo, que es lo
+    // que pide SIEX y no se puede adivinar de un texto libre.
+    React.useEffect(() => {
+        if (!uhcId) { setUhcParcelas([]); return; }
+        fetch(`/api/uhc/${uhcId}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => {
+                setUhcParcelas(Array.isArray(d?.parcelas) ? d.parcelas : []);
+                const cultivoGrupo = d?.uhc?.cultivo;
+                if (cultivoGrupo) {
+                    setCultivos(prev => (prev.length && !prev[0].cultivo)
+                        ? [{ ...prev[0], cultivo: cultivoGrupo }, ...prev.slice(1)]
+                        : prev);
+                }
+            })
+            .catch(() => setUhcParcelas([]));
+    }, [uhcId]);
+
     const emptyEntry = () => ({
         _key: Math.random(),
         _id: null,
@@ -2023,6 +2054,50 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
     const haExceeded = parcelaHa !== null && parcelaHa > 0 && _r2(totalUsedHa) > _r2(parcelaHa);
     const excesoHa = _r2(totalUsedHa - (parcelaHa || 0));
 
+    const grupoActivo = !isEdit && modoUHC && !!uhcId;
+
+    // Declarar por grupo: la superficie de cada fila la pone el backend con la de
+    // SU parcela, así que aquí no se manda ninguna. El backend salta las parcelas
+    // que ya tengan ese cultivo declarado y rechaza las que no tengan sitio; se
+    // resume todo al agricultor en un solo mensaje.
+    const saveGrupo = async () => {
+        for (const cv of cultivos) {
+            if (!cv.cultivo_iacs_cod) { alert('Selecciona el cultivo (código IACS) en todos los bloques'); return; }
+        }
+        setSaving(true);
+        let creadas = 0, saltadas = 0, rechazadas = 0;
+        const motivos = [];
+        try {
+            for (const cv of cultivos) {
+                const res = await fetch('/api/cultivos-campana', {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        uhc_id: uhcId, campana,
+                        cultivo: cv.cultivo, cultivo_iacs_cod: cv.cultivo_iacs_cod,
+                        variedad: cv.variedad, fecha_siembra: cv.fecha_siembra,
+                        fecha_recoleccion_prevista: cv.fecha_recoleccion_prevista,
+                        notas: cv.notas,
+                    }),
+                });
+                const d = await res.json().catch(() => ({}));
+                if (!res.ok) { alert(d.error || 'Error al guardar'); setSaving(false); return; }
+                creadas += d.creadas || 0;
+                saltadas += d.saltadas || 0;
+                rechazadas += d.rechazadas || 0;
+                for (const m of (d.motivos || [])) if (!motivos.includes(m)) motivos.push(m);
+            }
+            postFeedback();
+            const partes = [`✅ ${creadas} ${creadas === 1 ? 'parcela declarada' : 'parcelas declaradas'}`];
+            if (saltadas) partes.push(`${saltadas} ya lo tenían`);
+            if (rechazadas) partes.push(`${rechazadas} sin sitio`);
+            onClose(partes.join(' · ') + (motivos.length ? ` (${motivos.join('; ')})` : ''));
+        } catch {
+            alert('Error al guardar');
+            setSaving(false);
+        }
+    };
+
     const postFeedback = () => {
         for (const [campo, item] of Object.entries(sugerencias)) {
             const firstCv = cultivos[0] || {};
@@ -2038,6 +2113,7 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
     };
 
     const save = async () => {
+        if (grupoActivo) return saveGrupo();
         if (!parcela_id) { alert('Selecciona una parcela'); return; }
         for (const cv of cultivos) {
             if (!cv.cultivo_iacs_cod) { alert('Selecciona el cultivo (código IACS) en todos los bloques'); return; }
@@ -2083,11 +2159,39 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
 
     return (
         <div>
-            <FieldGroup label="Parcela *">
-                <ParcelSelect parcelas={parcelas} value={parcela_id} onChange={v => setParcelaId(v)} disabled={isEdit} />
-            </FieldGroup>
+            {/* Editando se toca UNA declaración concreta: el grupo solo sirve al crear. */}
+            {isEdit ? (
+                <FieldGroup label="Parcela *">
+                    <ParcelSelect parcelas={parcelas} value={parcela_id} onChange={v => setParcelaId(v)} disabled={isEdit} />
+                </FieldGroup>
+            ) : (
+                <ParcelOrUhcSelect modoUHC={modoUHC} setModoUHC={setModoUHC} parcelas={parcelas} uhcList={uhcList}
+                    parcelaId={parcela_id} uhcId={uhcId}
+                    onParcela={v => setParcelaId(v)} onUhc={v => setUhcId(v)} />
+            )}
 
-            {parcelaHa !== null && parcelaHa > 0 && (
+            {grupoActivo && uhcParcelas.length > 0 && (
+                <div style={{ background: 'var(--surface-container-low)', borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: 6 }}>
+                        🌱 Se declarará en estas {uhcParcelas.length} parcelas
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--on-surface-variant)', marginBottom: 8 }}>
+                        Cada una se declara con su propia superficie. Las que ya tengan este cultivo
+                        declarado esta campaña se dejan como están.
+                    </div>
+                    {uhcParcelas.map(p => (
+                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between',
+                            fontSize: '0.82rem', padding: '4px 0', borderTop: '1px solid var(--outline-variant)' }}>
+                            <span>{p.nombre_finca}</span>
+                            <span style={{ color: 'var(--on-surface-variant)' }}>
+                                {p.superficie_ha ? `${p.superficie_ha} ha` : 'sin superficie'}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {!grupoActivo && parcelaHa !== null && parcelaHa > 0 && (
                 <div style={{
                     background: haExceeded ? '#fef2f2' : (totalUsedHa > 0 ? '#f0fdf4' : '#f9fafb'),
                     border: `1px solid ${haExceeded ? '#fca5a5' : '#d1fae5'}`,
@@ -2209,10 +2313,14 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                                 value={cv.variedad} onChange={e => setField(idx, 'variedad', e.target.value)} />
                             {idx === 0 && <SugChip campo="variedad" sugerencias={sugerencias} valorActual={cv.variedad} />}
                         </FieldGroup>
-                        <FieldGroup label="Superficie cultivada (ha)">
-                            <ZoomInput label="Superficie cultivada (ha)" type="number" inputMode="decimal"
-                                value={cv.superficie_cultivada_ha} onConfirm={v => setField(idx, 'superficie_cultivada_ha', v)} />
-                        </FieldGroup>
+                        {/* Con grupo, cada fila lleva la superficie de SU parcela: pedirla
+                            aquí sería un campo que se rellena y el backend ignora. */}
+                        {!grupoActivo && (
+                            <FieldGroup label="Superficie cultivada (ha)">
+                                <ZoomInput label="Superficie cultivada (ha)" type="number" inputMode="decimal"
+                                    value={cv.superficie_cultivada_ha} onConfirm={v => setField(idx, 'superficie_cultivada_ha', v)} />
+                            </FieldGroup>
+                        )}
                         <FieldGroup label="Fecha de siembra">
                             <input type="date" className="input-field" value={cv.fecha_siembra}
                                 onChange={e => setField(idx, 'fecha_siembra', e.target.value)} />

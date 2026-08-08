@@ -10,7 +10,9 @@ from extensions import limiter
 from db import get_db, one, dicts, is_pac_eligible
 from helpers import (get_uid, _to_real, get_active_explotacion_id, estado_sigpac,
                      validar_alta_multirecinto, heredar_cultivos_lenosos,
-                     campana_activa, sugerencias_lenosos, declarar_cultivos_lote)
+                     campana_activa, sugerencias_lenosos, declarar_cultivos_lote,
+                     repartir_por_superficie)
+from blueprints.fertilizacion import _parcelas_uhc
 from blueprints.ia import _recalcular_patrones
 from blueprints.sigpac import superficie_sigpac_parcela, referencia_catastral_parcela
 
@@ -281,6 +283,84 @@ def alta_multirecinto():
         conn.close()
 
 
+def _declarar_cultivo_grupo(conn, uid, exp_id, data):
+    """Declara el cultivo de campaña en todas las parcelas de un grupo UHC.
+
+    Devuelve {creadas, saltadas, rechazadas, motivos} o {'error': ...} si el grupo
+    entero no es utilizable. No hace commit: lo hace la ruta.
+
+    Dos reglas heredadas de la feature 015, y por los mismos motivos:
+
+    - **Nunca pisa una declaración existente.** Si la parcela ya tiene ese cultivo
+      declarado en la campaña, se salta y se cuenta. Redeclarar duplicaría filas en
+      un documento legal.
+    - **Un rechazo no tumba el grupo.** Si a una parcela no le cabe la superficie,
+      se rechaza ESA y se sigue con las demás. Al revés que en cosecha: aquí no hay
+      riesgo legal en declarar de menos, y bloquear las 20 parcelas buenas por una
+      mal medida no ayuda a nadie. El motivo se devuelve para poder explicarlo.
+    """
+    res = {'creadas': 0, 'saltadas': 0, 'rechazadas': 0, 'motivos': []}
+
+    cod = str(data.get('cultivo_iacs_cod') or '').strip()
+    if not data.get('cultivo'):
+        return {'error': "El cultivo es obligatorio"}
+    if not cod:
+        return {'error': "El código IACS del cultivo es obligatorio para la interoperabilidad"
+                         " con SIEX (obligatorio desde ene 2027)"}
+
+    parcelas = _parcelas_uhc(conn, data['uhc_id'], uid, exp_id)
+    if not parcelas:
+        return {'error': "El grupo UHC no existe o no tiene parcelas asignadas"}
+
+    campana = data.get('campana')
+    reparto = repartir_por_superficie(data.get('kg_sembrados'), parcelas)
+
+    def _rechaza(motivo):
+        res['rechazadas'] += 1
+        if motivo not in res['motivos']:
+            res['motivos'].append(motivo)
+
+    c = conn.cursor()
+    for p in parcelas:
+        pid = p['id']
+        if one(conn, "SELECT id FROM cultivos_campana WHERE parcela_id=? AND campana=?"
+                     " AND cultivo_iacs_cod=?", (pid, campana, cod)):
+            res['saltadas'] += 1
+            continue
+
+        # La superficie de la fila es la de la parcela: ya la sabemos, no se
+        # estima. Pero la parcela puede tener OTRO cultivo declarado que ya ocupe
+        # parte de ella (una parcela mixta viñedo-olivar, p. ej.), así que se
+        # declara solo lo que queda libre. Es la misma cuenta que ya hace el POST
+        # de una parcela suelta, aplicada por parcela del grupo.
+        sup = _to_real(p.get('superficie_ha')) or 0
+        if sup > 0:
+            fila = one(conn, "SELECT COALESCE(SUM(superficie_cultivada_ha), 0) AS total"
+                             " FROM cultivos_campana WHERE parcela_id=? AND campana=?",
+                       (pid, campana))
+            ya = float(fila['total']) if fila else 0
+            libre = round(sup - ya, 4)
+            if libre <= 0.01:
+                _rechaza('Alguna parcela ya tiene toda su superficie declarada con otro cultivo')
+                continue
+            sup = libre
+
+        c.execute('''
+            INSERT INTO cultivos_campana
+                (parcela_id, explotacion_id, campana, cultivo, cultivo_iacs_cod, variedad,
+                 fecha_siembra, fecha_recoleccion_prevista, superficie_cultivada_ha, notas,
+                 kg_sembrados, precio_kg_compra)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        ''', (pid, exp_id, campana, data.get('cultivo'), cod,
+              data.get('variedad'), data.get('fecha_siembra'),
+              data.get('fecha_recoleccion_prevista'), sup, data.get('notas'),
+              reparto.get(pid), _to_real(data.get('precio_kg_compra'))))
+        res['creadas'] += 1
+        res.setdefault('parcela_ids', []).append(pid)
+
+    return res
+
+
 @bp.route('/api/cultivos-campana', methods=['GET', 'POST'])
 @login_required
 def manage_cultivos():
@@ -322,9 +402,23 @@ def manage_cultivos():
     data = request.json or {}
     # Verificar que la parcela pertenece al usuario
     parcela_id = data.get('parcela_id')
-    if not parcela_id:
+    if not parcela_id and not data.get('uhc_id'):
         conn.close()
         return jsonify({"error": "Parcela es obligatoria"}), 400
+
+    # ── Declaración por grupo UHC (feature 016) ───────────────────────────────
+    # Una UHC ya es, por definición, un conjunto de parcelas del mismo cultivo:
+    # declararlo de una vez es el caso natural. La superficie cultivada de cada
+    # fila es la de SU parcela, y `kg_sembrados` (cantidad absoluta) se reparte.
+    if data.get('uhc_id'):
+        resultado = _declarar_cultivo_grupo(conn, uid, exp_id, data)
+        if resultado.get('error'):
+            conn.close()
+            return jsonify({"error": resultado['error']}), 400
+        conn.commit(); conn.close()
+        for pid in resultado.pop('parcela_ids', []):
+            _recalcular_patrones(uid, 'cultivo_campana', pid, data.get('fecha_siembra'), exp_id)
+        return jsonify({"status": "ok", **resultado}), 201
     parcela = one(conn, "SELECT id, superficie_ha FROM parcelas"
                         " WHERE id=? AND user_id=? AND explotacion_id=?",
                   (parcela_id, uid, exp_id))
