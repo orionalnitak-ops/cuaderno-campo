@@ -293,6 +293,41 @@ def test_reconciliar_sin_clave_no_concede():
     check("sin sub_id tampoco", stripe_bp.reconciliar_suscripcion(1, None) is False)
 
 
+# ── 6. "Solo lectura" tiene que ser lectura ENTERA ────────────────────
+def test_el_cortado_puede_seguir_leyendo_y_exportando():
+    """Un agricultor cortado conserva su cuaderno: puede consultarlo y
+    descargar el PDF y el Excel oficiales. Si una inspección le cae estando
+    en descubierto, el documento legal tiene que salir igual.
+
+    Se comprueba sobre el mapa de rutas real: las exportaciones son GET, y el
+    guard deja pasar GET siempre.
+    """
+    import app as app_mod
+    rutas = {str(r): r.methods for r in app_mod.app.url_map.iter_rules()}
+    for ruta in ('/api/export/excel', '/api/export/pdf', '/api/backup/export'):
+        check(f"{ruta} es de solo lectura (GET)", 'GET' in rutas.get(ruta, set())
+              and 'POST' not in rutas.get(ruta, set()))
+
+
+def test_el_cortado_puede_cambiar_de_finca():
+    """Cambiar de explotación activa solo guarda un id en la sesión: no
+    escribe datos del agricultor. Si el guard lo bloqueara, quien tiene varias
+    fincas solo podría leer y exportar la que tuviera abierta al caducarle el
+    plan, porque las exportaciones filtran por la finca activa."""
+    import app as app_mod
+    check("el endpoint de activar está exento del guard",
+          'explotacion.activar_explotacion' in app_mod._PLAN_EXEMPT_ENDPOINTS)
+
+
+def test_el_corte_no_borra_nada():
+    """El corte baja el plan y punto. Si alguien mete aquí un DELETE, le está
+    borrando el cuaderno a un agricultor por no pagar un mes."""
+    ruta = os.path.join(os.path.dirname(__file__), '..', 'blueprints', 'stripe_bp.py')
+    with open(ruta, encoding='utf-8') as f:
+        fuente = f.read().upper()
+    check("stripe_bp no borra filas", 'DELETE FROM' not in fuente)
+
+
 def test_la_columna_existe_en_el_esquema():
     """Si alguien añade la columna aquí pero se olvida de db.py, la app
     reventaría en producción con 'no such column'."""

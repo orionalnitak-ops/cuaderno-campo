@@ -175,6 +175,20 @@ def set_security_headers(response):
 
 _PLAN_EXEMPT_PREFIXES = ('/api/auth/', '/api/admin/', '/api/stripe/')
 
+# Endpoints POST que NO escriben datos del agricultor y por tanto no cuentan
+# como "escribir" a efectos del corte por plan caducado.
+#
+# Cambiar de explotación activa solo guarda un id en la sesión. Es un POST por
+# la forma del endpoint, no por lo que hace. Si el guard lo bloquea, un
+# agricultor con varias fincas se queda leyendo únicamente la que tuviera
+# abierta al caducarle el plan — y como las exportaciones filtran por la finca
+# activa, tampoco podría descargar el PDF oficial de las demás. Eso no es solo
+# lectura: es media lectura, justo cuando más falta le hace el documento.
+#
+# Se listan por NOMBRE DE ENDPOINT, no por trozo de URL: un `endswith('/activar')`
+# dejaría entrar sin querer a cualquier ruta futura que acabe igual y sí escriba.
+_PLAN_EXEMPT_ENDPOINTS = ('explotacion.activar_explotacion',)
+
 @app.before_request
 def guard_active_plan():
     """Bloquea escrituras si el trial ha caducado o la suscripción ha expirado."""
@@ -182,6 +196,8 @@ def guard_active_plan():
     if request.method in ('GET', 'HEAD', 'OPTIONS'):
         return
     if any(request.path.startswith(p) for p in _PLAN_EXEMPT_PREFIXES):
+        return
+    if request.endpoint in _PLAN_EXEMPT_ENDPOINTS:
         return
     if not current_user.is_authenticated:
         return
