@@ -45,11 +45,14 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
             name: 'Básico',
             tagline: 'Todo lo que necesitas para cumplir con la ley',
             popular: true,
-            monthly: { price: '9,99', unit: '/mes', original: null },
-            yearly:  { price: '100',  unit: '/año', original: '119,88 €' },
+            // Precios con IVA incluido. Lo único que cambia entre Básico y Pro
+            // es el número de explotaciones: las funciones son idénticas.
+            monthly: { price: '14,99', unit: '/mes', original: null },
+            yearly:  { price: '150',   unit: '/año', original: '179,88 €' },
             color: '#00694c',
             gradient: 'linear-gradient(135deg, #005c42, #00694c)',
             features: [
+                '1 explotación',
                 'Parcelas SIGPAC',
                 'Tratamientos fitosanitarios',
                 'Fertilización y labores',
@@ -63,38 +66,21 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
         {
             id: 'pro',
             name: 'Pro',
-            tagline: 'Preparado para la obligatoriedad de enero 2027',
+            tagline: 'Lo mismo que el Básico, pero hasta 5 explotaciones',
             popular: false,
-            monthly: { price: '14,99', unit: '/mes', original: null },
-            yearly:  { price: '150',   unit: '/año', original: '179,88 €' },
+            monthly: { price: '29,99', unit: '/mes', original: null },
+            yearly:  { price: '300',   unit: '/año', original: '359,88 €' },
             color: '#4f46e5',
             gradient: 'linear-gradient(135deg, #3730a3, #4f46e5)',
             features: [
-                'Todo lo del plan Básico incluido',
-                'Compatible con SIEX — preparado para la obligatoriedad de 2027',
-                'Panel asesor — gestiona todos tus clientes',
-                'Hasta 5 explotaciones',
-                'Soporte prioritario',
-            ],
-            missing: [],
-        },
-        {
-            id: 'premium',
-            name: 'Premium',
-            tagline: 'Para asesores y grandes explotaciones',
-            popular: false,
-            annualOnly: true,
-            // De momento 200 €/año. Ajusta el precio y crea el Price en Stripe
-            // (STRIPE_PRICE_PREMIUM_YEARLY).
-            monthly: { price: '200', unit: '/año', original: null },
-            yearly:  { price: '200', unit: '/año', original: null },
-            color: '#b45309',
-            gradient: 'linear-gradient(135deg, #92400e, #b45309)',
-            // TODO: detallar las ventajas exactas del plan Premium.
-            features: [
-                'Todo lo del plan Pro incluido',
-                'Explotaciones ilimitadas',
-                '(Próximamente: más ventajas Premium)',
+                'Hasta 5 explotaciones en la misma cuenta',
+                'Parcelas SIGPAC',
+                'Tratamientos fitosanitarios',
+                'Fertilización y labores',
+                'Compras y ventas',
+                'Exportación Excel y PDF oficial',
+                'Widget meteorológico',
+                'Compatible con SIEX',
             ],
             missing: [],
         },
@@ -350,8 +336,27 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                 })}
             </div>
 
+            {/* Más de 5 explotaciones: no hay plan, hay conversación. */}
+            <div style={{
+                margin: '0 16px 24px', padding: '18px 20px',
+                background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12,
+                textAlign: 'center',
+            }}>
+                <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#111827', marginBottom: 6 }}>
+                    ¿Llevas más de cinco explotaciones?
+                </div>
+                <p style={{ fontSize: '0.83rem', color: '#374151', lineHeight: 1.6, margin: 0 }}>
+                    Eso ya no cabe en un plan cerrado. Escríbenos a{' '}
+                    <a href="mailto:cuadernodigital@tualiado.es?subject=M%C3%A1s%20de%205%20explotaciones"
+                       style={{ color: '#00694c', fontWeight: 700, textDecoration: 'underline' }}>
+                        cuadernodigital@tualiado.es
+                    </a>
+                    , dinos cuántas son, y lo hablamos.
+                </p>
+            </div>
+
             <p style={{ textAlign: 'center', fontSize: '0.7rem', color: '#9ca3af', padding: '0 16px 32px', lineHeight: 1.7 }}>
-                Facturas automáticas por email · Soporte: soporte@cuadernocampo.es
+                Facturas automáticas por email · Soporte: soporte@tualiado.es
             </p>
         </div>
     );

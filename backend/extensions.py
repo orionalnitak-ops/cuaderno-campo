@@ -61,8 +61,8 @@ def explotaciones_limit(plan, role, unlimited=False):
     """Nº máximo de explotaciones permitidas, o None si es ilimitado.
 
     - Admin, plan `premium` y súper usuarios (`unlimited_explotaciones`) → None (sin tope).
-    - `pro` (14,99 €) → PRO_EXPLOTACIONES_LIMIT titulares.
-    - `basic` (9,99 €) y `trial` → 1 (mono-explotación, fuerza el upsell).
+    - `pro` (29,99 €/mes) → PRO_EXPLOTACIONES_LIMIT titulares.
+    - `basic` (14,99 €/mes) y `trial` → 1 (mono-explotación, fuerza el upsell).
     """
     if role == 'admin' or unlimited or plan == 'premium':
         return None
@@ -74,7 +74,7 @@ def explotaciones_limit(plan, role, unlimited=False):
 def plan_allows_multi(plan, role, unlimited=False):
     """True si el usuario puede tener más de una explotación.
 
-    El plan `basic` (9,99 €) es mono-explotación; `pro` (14,99 €) es multi
+    El plan `basic` (14,99 €/mes) es mono-explotación; `pro` (29,99 €/mes) es multi
     (hasta PRO_EXPLOTACIONES_LIMIT). `trial` se queda en mono para forzar el
     upsell. Admin y súper usuarios siempre multi.
     """

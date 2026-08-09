@@ -17,8 +17,8 @@ STRIPE_PRICES = {
     ('basic',   'yearly'):  os.environ.get('STRIPE_PRICE_BASIC_YEARLY', ''),
     ('pro',     'monthly'): os.environ.get('STRIPE_PRICE_PRO_MONTHLY', ''),
     ('pro',     'yearly'):  os.environ.get('STRIPE_PRICE_PRO_YEARLY', ''),
-    # Premium es solo anual (200 €/año de momento). Crear el Price en Stripe
-    # y exponerlo en STRIPE_PRICE_PREMIUM_YEARLY.
+    # Premium está descartado desde julio de 2026 y no se ofrece en la pantalla
+    # de planes. La clave se mantiene (vacía) para no romper a quien ya lo tuviera.
     ('premium', 'yearly'):  os.environ.get('STRIPE_PRICE_PREMIUM_YEARLY', ''),
 }
 
