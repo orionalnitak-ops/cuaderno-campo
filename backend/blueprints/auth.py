@@ -121,10 +121,10 @@ def auth_me():
     if current_user.trial_ends_at:
         te = current_user.trial_ends_at
         trial_ends = te.isoformat() if hasattr(te, 'isoformat') else str(te)
-    pago_fallido = None
-    if current_user.pago_fallido_desde:
-        pf = current_user.pago_fallido_desde
-        pago_fallido = pf.isoformat() if hasattr(pf, 'isoformat') else str(pf)
+    # Solo si hay un cobro caído, no desde cuándo: la app únicamente decide con
+    # esto si enseña el aviso. Mandar la fecha exacta de un impago sería un dato
+    # financiero viajando en cada sesión sin que nadie lo use.
+    pago_fallido = bool(current_user.pago_fallido_desde)
     return jsonify({
         "id": current_user.id,
         "email": current_user.email,
@@ -135,7 +135,7 @@ def auth_me():
         "plan_raw": current_user.plan,
         "trial_ends_at": trial_ends,
         "plan_active": current_user.plan_is_active(),
-        "pago_fallido_desde": pago_fallido,
+        "pago_fallido": pago_fallido,
         "allows_multi": current_user.plan_allows_multi(),
         "explotaciones_limit": current_user.explotaciones_limit(),
     })

@@ -216,6 +216,11 @@ def _guard_limite_explotaciones():
 
     if request.endpoint in _LIMITE_EXEMPT_ENDPOINTS:
         return
+    # Hoy solo la llama `guard_active_plan`, que ya ha comprobado la sesión.
+    # La guarda está por si mañana la llama alguien más: sobre un anónimo,
+    # `explotaciones_limit()` reventaría.
+    if not current_user.is_authenticated:
+        return
     limit = current_user.explotaciones_limit()
     if limit is None:
         return      # admin, premium, súper usuarios: sin tope

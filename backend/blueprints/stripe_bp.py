@@ -96,6 +96,41 @@ def cortar_acceso(conn, user_id, olvidar_suscripcion=False):
         )
 
 
+def _metadata_coherente(conn, uid_meta, customer):
+    """True si el `user_id` que viene en el metadata de Stripe encaja con el
+    cliente del evento.
+
+    Hoy no hay forma conocida de que no encaje: el metadata lo escribe nuestro
+    propio checkout con `current_user.id`, nunca con nada que mande el
+    navegador, y crear una suscripción en esta cuenta exige la clave secreta.
+    Esto es un cinturón por si un cambio futuro lo estropea: escribir el plan en
+    la ficha de otro agricultor sería de las peores cosas que pueden pasar aquí.
+
+    **Se acepta cuando todavía no hay cliente guardado, y es deliberado.** En un
+    alta nueva `stripe_customer_id` está a NULL hasta que se procesa el evento
+    que lo escribe, y Stripe NO garantiza el orden de entrega. Rechazar el
+    evento en ese caso dejaría al agricultor pagando sin recibir su plan: el
+    control se volvería contra el cliente honrado, que es a quien menos falta
+    hace protegerse.
+    """
+    if not customer:
+        return True
+    try:
+        fila = one(conn, "SELECT stripe_customer_id FROM users WHERE id=?", (int(uid_meta),))
+    except (TypeError, ValueError):
+        logger.error('Webhook con user_id de metadata ilegible (%r). Ignorado.', uid_meta)
+        return False
+    if not fila:
+        logger.error('Webhook para un user_id inexistente (%s). Ignorado.', uid_meta)
+        return False
+    guardado = fila.get('stripe_customer_id')
+    if guardado and guardado != customer:
+        logger.error('Webhook incoherente: el cliente %s no es el del usuario %s (%s). '
+                     'Ignorado.', customer, uid_meta, guardado)
+        return False
+    return True
+
+
 def reconciliar_suscripcion(user_id):
     """Le pregunta a Stripe el estado real de una suscripción y deja la BD al día.
 
@@ -312,6 +347,9 @@ def stripe_webhook():
                           if period_end else None)
             sub_id     = sub.get('id')
             uid_meta   = sub.get('metadata', {}).get('user_id')
+
+            if uid_meta and not _metadata_coherente(conn, uid_meta, customer):
+                uid_meta = None     # ya se ha registrado el motivo
 
             if uid_meta:
                 accion = accion_suscripcion(status)

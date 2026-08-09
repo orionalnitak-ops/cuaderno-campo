@@ -512,7 +512,7 @@ function App() {
     // Cobro fallido con Stripe aún reintentando: NO pierde el acceso, solo se
     // le avisa. Si además ya está caducado, manda el cartel rojo y este se
     // calla, para no apilar dos avisos.
-    const pagoFallido = !isAdmin && !planExpired && !!currentUser?.pago_fallido_desde;
+    const pagoFallido = !isAdmin && !planExpired && !!currentUser?.pago_fallido;
     const trialDaysLeft = isTrialActive && currentUser?.trial_ends_at
         ? Math.max(0, Math.ceil((new Date(currentUser.trial_ends_at) - new Date()) / 86400000))
         : 0;

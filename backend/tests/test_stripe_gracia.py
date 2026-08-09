@@ -326,6 +326,44 @@ def test_una_alta_tardia_no_resucita_un_corte():
     check("y sigue sin poder escribir", activo is False)
 
 
+def test_el_webhook_no_escribe_en_la_ficha_de_otro():
+    """El `user_id` del metadata lo escribe nuestro checkout con
+    `current_user.id`, así que hoy no puede venir el de otro. El cinturón está
+    por si un cambio futuro lo estropea: escribir el plan en la ficha
+    equivocada sería de lo peor que puede pasar aquí.
+    """
+    conn = _db()   # user 1 -> sub_1, user 2 -> sub_2
+    conn.execute("ALTER TABLE users ADD COLUMN stripe_customer_id TEXT")
+    conn.execute("UPDATE users SET stripe_customer_id='cus_1' WHERE id=1")
+    conn.execute("UPDATE users SET stripe_customer_id='cus_2' WHERE id=2")
+    conn.commit()
+    check("cliente y usuario que encajan, pasa",
+          stripe_bp._metadata_coherente(conn, '1', 'cus_1') is True)
+    check("cliente de otro usuario, se ignora",
+          stripe_bp._metadata_coherente(conn, '1', 'cus_2') is False)
+    check("usuario que no existe, se ignora",
+          stripe_bp._metadata_coherente(conn, '999', 'cus_1') is False)
+    check("user_id ilegible, se ignora",
+          stripe_bp._metadata_coherente(conn, 'no-soy-un-id', 'cus_1') is False)
+
+
+def test_el_alta_de_un_cliente_nuevo_no_se_rechaza():
+    """EL CASO QUE EL PARCHE PROPUESTO POR EL SECURITY REVIEW ROMPÍA.
+
+    En un alta nueva, `stripe_customer_id` está a NULL hasta que se procesa el
+    evento que lo escribe, y Stripe no garantiza el orden de entrega. Un
+    control que exija que coincida rechazaría ese primer evento y dejaría al
+    agricultor pagando sin recibir su plan.
+    """
+    conn = _db()
+    conn.execute("ALTER TABLE users ADD COLUMN stripe_customer_id TEXT")
+    conn.commit()   # nadie tiene cliente guardado todavía
+    check("sin cliente guardado, el alta entra",
+          stripe_bp._metadata_coherente(conn, '1', 'cus_nuevo') is True)
+    check("y sin cliente en el evento, tampoco estorba",
+          stripe_bp._metadata_coherente(conn, '1', None) is True)
+
+
 def test_reconciliar_sin_clave_no_concede():
     _escenario_vencido()
     stripe_bp._stripe = lambda: None
