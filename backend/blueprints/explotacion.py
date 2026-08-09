@@ -185,17 +185,22 @@ def principal_explotacion(eid):
         conn.close()
         return jsonify({"error": "No encontrada"}), 404
 
-    resto = dicts(conn, "SELECT id FROM explotacion WHERE user_id=? AND id<>? ORDER BY orden, id",
-                  (uid, eid))
-    c = conn.cursor()
-    c.execute("UPDATE explotacion SET orden=0 WHERE id=? AND user_id=?", (eid, uid))
-    # Las demás se renumeran desde 1 conservando su orden relativo: si no, dos
-    # fincas podrían quedar empatadas en 0 y cuál es la principal dependería
-    # del id, no de lo que eligió el agricultor.
-    for i, r in enumerate(resto, start=1):
-        c.execute("UPDATE explotacion SET orden=? WHERE id=? AND user_id=?", (i, r['id'], uid))
-    conn.commit()
-    conn.close()
+    try:
+        resto = dicts(conn, "SELECT id FROM explotacion WHERE user_id=? AND id<>? ORDER BY orden, id",
+                      (uid, eid))
+        c = conn.cursor()
+        c.execute("UPDATE explotacion SET orden=0 WHERE id=? AND user_id=?", (eid, uid))
+        # Las demás se renumeran desde 1 conservando su orden relativo: si no, dos
+        # fincas podrían quedar empatadas en 0 y cuál es la principal dependería
+        # del id, no de lo que eligió el agricultor.
+        for i, r in enumerate(resto, start=1):
+            c.execute("UPDATE explotacion SET orden=? WHERE id=? AND user_id=?", (i, r['id'], uid))
+        conn.commit()
+    finally:
+        # En `finally` para que un fallo a mitad de la renumeración no deje la
+        # conexión colgada. Si algo revienta, la excepción sube y la sesión no
+        # se toca: nunca se apunta como principal una finca que no se guardó.
+        conn.close()
 
     # Se activa también: quien la marca como principal es porque va a anotar en
     # ella ahora mismo.

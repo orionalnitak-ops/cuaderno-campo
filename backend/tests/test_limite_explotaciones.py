@@ -206,6 +206,43 @@ def test_guard_deja_siempre_las_salidas():
           _guard('basic', 11, '/api/explotaciones') == 'PASA')
 
 
+def test_elegir_principal_cambia_de_verdad_donde_se_puede_anotar():
+    """El recorrido entero, que es la razón de ser de la feature: un Básico con
+    tres fincas elige la tercera y pasa a ser en la que anota.
+
+    Sin esto, el tope caería siempre sobre la finca creada primero y el
+    agricultor no tendría forma de cambiarlo.
+    """
+    import app as app_mod
+    import helpers
+    import blueprints.explotacion as ex
+    from extensions import User
+    from flask import session
+    from flask_login import login_user
+
+    conn = _db([(10, 0), (11, 1), (12, 2)])
+    ex.get_db = lambda: _NoCierra(conn)
+    helpers.get_db = lambda: _NoCierra(conn)
+    try:
+        check("de partida se anota en la primera",
+              explotaciones_escribibles(conn, 1, 1) == {10})
+
+        with app_mod.app.test_request_context('/api/explotaciones/12/principal', method='POST'):
+            login_user(User(1, 'a@b.es', 'A', 'agricultor', 1, plan='basic'))
+            resp = ex.principal_explotacion(12)
+            check("responde ok", resp.get_json().get('status') == 'ok')
+            check("y la deja activa", session.get('active_explotacion_id') == 12)
+
+        check("ahora se anota en la elegida",
+              explotaciones_escribibles(conn, 1, 1) == {12})
+        orden = {r['id']: r['orden'] for r in conn.execute("SELECT * FROM explotacion WHERE user_id=1")}
+        check("la elegida pasa a orden 0", orden[12] == 0)
+        check("las demás se renumeran sin empatar",
+              sorted([orden[10], orden[11]]) == [1, 2])
+    finally:
+        conn.close()
+
+
 if __name__ == '__main__':
     print("\n== Tope de explotaciones por plan (017) ==\n")
     for nombre, fn in sorted(list(globals().items())):

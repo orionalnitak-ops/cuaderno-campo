@@ -103,7 +103,10 @@ function ExplotacionBar({ explotaciones, currentUser, onSwitch, onReload, onNavi
         if (!active || cambiando) return;
         setCambiando(true);
         fetch(`/api/explotaciones/${active.id}/principal`, { method:'POST', credentials:'include' })
-            .then(r => r.ok ? r.json() : Promise.reject())
+            // El servidor manda un mensaje que explica qué pasa (p. ej. un 403
+            // por plan caducado). Tirarlo y enseñar un "no se pudo" genérico
+            // deja al agricultor sin saber qué hacer.
+            .then(r => r.ok ? r.json() : r.json().then(b => Promise.reject(b), () => Promise.reject({})))
             .then(() => onReload())
             .then(() => {
                 // Las cachés offline guardan datos de UNA finca sin decir de
@@ -111,7 +114,8 @@ function ExplotacionBar({ explotaciones, currentUser, onSwitch, onReload, onNavi
                 if (window.OfflineDB?.clearCachesConsulta) window.OfflineDB.clearCachesConsulta();
                 showToast && showToast(`Ahora anotas en ${label(active)}`);
             })
-            .catch(() => showToast && showToast('No se pudo cambiar la explotación principal'))
+            .catch(err => showToast && showToast(
+                err?.message || 'No se pudo cambiar la explotación principal'))
             .finally(() => setCambiando(false));
     };
 

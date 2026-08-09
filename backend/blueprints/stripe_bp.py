@@ -120,6 +120,10 @@ def reconciliar_suscripcion(user_id):
     s = _stripe()
     sub_id = None
     if s:
+        # Dos conexiones distintas, a propósito: una para leer y otra para
+        # escribir, con la llamada a Stripe en medio y SIN conexión abierta.
+        # Sostenerla durante una petición HTTP a un tercero deja una conexión
+        # del pool retenida a merced de la latencia de Stripe. No consolidar.
         conn = get_db()
         try:
             fila = one(conn, "SELECT stripe_subscription_id FROM users WHERE id=?", (user_id,))
