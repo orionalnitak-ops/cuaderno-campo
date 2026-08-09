@@ -2,6 +2,7 @@
 blueprints/stripe_bp.py — /api/stripe/*
 """
 import datetime
+import logging
 import os
 
 from flask import Blueprint, jsonify, request
@@ -9,6 +10,7 @@ from flask_login import login_required, current_user
 from db import get_db, one
 
 bp = Blueprint('stripe_bp', __name__)
+logger = logging.getLogger(__name__)
 
 STRIPE_SECRET_KEY      = os.environ.get('STRIPE_SECRET_KEY', '')
 STRIPE_WEBHOOK_SECRET  = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
@@ -92,6 +94,66 @@ def cortar_acceso(conn, user_id, olvidar_suscripcion=False):
             "pago_fallido_desde=NULL WHERE id=?",
             (user_id,)
         )
+
+
+def reconciliar_suscripcion(user_id, sub_id):
+    """Le pregunta a Stripe el estado real de una suscripción y deja la BD al día.
+
+    Se usa cuando la fecha local ya venció con margen: o el agricultor dejó de
+    pagar de verdad, o se perdió el webhook de una renovación normal. Desde
+    aquí no se puede distinguir, así que se pregunta a la fuente en vez de
+    adivinar. Devuelve True si conserva el acceso.
+
+    Solo se llama desde `guard_active_plan` y solo cuando iba a denegar una
+    escritura, así que Stripe se consulta en el caso raro. Después la BD queda
+    con la fecha buena (si sigue pagando) o con el plan ya bajado (si no), y no
+    se vuelve a preguntar.
+
+    **Ante la duda, no da acceso.** Si Stripe no contesta o no hay clave
+    configurada, se deniega: un fallo aquí no puede convertirse en barra libre.
+    """
+    s = _stripe()
+    if not s or not sub_id:
+        logger.error('Suscripcion vencida del usuario %s sin poder verificar en '
+                     'Stripe (clave o sub_id ausente). Acceso denegado.', user_id)
+        return False
+
+    try:
+        sub = s.Subscription.retrieve(sub_id)
+    except Exception as err:
+        logger.error('Stripe no responde al verificar la suscripcion del usuario '
+                     '%s: %s. Acceso denegado.', user_id, err)
+        return False
+
+    status = sub.get('status')
+    accion = accion_suscripcion(status)
+    conn = get_db()
+    try:
+        if accion in ('alta', 'gracia'):
+            # Sigue siendo cliente: la fecha local estaba obsoleta porque se
+            # perdió el webhook. Se pone la buena y recupera el acceso.
+            fin = sub.get('current_period_end')
+            nueva = (datetime.datetime.utcfromtimestamp(fin) if fin
+                     else datetime.datetime.utcnow() + datetime.timedelta(days=1))
+            conn.execute(
+                "UPDATE users SET subscription_ends_at=? WHERE id=?",
+                (nueva.strftime('%Y-%m-%d %H:%M:%S'), user_id)
+            )
+            if accion == 'gracia':
+                aplicar_gracia(conn, user_id)
+            conn.commit()
+            logger.warning('Suscripcion del usuario %s revalidada contra Stripe '
+                           '(estado %s): se habia perdido un webhook.', user_id, status)
+            return True
+
+        # 'corte' o estado desconocido: Stripe confirma que ya no se cobra.
+        cortar_acceso(conn, user_id)
+        conn.commit()
+        logger.warning('Suscripcion del usuario %s cortada tras verificar en '
+                       'Stripe (estado %s).', user_id, status)
+        return False
+    finally:
+        conn.close()
 
 
 def _stripe():

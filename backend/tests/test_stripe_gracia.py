@@ -21,6 +21,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from blueprints.stripe_bp import (  # noqa: E402
     ESTADOS_CORTE, accion_suscripcion, aplicar_gracia, cortar_acceso,
 )
+from extensions import (  # noqa: E402
+    MARGEN_SUSCRIPCION_DIAS, compute_plan_status,
+)
 
 AHORA = datetime.datetime(2026, 8, 3, 10, 0, 0)
 LUEGO = datetime.datetime(2026, 8, 6, 10, 0, 0)
@@ -130,7 +133,78 @@ def test_corte_no_toca_a_otros_agricultores():
     check("el otro usuario sigue en pro", _u(conn, 2)['plan'] == 'pro')
 
 
-# ── 4. El aviso se borra en cuanto el cobro entra ──────────────────────
+# ── 4. Un plan de pago CADUCA ─────────────────────────────────────────
+#
+# El agujero que cierra este bloque: `compute_plan_status()` devolvía True para
+# basic/pro/premium sin mirar ninguna fecha, y `subscription_ends_at` se
+# guardaba en la BD sin que nadie la leyera jamás. Una cuenta a la que se le
+# perdiera el webhook de cancelación escribía gratis para siempre, en silencio.
+_HOY = datetime.datetime.utcnow()
+
+
+def _fecha(dias):
+    """Fecha desplazada N días respecto de ahora (negativo = pasado)."""
+    return (_HOY + datetime.timedelta(days=dias)).strftime('%Y-%m-%d %H:%M:%S')
+
+
+def test_plan_de_pago_vigente_sigue_activo():
+    label, activo = compute_plan_status('pro', None, 'user', _fecha(20))
+    check("plan al día activo", activo is True)
+    check("y se etiqueta pro", label == 'pro')
+
+
+def test_plan_de_pago_recien_vencido_aguanta_el_margen():
+    """Un webhook de renovación que llega tarde no puede cortarle el cuaderno
+    a quien sí ha pagado."""
+    _, activo = compute_plan_status('pro', None, 'user', _fecha(-2))
+    check("dentro del margen de 5 días sigue escribiendo", activo is True)
+
+
+def test_plan_de_pago_vencido_pierde_el_acceso():
+    """EL GATE FALLA CERRADO. Si esto se pone en verde por accidente, una
+    cuenta cancelada cuyo webhook se perdió escribe gratis para siempre."""
+    label, activo = compute_plan_status('pro', None, 'user', _fecha(-30))
+    check("pasado el margen deja de estar activo", activo is False)
+    check("y se etiqueta expired, no pro", label == 'expired')
+
+
+def test_el_margen_es_de_cinco_dias():
+    check("margen declarado", MARGEN_SUSCRIPCION_DIAS == 5)
+    _, dentro = compute_plan_status('basic', None, 'user', _fecha(-4))
+    _, fuera  = compute_plan_status('basic', None, 'user', _fecha(-6))
+    check("a 4 días aún entra", dentro is True)
+    check("a 6 días ya no",     fuera is False)
+
+
+def test_alta_sin_periodo_no_vence():
+    """Los planes concedidos a mano desde el panel de admin no vienen de
+    Stripe y no tienen periodo. No pueden caducar solos."""
+    _, activo = compute_plan_status('pro', None, 'user', None)
+    check("sin subscription_ends_at sigue activo", activo is True)
+
+
+def test_admin_nunca_se_corta():
+    _, activo = compute_plan_status('pro', None, 'admin', _fecha(-400))
+    check("el admin no depende de la fecha", activo is True)
+
+
+def test_fecha_ilegible_no_da_acceso():
+    """Una fecha escrita pero ilegible NO es lo mismo que no tener fecha.
+    Si colara como "sin periodo", volvería el agujero por la puerta de atrás."""
+    _, activo = compute_plan_status('pro', None, 'user', 'no-es-una-fecha')
+    check("fecha corrupta no da acceso", activo is False)
+
+
+def test_trial_sigue_funcionando_igual():
+    """El cambio no puede tocar el trial de 7 días, que es por dónde entra
+    todo agricultor nuevo."""
+    _, vivo    = compute_plan_status('trial', _fecha(3), 'user')
+    lbl, muerto = compute_plan_status('trial', _fecha(-1), 'user')
+    check("trial vigente activo",   vivo is True)
+    check("trial caducado inactivo", muerto is False)
+    check("y etiquetado expired",    lbl == 'expired')
+
+
 def test_la_columna_existe_en_el_esquema():
     """Si alguien añade la columna aquí pero se olvida de db.py, la app
     reventaría en producción con 'no such column'."""

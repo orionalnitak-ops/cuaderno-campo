@@ -4,7 +4,7 @@ import warnings
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from db import init_db
+from db import init_db, get_db, one
 
 logger = logging.getLogger(__name__)
 
@@ -185,11 +185,27 @@ def guard_active_plan():
         return
     if not current_user.is_authenticated:
         return
-    if not current_user.plan_is_active():
-        return jsonify({
-            "error": "subscription_required",
-            "plan": current_user.plan_label(),
-        }), 403
+    if current_user.plan_is_active():
+        return
+
+    # Va a denegar. Si es un plan de pago con la fecha vencida, puede que el
+    # agricultor esté al corriente y lo que se haya perdido sea el webhook de
+    # la renovación. Antes de cortarle el cuaderno, se le pregunta a Stripe.
+    # Esto es el único punto donde se llama a Stripe fuera del checkout, y solo
+    # ocurre en escrituras de cuentas ya vencidas: la respuesta se guarda en la
+    # BD, así que no se repite en cada petición.
+    if current_user.plan in ('basic', 'pro', 'premium') and current_user.subscription_ends_at:
+        from blueprints.stripe_bp import reconciliar_suscripcion
+        conn = get_db()
+        u = one(conn, "SELECT stripe_subscription_id FROM users WHERE id=?", (current_user.id,))
+        conn.close()
+        if reconciliar_suscripcion(current_user.id, (u or {}).get('stripe_subscription_id')):
+            return
+
+    return jsonify({
+        "error": "subscription_required",
+        "plan": current_user.plan_label(),
+    }), 403
 
 
 # ─────────────────────────────────────────────
