@@ -218,8 +218,11 @@ def _guard_limite_explotaciones():
         return
     # Hoy solo la llama `guard_active_plan`, que ya ha comprobado la sesión.
     # La guarda está por si mañana la llama alguien más: sobre un anónimo,
-    # `explotaciones_limit()` reventaría.
+    # `explotaciones_limit()` reventaría. Se deja rastro, porque llegar aquí sin
+    # sesión no es un caso normal: es un fallo de quien llama.
     if not current_user.is_authenticated:
+        logger.warning('_guard_limite_explotaciones sin usuario autenticado en %s',
+                       request.endpoint)
         return
     limit = current_user.explotaciones_limit()
     if limit is None:

@@ -371,7 +371,10 @@ def stripe_webhook():
         elif ev_type == 'customer.subscription.deleted':
             sub      = obj
             uid_meta = sub.get('metadata', {}).get('user_id')
-            if uid_meta:
+            # Aquí también, y con más motivo que en el alta: esta rama QUITA el
+            # acceso. Un id que no encaje cortaría el cuaderno a un agricultor
+            # que está al corriente, que es el peor error posible de los dos.
+            if uid_meta and _metadata_coherente(conn, uid_meta, sub.get('customer')):
                 cortar_acceso(conn, int(uid_meta), olvidar_suscripcion=True)
                 conn.commit()
 
@@ -381,6 +384,8 @@ def stripe_webhook():
             uid_meta    = session_obj.get('metadata', {}).get('user_id')
             plan_meta   = session_obj.get('metadata', {}).get('plan')
             sub_id      = session_obj.get('subscription')
+            if uid_meta and not _metadata_coherente(conn, uid_meta, customer):
+                uid_meta = None
             if uid_meta and customer:
                 if plan_meta in _PLANES_PAGO:
                     import datetime as _dt

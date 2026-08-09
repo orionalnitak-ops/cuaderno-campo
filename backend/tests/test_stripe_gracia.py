@@ -364,6 +364,25 @@ def test_el_alta_de_un_cliente_nuevo_no_se_rechaza():
           stripe_bp._metadata_coherente(conn, '1', None) is True)
 
 
+def test_las_tres_ramas_del_webhook_comprueban_la_coherencia():
+    """No basta con proteger el alta. La rama de `deleted` QUITA el acceso: un
+    id que no encaje ahí cortaría el cuaderno a alguien al corriente de pago,
+    que es el peor de los dos errores.
+
+    Se mira sobre el fuente porque lo que se quiere fijar es que NINGUNA rama
+    se quede sin el control, incluida la que alguien añada mañana.
+    """
+    ruta = os.path.join(os.path.dirname(__file__), '..', 'blueprints', 'stripe_bp.py')
+    with open(ruta, encoding='utf-8') as f:
+        fuente = f.read()
+    i_webhook = fuente.index('def stripe_webhook')
+    cuerpo = fuente[i_webhook:]
+    usos_uid = cuerpo.count("metadata', {}).get('user_id')")
+    comprobaciones = cuerpo.count('_metadata_coherente(')
+    check("las tres ramas leen el user_id del metadata", usos_uid == 3)
+    check("y las tres lo comprueban", comprobaciones == 3)
+
+
 def test_reconciliar_sin_clave_no_concede():
     _escenario_vencido()
     stripe_bp._stripe = lambda: None
