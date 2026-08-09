@@ -233,8 +233,23 @@ def _stripe_falso(status, fin=None):
     return lambda: _S()
 
 
+_STRIPE_REAL = stripe_bp._stripe
+_GET_DB_REAL = stripe_bp.get_db
+
+
+def _restaurar_stripe():
+    """Deshace los mocks. Sin esto, un test podría pasar con el falso de otro.
+
+    Importa especialmente en los de "falla cerrado": darían por bueno que el
+    gate corta sin haberlo probado, que es la peor clase de test verde.
+    """
+    stripe_bp._stripe = _STRIPE_REAL
+    stripe_bp.get_db = _GET_DB_REAL
+
+
 def _escenario_vencido():
     """Usuario 1 en pro con la fecha vencida hace 30 días."""
+    _restaurar_stripe()
     conn = _db()
     vieja = (datetime.datetime.utcnow() - datetime.timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
     conn.execute("UPDATE users SET plan='pro', subscription_ends_at=? WHERE id=1", (vieja,))
@@ -386,5 +401,8 @@ if __name__ == '__main__':
     for nombre, fn in sorted(list(globals().items())):
         if nombre.startswith('test_') and callable(fn):
             print(f"{nombre}:")
-            fn()
+            try:
+                fn()
+            finally:
+                _restaurar_stripe()   # ningún test hereda el mock del anterior
     print("\nTodo en verde.\n")

@@ -267,10 +267,7 @@ def guard_active_plan():
     # BD, así que no se repite en cada petición.
     if current_user.plan in ('basic', 'pro', 'premium') and current_user.subscription_ends_at:
         from blueprints.stripe_bp import reconciliar_suscripcion
-        conn = get_db()
-        u = one(conn, "SELECT stripe_subscription_id FROM users WHERE id=?", (current_user.id,))
-        conn.close()
-        if reconciliar_suscripcion(current_user.id, (u or {}).get('stripe_subscription_id')):
+        if reconciliar_suscripcion(current_user.id):
             return
 
     return jsonify({
