@@ -294,19 +294,41 @@ def test_reconciliar_sin_clave_no_concede():
 
 
 # ── 6. "Solo lectura" tiene que ser lectura ENTERA ────────────────────
-def test_el_cortado_puede_seguir_leyendo_y_exportando():
-    """Un agricultor cortado conserva su cuaderno: puede consultarlo y
-    descargar el PDF y el Excel oficiales. Si una inspección le cae estando
-    en descubierto, el documento legal tiene que salir igual.
+def test_el_cortado_puede_seguir_consultando_su_cuaderno():
+    """El guard deja pasar todos los GET, así que un agricultor cortado sigue
+    consultando lo suyo dentro de la app.
 
-    Se comprueba sobre el mapa de rutas real: las exportaciones son GET, y el
-    guard deja pasar GET siempre.
+    OJO con lo que este test NO dice: que una ruta sea GET no basta para saber
+    si está abierta. `@requires_active_plan` bloquea GET concretos, y las
+    exportaciones lo llevan (ver test_las_exportaciones_exigen_plan_activo).
+    Una versión anterior de este test miraba solo el método y "demostraba" que
+    el PDF se podía descargar estando cortado. Es falso.
     """
     import app as app_mod
+    check("el guard solo mira métodos de escritura",
+          "request.method in ('GET', 'HEAD', 'OPTIONS')" in
+          open(os.path.join(os.path.dirname(__file__), '..', 'app.py'), encoding='utf-8').read())
     rutas = {str(r): r.methods for r in app_mod.app.url_map.iter_rules()}
-    for ruta in ('/api/export/excel', '/api/export/pdf', '/api/backup/export'):
-        check(f"{ruta} es de solo lectura (GET)", 'GET' in rutas.get(ruta, set())
-              and 'POST' not in rutas.get(ruta, set()))
+    for ruta in ('/api/parcelas', '/api/tratamientos'):
+        check(f"{ruta} se puede consultar (GET)", 'GET' in rutas.get(ruta, set()))
+
+
+def test_las_exportaciones_exigen_plan_activo():
+    """ESTADO ACTUAL, documentado a propósito: el PDF y el Excel oficiales
+    llevan `@requires_active_plan`, así que un agricultor con el plan caducado
+    NO puede descargarlos.
+
+    Está aquí para que sea una decisión visible y no un descubrimiento. Si
+    algún día se decide que el documento legal debe poder salir siempre, este
+    test es el que hay que cambiar, y a conciencia.
+    """
+    ruta = os.path.join(os.path.dirname(__file__), '..', 'blueprints', 'imports_exports.py')
+    with open(ruta, encoding='utf-8') as f:
+        fuente = f.read()
+    for endpoint in ('route_export_excel', 'route_export_pdf'):
+        i = fuente.index(f'def {endpoint}')
+        check(f"{endpoint} exige plan activo",
+              '@requires_active_plan' in fuente[max(0, i - 200):i])
 
 
 def test_el_cortado_puede_cambiar_de_finca():

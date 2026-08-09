@@ -180,14 +180,67 @@ _PLAN_EXEMPT_PREFIXES = ('/api/auth/', '/api/admin/', '/api/stripe/')
 #
 # Cambiar de explotación activa solo guarda un id en la sesión. Es un POST por
 # la forma del endpoint, no por lo que hace. Si el guard lo bloquea, un
-# agricultor con varias fincas se queda leyendo únicamente la que tuviera
-# abierta al caducarle el plan — y como las exportaciones filtran por la finca
-# activa, tampoco podría descargar el PDF oficial de las demás. Eso no es solo
-# lectura: es media lectura, justo cuando más falta le hace el documento.
+# agricultor con varias fincas se queda consultando únicamente la que tuviera
+# abierta al caducarle el plan, sin forma de llegar a las demás. Eso no es solo
+# lectura: es media lectura.
 #
 # Se listan por NOMBRE DE ENDPOINT, no por trozo de URL: un `endswith('/activar')`
 # dejaría entrar sin querer a cualquier ruta futura que acabe igual y sí escriba.
 _PLAN_EXEMPT_ENDPOINTS = ('explotacion.activar_explotacion',)
+
+# Endpoints que NUNCA se bloquean por el tope de explotaciones del plan (017).
+#
+# Los dos primeros son la salida del callejón: si marcar una finca como
+# principal o cambiar de finca activa se bloqueara por el propio tope, quien
+# baja de plan se quedaría encerrado en la finca equivocada sin forma de
+# cambiarla. Crear una explotación se deja pasar porque ya tiene su propio
+# control con un mensaje mucho mejor (`upgrade_required` / `limit_reached`).
+_LIMITE_EXEMPT_ENDPOINTS = (
+    'explotacion.activar_explotacion',
+    'explotacion.principal_explotacion',
+    'explotacion.explotaciones',
+)
+
+
+def _guard_limite_explotaciones():
+    """403 si se intenta anotar en una explotación que el plan no cubre.
+
+    Lo único que diferencia Básico de Pro es el número de explotaciones, y
+    hasta ahora eso solo se comprobaba al CREAR una finca: quien bajaba de Pro
+    a Básico seguía anotando en las cinco.
+
+    Solo afecta a escribir. Leer no se toca: sus fincas las consulta todas.
+    """
+    from flask_login import current_user
+    from helpers import get_uid, get_active_explotacion_id, explotaciones_escribibles
+
+    if request.endpoint in _LIMITE_EXEMPT_ENDPOINTS:
+        return
+    limit = current_user.explotaciones_limit()
+    if limit is None:
+        return      # admin, premium, súper usuarios: sin tope
+
+    conn = get_db()
+    try:
+        escribibles = explotaciones_escribibles(conn, get_uid(), limit)
+        activa = get_active_explotacion_id(conn)
+    finally:
+        conn.close()
+
+    # Sin fincas todavía (onboarding), o la activa entra en el plan: adelante.
+    if not escribibles or activa is None or activa in escribibles:
+        return
+
+    return jsonify({
+        "error": "explotacion_solo_lectura",
+        "feature": "multi_explotacion",
+        "limit": limit,
+        "message": (f"Tu plan cubre {limit} explotación{'es' if limit > 1 else ''}. "
+                    "Esta está en solo lectura: puedes consultarla y, si quieres anotar "
+                    "en ella, marcarla como principal desde el selector de explotación. "
+                    "Con el plan Pro llevas hasta cinco a la vez."),
+    }), 403
+
 
 @app.before_request
 def guard_active_plan():
@@ -202,7 +255,9 @@ def guard_active_plan():
     if not current_user.is_authenticated:
         return
     if current_user.plan_is_active():
-        return
+        # El plan está al día. Queda comprobar que la finca en la que va a
+        # anotar es una de las que cubre.
+        return _guard_limite_explotaciones()
 
     # Va a denegar. Si es un plan de pago con la fecha vencida, puede que el
     # agricultor esté al corriente y lo que se haya perdido sea el webhook de

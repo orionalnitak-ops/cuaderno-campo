@@ -6,7 +6,8 @@ import datetime
 from flask import Blueprint, jsonify, request, session
 from flask_login import login_required, current_user
 from db import get_db, one, dicts, is_pac_eligible
-from helpers import get_uid, get_active_explotacion_id, resolve_default_explotacion
+from helpers import (get_uid, get_active_explotacion_id, resolve_default_explotacion,
+                     explotaciones_escribibles)
 
 bp = Blueprint('explotacion', __name__)
 
@@ -72,8 +73,13 @@ def explotaciones():
     if request.method == 'GET':
         rows = dicts(conn, "SELECT * FROM explotacion WHERE user_id=? ORDER BY orden, id", (uid,))
         active_id = get_active_explotacion_id(conn)
+        # En cuáles puede anotar con su plan. Va en el listado para que la app
+        # pueda marcar las de solo lectura ANTES de que intente guardar algo y
+        # se coma un 403 sin haber avisado (feature 017).
+        escribibles = explotaciones_escribibles(conn, uid, current_user.explotaciones_limit())
         for r in rows:
             r['is_active'] = (r['id'] == active_id)
+            r['escribible'] = True if escribibles is None else (r['id'] in escribibles)
         conn.close()
         return jsonify(rows)
 
@@ -155,6 +161,46 @@ def activar_explotacion(eid):
         return jsonify({"error": "No encontrada"}), 404
     session['active_explotacion_id'] = eid
     return jsonify({"status": "ok", "active_explotacion_id": eid})
+
+
+@bp.route('/api/explotaciones/<int:eid>/principal', methods=['POST'])
+@login_required
+def principal_explotacion(eid):
+    """Marca una explotación como principal: pasa a ser la primera del orden.
+
+    Con un plan de tope 1 (Básico), la principal es la única en la que se puede
+    anotar. Con Pro (tope 5) y más de cinco fincas, esto es lo que decide
+    cuáles entran. Reordenar es lo que le da al agricultor el control: sin
+    esto, el tope caería siempre sobre la finca que creó primero, que no tiene
+    por qué ser la que trabaja.
+
+    NUNCA se bloquea por el propio límite (ver `_LIMITE_EXEMPT_ENDPOINTS` en
+    app.py): si se bloqueara, quien baja de plan se quedaría encerrado sin
+    poder cambiar de finca. Se reutiliza la columna `orden`, que ya existe.
+    """
+    uid = get_uid()
+    conn = get_db()
+    owner = one(conn, "SELECT id FROM explotacion WHERE id=? AND user_id=?", (eid, uid))
+    if not owner:
+        conn.close()
+        return jsonify({"error": "No encontrada"}), 404
+
+    resto = dicts(conn, "SELECT id FROM explotacion WHERE user_id=? AND id<>? ORDER BY orden, id",
+                  (uid, eid))
+    c = conn.cursor()
+    c.execute("UPDATE explotacion SET orden=0 WHERE id=? AND user_id=?", (eid, uid))
+    # Las demás se renumeran desde 1 conservando su orden relativo: si no, dos
+    # fincas podrían quedar empatadas en 0 y cuál es la principal dependería
+    # del id, no de lo que eligió el agricultor.
+    for i, r in enumerate(resto, start=1):
+        c.execute("UPDATE explotacion SET orden=? WHERE id=? AND user_id=?", (i, r['id'], uid))
+    conn.commit()
+    conn.close()
+
+    # Se activa también: quien la marca como principal es porque va a anotar en
+    # ella ahora mismo.
+    session['active_explotacion_id'] = eid
+    return jsonify({"status": "ok", "principal_id": eid})
 
 
 @bp.route('/api/stats')
