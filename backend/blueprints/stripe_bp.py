@@ -146,6 +146,15 @@ def reconciliar_suscripcion(user_id):
         if accion in ('alta', 'gracia'):
             # Sigue siendo cliente: la fecha local estaba obsoleta porque se
             # perdió el webhook. Se pone la buena y recupera el acceso.
+            #
+            # NO SE TOCA `plan` AQUÍ, y no es un olvido. Dos escrituras
+            # simultáneas de la misma cuenta pueden consultar Stripe a la vez y
+            # escribir en cualquier orden. Como esta rama solo mueve la fecha,
+            # una respuesta tardía de "sigue pagando" jamás puede resucitar a
+            # una cuenta que la otra acaba de bajar a `trial`: la carrera es
+            # inocua justo por esto. Quien añada aquí un `plan=?` convierte un
+            # detalle de concurrencia en una forma de recuperar acceso.
+            # Lo fija test_una_alta_tardia_no_resucita_un_corte.
             fin = sub.get('current_period_end')
             nueva = (datetime.datetime.utcfromtimestamp(fin) if fin
                      else datetime.datetime.utcnow() + datetime.timedelta(days=1))

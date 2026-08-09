@@ -301,6 +301,31 @@ def test_reconciliar_falla_cerrado_si_stripe_no_responde():
     check("y no toca el plan", _u(conn)['plan'] == 'pro')
 
 
+def test_una_alta_tardia_no_resucita_un_corte():
+    """Dos escrituras a la vez de la misma cuenta pueden preguntar a Stripe en
+    paralelo y guardar en cualquier orden. Que eso sea inocuo depende de UNA
+    propiedad: la rama de alta solo mueve la fecha, nunca el plan.
+
+    Aquí se simula el peor orden posible —primero el corte, y después la
+    respuesta tardía de "sigue pagando"— y se comprueba que la cuenta NO
+    recupera el acceso. Si alguien añade un `plan=?` a esa rama, este test se
+    pone rojo y evita convertir una carrera en una puerta trasera.
+    """
+    conn, _ = _escenario_vencido()
+    futuro = int((datetime.datetime.utcnow() + datetime.timedelta(days=25)).timestamp())
+
+    stripe_bp._stripe = _stripe_falso('canceled')
+    stripe_bp.reconciliar_suscripcion(1)                     # gana el corte
+    check("la cuenta queda cortada", _u(conn)['plan'] == 'trial')
+
+    stripe_bp._stripe = _stripe_falso('active', futuro)
+    stripe_bp.reconciliar_suscripcion(1)                     # llega la tardía
+    u = _u(conn)
+    check("el plan sigue en trial", u['plan'] == 'trial')
+    _, activo = compute_plan_status(u['plan'], _fecha(-90), 'user', u['subscription_ends_at'])
+    check("y sigue sin poder escribir", activo is False)
+
+
 def test_reconciliar_sin_clave_no_concede():
     _escenario_vencido()
     stripe_bp._stripe = lambda: None
