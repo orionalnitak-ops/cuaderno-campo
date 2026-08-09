@@ -225,10 +225,21 @@ class _NoCierra:
 
 
 def _stripe_falso(status, fin=None):
-    """Un módulo stripe de mentira que contesta lo que se le diga."""
+    """Un módulo stripe de mentira que contesta lo que se le diga.
+
+    La respuesta imita la forma REAL de hoy: desde la API 2025-03-31.basil el
+    fin de periodo va en cada item, no en la suscripción. Antes este falso
+    devolvía el campo en el sitio viejo, así que los tests pasaban en verde
+    contra una forma que Stripe ya no manda — falsa confianza justo en el
+    código que decide si un agricultor conserva el acceso.
+    """
     class _S:
         Subscription = type('_Sub', (), {
-            'retrieve': staticmethod(lambda _id: {'status': status, 'current_period_end': fin})
+            'retrieve': staticmethod(lambda _id: {
+                'status': status,
+                'items': {'data': [{'price': {'id': 'price_x'},
+                                    'current_period_end': fin}]},
+            })
         })
     return lambda: _S()
 

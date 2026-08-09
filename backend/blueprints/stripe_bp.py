@@ -29,6 +29,65 @@ STRIPE_PRICES = {
 _PLANES_PAGO = ('basic', 'pro', 'premium')
 
 # ─────────────────────────────────────────────────────────────────────
+# Hasta cuándo está pagado el cuaderno.
+#
+# Stripe MOVIÓ este dato en la versión de API 2025-03-31.basil: dejó de estar
+# en la suscripción y pasó a cada item de la suscripción. Es un cambio
+# incompatible declarado como tal en su changelog
+# ("deprecate-subscription-current-period-start-and-end"). El webhook de
+# producción se creó con 2026-07-29.dahlia, muy posterior, así que el sitio
+# bueno es el item; se conserva el respaldo al sitio antiguo por si algún
+# endpoint queda anclado a una versión previa.
+#
+# Leerlo del sitio equivocado no es un detalle: devuelve None, y un None
+# acababa escrito como NULL en `subscription_ends_at`. NULL significa en esta
+# app "plan concedido a mano, no vence nunca" (ver es_cuenta_cortesia), así
+# que el agricultor pagaba un mes y se quedaba el cuaderno para siempre.
+# ─────────────────────────────────────────────────────────────────────
+# Margen corto cuando Stripe no manda la fecha: al día siguiente
+# guard_active_plan le pregunta a Stripe y escribe la buena.
+MARGEN_SIN_FECHA_DIAS = 1
+# Acceso provisional del alta por checkout, que no trae el periodo.
+DIAS_PROVISIONALES = {'monthly': 31, 'yearly': 366}
+
+
+def fin_de_periodo(sub):
+    """Timestamp en que vence el periodo pagado, o None si no viene.
+
+    Con varios items de intervalos distintos (Stripe lo permite) cada uno
+    vence en su fecha: se devuelve la MÁS CERCANA. Conceder hasta la más
+    lejana sería regalar acceso que no se ha pagado.
+    """
+    sub   = sub or {}
+    items = (sub.get('items') or {}).get('data') or []
+    fines = [i.get('current_period_end') for i in items
+             if isinstance(i, dict) and i.get('current_period_end')]
+    if fines:
+        return min(fines)
+    return sub.get('current_period_end')
+
+
+def fecha_fin_segura(sub):
+    """La fecha lista para guardar en `subscription_ends_at`. NUNCA None.
+
+    Falla CERRADO: si Stripe no manda el periodo (campo movido otra vez,
+    evento con una forma que no conocemos), se concede el margen corto en
+    lugar de dejar la columna vacía. Escribir NULL aquí sería conceder
+    acceso permanente y gratis, que es el peor error posible en este punto.
+    """
+    fin   = fin_de_periodo(sub)
+    fecha = (datetime.datetime.utcfromtimestamp(fin) if fin
+             else datetime.datetime.utcnow() + datetime.timedelta(days=MARGEN_SIN_FECHA_DIAS))
+    return fecha.strftime('%Y-%m-%d %H:%M:%S')
+
+
+def dias_provisionales(billing):
+    """Días que concede el alta por checkout hasta que llegue el evento de la
+    suscripción con el periodo real. Un intervalo desconocido concede el
+    mínimo: pasarse de largo regala meses sin cobrar."""
+    return DIAS_PROVISIONALES.get(billing, DIAS_PROVISIONALES['monthly'])
+
+# ─────────────────────────────────────────────────────────────────────
 # Qué hacemos con el acceso del agricultor según el estado de Stripe.
 #
 # La distinción que importa es entre "el cobro ha fallado pero Stripe sigue
@@ -195,9 +254,10 @@ def reconciliar_suscripcion(user_id):
             # inocua justo por esto. Quien añada aquí un `plan=?` convierte un
             # detalle de concurrencia en una forma de recuperar acceso.
             # Lo fija test_una_alta_tardia_no_resucita_un_corte.
-            fin = sub.get('current_period_end')
+            fin = fin_de_periodo(sub)
             nueva = (datetime.datetime.utcfromtimestamp(fin) if fin
-                     else datetime.datetime.utcnow() + datetime.timedelta(days=1))
+                     else datetime.datetime.utcnow() + datetime.timedelta(
+                         days=MARGEN_SIN_FECHA_DIAS))
             conn.execute(
                 "UPDATE users SET subscription_ends_at=? WHERE id=?",
                 (nueva.strftime('%Y-%m-%d %H:%M:%S'), user_id)
@@ -280,12 +340,17 @@ def stripe_checkout():
             "line_items": [{"price": price_id, "quantity": 1}],
             "success_url": f"{base_url}/pago-completado?session_id={{CHECKOUT_SESSION_ID}}",
             "cancel_url":  f"{base_url}/#planes",
+            # `billing` viaja en el metadata porque el evento
+            # checkout.session.completed no dice si es mensual o anual, y de
+            # eso depende el acceso provisional que se concede al cobrar.
             "metadata": {
                 "user_id": str(current_user.id),
                 "plan":    plan,
+                "billing": billing,
             },
             "subscription_data": {
-                "metadata": {"user_id": str(current_user.id), "plan": plan}
+                "metadata": {"user_id": str(current_user.id), "plan": plan,
+                             "billing": billing}
             },
         }
         if customer_id:
@@ -358,9 +423,7 @@ def stripe_webhook():
             items      = sub.get('items', {}).get('data', [])
             price_id   = items[0]['price']['id'] if items else None
             plan       = _plan_from_price(price_id)
-            period_end = sub.get('current_period_end')
-            sub_end    = (datetime.datetime.utcfromtimestamp(period_end).strftime('%Y-%m-%d %H:%M:%S')
-                          if period_end else None)
+            sub_end    = fecha_fin_segura(sub)
             sub_id     = sub.get('id')
             uid_meta   = sub.get('metadata', {}).get('user_id')
 
@@ -397,15 +460,21 @@ def stripe_webhook():
         elif ev_type == 'checkout.session.completed':
             session_obj = obj
             customer    = session_obj.get('customer')
-            uid_meta    = session_obj.get('metadata', {}).get('user_id')
-            plan_meta   = session_obj.get('metadata', {}).get('plan')
-            sub_id      = session_obj.get('subscription')
+            uid_meta     = session_obj.get('metadata', {}).get('user_id')
+            plan_meta    = session_obj.get('metadata', {}).get('plan')
+            billing_meta = session_obj.get('metadata', {}).get('billing')
+            sub_id       = session_obj.get('subscription')
             if uid_meta and not _metadata_coherente(conn, uid_meta, customer):
                 uid_meta = None
             if uid_meta and customer:
                 if plan_meta in _PLANES_PAGO:
+                    # Este evento no trae el periodo pagado, así que la fecha
+                    # es provisional hasta que llegue el de la suscripción con
+                    # la real. Va según el intervalo contratado: 365 días
+                    # fijos regalaban once meses a quien paga 14,99 €/mes.
                     import datetime as _dt
-                    sub_end = (_dt.datetime.utcnow() + _dt.timedelta(days=365)).strftime('%Y-%m-%d %H:%M:%S')
+                    sub_end = (_dt.datetime.utcnow() + _dt.timedelta(
+                        days=dias_provisionales(billing_meta))).strftime('%Y-%m-%d %H:%M:%S')
                     conn.execute(
                         "UPDATE users SET plan=?, stripe_customer_id=?, stripe_subscription_id=?, "
                         "subscription_ends_at=?, pago_fallido_desde=NULL WHERE id=?",
