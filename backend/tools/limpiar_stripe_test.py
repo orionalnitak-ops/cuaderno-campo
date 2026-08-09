@@ -114,8 +114,15 @@ def main():
                     'motivo': 'identificadores de Stripe del modo Test antes del go-live',
                     'cuentas': [dict(f_) for f_ in filas],
                 }, f, ensure_ascii=False, indent=2)
-        except OSError as err:
-            print(f"\nNo se ha podido escribir el acta en {acta}: {err}")
+            # Releerla antes de borrar nada. Que `open()` no dé error significa
+            # que se escribió, no que se pueda recuperar: un disco lleno o un
+            # JSON a medias se detecta aquí y no el día que haga falta el acta.
+            with open(acta, encoding='utf-8') as f:
+                releida = json.load(f)
+            if len(releida.get('cuentas', [])) != len(filas):
+                raise OSError('el acta no contiene todas las cuentas')
+        except (OSError, ValueError) as err:
+            print(f"\nNo se ha podido dejar el acta en {acta}: {err}")
             print("No se borra nada sin dejar constancia. Cancelado.\n")
             return 1
         print(f"\nActa guardada en: {acta}")
