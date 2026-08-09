@@ -264,7 +264,7 @@ def test_reconciliar_revalida_al_que_si_paga():
     conn, vieja = _escenario_vencido()
     futuro = int((datetime.datetime.utcnow() + datetime.timedelta(days=25)).timestamp())
     stripe_bp._stripe = _stripe_falso('active', futuro)
-    check("conserva el acceso", stripe_bp.reconciliar_suscripcion(1, 'sub_1') is True)
+    check("conserva el acceso", stripe_bp.reconciliar_suscripcion(1) is True)
     u = _u(conn)
     check("sigue en pro", u['plan'] == 'pro')
     check("y se guarda la fecha buena", u['subscription_ends_at'] > vieja)
@@ -274,14 +274,14 @@ def test_reconciliar_con_past_due_mantiene_acceso_y_avisa():
     conn, _ = _escenario_vencido()
     futuro = int((datetime.datetime.utcnow() + datetime.timedelta(days=25)).timestamp())
     stripe_bp._stripe = _stripe_falso('past_due', futuro)
-    check("conserva el acceso", stripe_bp.reconciliar_suscripcion(1, 'sub_1') is True)
+    check("conserva el acceso", stripe_bp.reconciliar_suscripcion(1) is True)
     check("y queda marcado el impago", _u(conn)['pago_fallido_desde'] is not None)
 
 
 def test_reconciliar_corta_al_cancelado():
     conn, _ = _escenario_vencido()
     stripe_bp._stripe = _stripe_falso('canceled')
-    check("pierde el acceso", stripe_bp.reconciliar_suscripcion(1, 'sub_1') is False)
+    check("pierde el acceso", stripe_bp.reconciliar_suscripcion(1) is False)
     u = _u(conn)
     check("baja a trial", u['plan'] == 'trial')
     check("sin fecha de suscripción", u['subscription_ends_at'] is None)
@@ -297,15 +297,14 @@ def test_reconciliar_falla_cerrado_si_stripe_no_responde():
             'retrieve': staticmethod(lambda _id: (_ for _ in ()).throw(RuntimeError('timeout')))
         })
     stripe_bp._stripe = lambda: _Boom()
-    check("no concede acceso", stripe_bp.reconciliar_suscripcion(1, 'sub_1') is False)
+    check("no concede acceso", stripe_bp.reconciliar_suscripcion(1) is False)
     check("y no toca el plan", _u(conn)['plan'] == 'pro')
 
 
 def test_reconciliar_sin_clave_no_concede():
     _escenario_vencido()
     stripe_bp._stripe = lambda: None
-    check("sin clave de Stripe, no se concede", stripe_bp.reconciliar_suscripcion(1, 'sub_1') is False)
-    check("sin sub_id tampoco", stripe_bp.reconciliar_suscripcion(1, None) is False)
+    check("sin clave de Stripe, no se concede", stripe_bp.reconciliar_suscripcion(1) is False)
 
 
 # ── 6. "Solo lectura" tiene que ser lectura ENTERA ────────────────────

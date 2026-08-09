@@ -96,12 +96,13 @@ def cortar_acceso(conn, user_id, olvidar_suscripcion=False):
         )
 
 
-def reconciliar_suscripcion(user_id, sub_id=None):
+def reconciliar_suscripcion(user_id):
     """Le pregunta a Stripe el estado real de una suscripción y deja la BD al día.
 
-    Si no se pasa `sub_id`, se lee aquí: quien llama no tiene por qué saber en
-    qué columna vive, y así el id se lee y se usa con una sola conexión en vez
-    de dos, sin ventana entre medias.
+    La suscripción se lee AQUÍ a partir del `user_id`, y no se acepta por
+    parámetro a propósito: si se pudiera pasar desde fuera, un llamador futuro
+    podría verificar la suscripción de uno y escribir el resultado en la ficha
+    de otro. Al leerla de la fila del propio usuario, esa confusión no cabe.
 
     Se usa cuando la fecha local ya venció con margen: o el agricultor dejó de
     pagar de verdad, o se perdió el webhook de una renovación normal. Desde
@@ -117,7 +118,8 @@ def reconciliar_suscripcion(user_id, sub_id=None):
     configurada, se deniega: un fallo aquí no puede convertirse en barra libre.
     """
     s = _stripe()
-    if s and sub_id is None:
+    sub_id = None
+    if s:
         conn = get_db()
         try:
             fila = one(conn, "SELECT stripe_subscription_id FROM users WHERE id=?", (user_id,))
