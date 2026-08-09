@@ -79,7 +79,8 @@ function NuevaExplotacionModal({ onClose, onCreated, onUpsell, showToast }) {
 
 // ── Barra selector de explotación activa (multi) ──
 function ExplotacionBar({ explotaciones, currentUser, onSwitch, onReload, onNavigate, showToast }) {
-    const [showNew, setShowNew] = useState(false);
+    const [showNew, setShowNew]     = useState(false);
+    const [cambiando, setCambiando] = useState(false);
     const allowsMulti = !!(currentUser && (currentUser.allows_multi || currentUser.role === 'admin'));
 
     // Nada que mostrar: usuario mono con 0-1 explotación
@@ -88,9 +89,34 @@ function ExplotacionBar({ explotaciones, currentUser, onSwitch, onReload, onNavi
     const active = explotaciones.find(e => e.is_active) || explotaciones[0];
     const label = e => (e.nombre_corto || e.titular || `Explotación ${e.id}`);
 
+    // El plan cubre menos fincas de las que tiene: en las que sobran puede
+    // consultar todo, pero no anotar. Se avisa AQUÍ, antes de que rellene un
+    // tratamiento entero y se coma un 403 al guardarlo (feature 017).
+    const soloLectura = active && active.escribible === false;
+
     const handleAdd = () => {
         if (allowsMulti) setShowNew(true);
         else onNavigate && onNavigate('planes'); // upsell
+    };
+
+    const hacerPrincipal = () => {
+        if (!active || cambiando) return;
+        setCambiando(true);
+        fetch(`/api/explotaciones/${active.id}/principal`, { method:'POST', credentials:'include' })
+            // El servidor manda un mensaje que explica qué pasa (p. ej. un 403
+            // por plan caducado). Tirarlo y enseñar un "no se pudo" genérico
+            // deja al agricultor sin saber qué hacer.
+            .then(r => r.ok ? r.json() : r.json().then(b => Promise.reject(b), () => Promise.reject({})))
+            .then(() => onReload())
+            .then(() => {
+                // Las cachés offline guardan datos de UNA finca sin decir de
+                // cuál: mismo motivo que al cambiar de explotación activa.
+                if (window.OfflineDB?.clearCachesConsulta) window.OfflineDB.clearCachesConsulta();
+                showToast && showToast(`Ahora anotas en ${label(active)}`);
+            })
+            .catch(err => showToast && showToast(
+                err?.message || 'No se pudo cambiar la explotación principal'))
+            .finally(() => setCambiando(false));
     };
 
     return (
@@ -111,7 +137,9 @@ function ExplotacionBar({ explotaciones, currentUser, onSwitch, onReload, onNavi
                         background:'#fff', color:'#111827', cursor:'pointer',
                     }}>
                     {explotaciones.map(e => (
-                        <option key={e.id} value={e.id}>{label(e)}</option>
+                        <option key={e.id} value={e.id}>
+                            {label(e)}{e.escribible === false ? ' — solo lectura' : ''}
+                        </option>
                     ))}
                 </select>
             ) : (
@@ -131,6 +159,38 @@ function ExplotacionBar({ explotaciones, currentUser, onSwitch, onReload, onNavi
                 }}>⭐ Multi-explotación</button>
             )}
             <HelpButton screenId="explotacion" style={{ background:'rgba(0,0,0,0.06)', color:'var(--primary, #00694c)', width:28, height:28, fontSize:'0.8rem' }} />
+
+            {/* Finca fuera del tope del plan: se puede consultar, no anotar.
+                El aviso sale ANTES de rellenar nada, y con la salida al lado. */}
+            {soloLectura && (
+                <div style={{
+                    flexBasis:'100%', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap',
+                    marginTop:8, padding:'10px 12px', borderRadius:10,
+                    background:'#fff7ed', border:'1px solid #fed7aa',
+                }}>
+                    <span style={{ fontSize:'0.8rem', color:'#7c2d12', lineHeight:1.5, flex:'1 1 220px' }}>
+                        👁️ <strong>Solo lectura.</strong> Tu plan cubre menos explotaciones de las
+                        que llevas. Puedes consultarla y exportarla, pero para anotar en ella tienes
+                        que hacerla la principal.
+                    </span>
+                    <button onClick={hacerPrincipal} disabled={cambiando} style={{
+                        background:'var(--primary, #00694c)', border:'none', color:'#fff',
+                        borderRadius:'var(--radius-full, 999px)', padding:'8px 16px',
+                        fontSize:'0.8rem', fontWeight:700, minHeight:44,
+                        cursor: cambiando ? 'wait' : 'pointer', opacity: cambiando ? 0.6 : 1,
+                    }}>
+                        {cambiando ? 'Cambiando…' : 'Anotar en esta'}
+                    </button>
+                    <button onClick={() => onNavigate && onNavigate('planes')} style={{
+                        background:'none', border:'1.5px solid #b45309', color:'#b45309',
+                        borderRadius:'var(--radius-full, 999px)', padding:'8px 16px',
+                        fontSize:'0.8rem', fontWeight:700, minHeight:44, cursor:'pointer',
+                    }}>
+                        Ver planes
+                    </button>
+                </div>
+            )}
+
             {showNew && (
                 <NuevaExplotacionModal
                     onClose={() => setShowNew(false)}
@@ -449,6 +509,10 @@ function App() {
     const isImpersonating = !!currentUser?.impersonating;
     const planExpired = !isAdmin && currentUser?.plan_active === false;
     const isTrialActive = !isAdmin && currentUser?.plan_raw === 'trial' && currentUser?.plan_active === true;
+    // Cobro fallido con Stripe aún reintentando: NO pierde el acceso, solo se
+    // le avisa. Si además ya está caducado, manda el cartel rojo y este se
+    // calla, para no apilar dos avisos.
+    const pagoFallido = !isAdmin && !planExpired && !!currentUser?.pago_fallido;
     const trialDaysLeft = isTrialActive && currentUser?.trial_ends_at
         ? Math.max(0, Math.ceil((new Date(currentUser.trial_ends_at) - new Date()) / 86400000))
         : 0;
@@ -528,6 +592,27 @@ function App() {
                 </div>
             )}
 
+            {/* ── Cobro fallido: avisa, pero NO quita el acceso ── */}
+            {pagoFallido && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, zIndex: 201,
+                    background: 'linear-gradient(135deg, #92400e, #ea580c)',
+                    color: '#fff', padding: '10px 20px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    gap: 12, fontSize: '0.82rem', fontWeight: 600,
+                }}>
+                    <span>💳 No hemos podido cobrar tu cuota. Revisa tu tarjeta — puedes seguir usando el cuaderno con normalidad.</span>
+                    <button onClick={() => navigate('planes')} style={{
+                        background: 'rgba(255,255,255,0.20)', border: 'none',
+                        borderRadius: 'var(--radius-full)', padding: '6px 14px',
+                        color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.78rem',
+                        whiteSpace: 'nowrap',
+                    }}>
+                        Revisar pago →
+                    </button>
+                </div>
+            )}
+
             {/* ── Impersonation banner ── */}
             {isImpersonating && (
                 <div style={{
@@ -549,7 +634,7 @@ function App() {
             )}
 
             {/* ── Desktop Sidebar ── */}
-            <nav id="sidebar" style={(isImpersonating || planExpired) ? { paddingTop: 40 } : {}}>
+            <nav id="sidebar" style={(isImpersonating || planExpired || pagoFallido) ? { paddingTop: 40 } : {}}>
                 <div className="sidebar-logo">
                     <img className="logo-icon" src="/icon-192.png" alt="" />
                     <span className="logo-text">Cuaderno de Campo</span>
@@ -635,7 +720,7 @@ function App() {
             </nav>
 
             {/* ── Right: TopBar + Screen ── */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, ...((isImpersonating || planExpired) ? { marginTop: 38 } : {}) }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, ...((isImpersonating || planExpired || pagoFallido) ? { marginTop: 38 } : {}) }}>
 
                 {/* Desktop Top Bar */}
                 <header id="topbar">

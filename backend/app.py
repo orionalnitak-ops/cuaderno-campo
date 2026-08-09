@@ -4,7 +4,7 @@ import warnings
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from db import init_db
+from db import init_db, get_db, one
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +175,81 @@ def set_security_headers(response):
 
 _PLAN_EXEMPT_PREFIXES = ('/api/auth/', '/api/admin/', '/api/stripe/')
 
+# Endpoints POST que NO escriben datos del agricultor y por tanto no cuentan
+# como "escribir" a efectos del corte por plan caducado.
+#
+# Cambiar de explotación activa solo guarda un id en la sesión. Es un POST por
+# la forma del endpoint, no por lo que hace. Si el guard lo bloquea, un
+# agricultor con varias fincas se queda consultando únicamente la que tuviera
+# abierta al caducarle el plan, sin forma de llegar a las demás. Eso no es solo
+# lectura: es media lectura.
+#
+# Se listan por NOMBRE DE ENDPOINT, no por trozo de URL: un `endswith('/activar')`
+# dejaría entrar sin querer a cualquier ruta futura que acabe igual y sí escriba.
+_PLAN_EXEMPT_ENDPOINTS = ('explotacion.activar_explotacion',)
+
+# Endpoints que NUNCA se bloquean por el tope de explotaciones del plan (017).
+#
+# Los dos primeros son la salida del callejón: si marcar una finca como
+# principal o cambiar de finca activa se bloqueara por el propio tope, quien
+# baja de plan se quedaría encerrado en la finca equivocada sin forma de
+# cambiarla. Crear una explotación se deja pasar porque ya tiene su propio
+# control con un mensaje mucho mejor (`upgrade_required` / `limit_reached`).
+_LIMITE_EXEMPT_ENDPOINTS = (
+    'explotacion.activar_explotacion',
+    'explotacion.principal_explotacion',
+    'explotacion.explotaciones',
+)
+
+
+def _guard_limite_explotaciones():
+    """403 si se intenta anotar en una explotación que el plan no cubre.
+
+    Lo único que diferencia Básico de Pro es el número de explotaciones, y
+    hasta ahora eso solo se comprobaba al CREAR una finca: quien bajaba de Pro
+    a Básico seguía anotando en las cinco.
+
+    Solo afecta a escribir. Leer no se toca: sus fincas las consulta todas.
+    """
+    from flask_login import current_user
+    from helpers import get_uid, get_active_explotacion_id, explotaciones_escribibles
+
+    if request.endpoint in _LIMITE_EXEMPT_ENDPOINTS:
+        return
+    # Hoy solo la llama `guard_active_plan`, que ya ha comprobado la sesión.
+    # La guarda está por si mañana la llama alguien más: sobre un anónimo,
+    # `explotaciones_limit()` reventaría. Se deja rastro, porque llegar aquí sin
+    # sesión no es un caso normal: es un fallo de quien llama.
+    if not current_user.is_authenticated:
+        logger.warning('_guard_limite_explotaciones sin usuario autenticado en %s',
+                       request.endpoint)
+        return
+    limit = current_user.explotaciones_limit()
+    if limit is None:
+        return      # admin, premium, súper usuarios: sin tope
+
+    conn = get_db()
+    try:
+        escribibles = explotaciones_escribibles(conn, get_uid(), limit)
+        activa = get_active_explotacion_id(conn)
+    finally:
+        conn.close()
+
+    # Sin fincas todavía (onboarding), o la activa entra en el plan: adelante.
+    if not escribibles or activa is None or activa in escribibles:
+        return
+
+    return jsonify({
+        "error": "explotacion_solo_lectura",
+        "feature": "multi_explotacion",
+        "limit": limit,
+        "message": (f"Tu plan cubre {limit} explotación{'es' if limit > 1 else ''}. "
+                    "Esta está en solo lectura: puedes consultarla y, si quieres anotar "
+                    "en ella, marcarla como principal desde el selector de explotación. "
+                    "Con el plan Pro llevas hasta cinco a la vez."),
+    }), 403
+
+
 @app.before_request
 def guard_active_plan():
     """Bloquea escrituras si el trial ha caducado o la suscripción ha expirado."""
@@ -183,13 +258,30 @@ def guard_active_plan():
         return
     if any(request.path.startswith(p) for p in _PLAN_EXEMPT_PREFIXES):
         return
+    if request.endpoint in _PLAN_EXEMPT_ENDPOINTS:
+        return
     if not current_user.is_authenticated:
         return
-    if not current_user.plan_is_active():
-        return jsonify({
-            "error": "subscription_required",
-            "plan": current_user.plan_label(),
-        }), 403
+    if current_user.plan_is_active():
+        # El plan está al día. Queda comprobar que la finca en la que va a
+        # anotar es una de las que cubre.
+        return _guard_limite_explotaciones()
+
+    # Va a denegar. Si es un plan de pago con la fecha vencida, puede que el
+    # agricultor esté al corriente y lo que se haya perdido sea el webhook de
+    # la renovación. Antes de cortarle el cuaderno, se le pregunta a Stripe.
+    # Esto es el único punto donde se llama a Stripe fuera del checkout, y solo
+    # ocurre en escrituras de cuentas ya vencidas: la respuesta se guarda en la
+    # BD, así que no se repite en cada petición.
+    if current_user.plan in ('basic', 'pro', 'premium') and current_user.subscription_ends_at:
+        from blueprints.stripe_bp import reconciliar_suscripcion
+        if reconciliar_suscripcion(current_user.id):
+            return
+
+    return jsonify({
+        "error": "subscription_required",
+        "plan": current_user.plan_label(),
+    }), 403
 
 
 # ─────────────────────────────────────────────

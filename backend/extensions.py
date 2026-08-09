@@ -18,7 +18,33 @@ limiter = Limiter(get_remote_address, default_limits=["3000 per hour", "300 per 
 login_manager = LoginManager()
 
 
-def compute_plan_status(plan, trial_ends_at, role):
+# Días que un plan de pago sigue dando acceso después de vencer su periodo.
+#
+# Es el colchón para que un webhook de renovación perdido no le corte el
+# cuaderno a un agricultor que sí ha pagado. Pasado el margen no se corta a
+# ciegas: `guard_active_plan` le pregunta a Stripe por el estado real antes de
+# denegar nada (ver app.py).
+MARGEN_SUSCRIPCION_DIAS = 5
+
+
+def _a_fecha(valor):
+    """Normaliza a datetime lo que venga de la BD (TIMESTAMP o texto ISO).
+
+    Devuelve None si no hay valor o si no se puede interpretar. Un formato que
+    no se entiende NO puede colar como fecha válida: quien llama decide, y aquí
+    se decide tratarlo como "no hay fecha".
+    """
+    if not valor:
+        return None
+    if isinstance(valor, datetime.datetime):
+        return valor
+    try:
+        return datetime.datetime.fromisoformat(str(valor).replace('Z', ''))
+    except ValueError:
+        return None
+
+
+def compute_plan_status(plan, trial_ends_at, role, subscription_ends_at=None):
     """Calcula el estado de plan de un usuario a partir de datos crudos de BD.
 
     Devuelve (label, active):
@@ -29,22 +55,44 @@ def compute_plan_status(plan, trial_ends_at, role):
     User.plan_is_active() y User.plan_label(), para poder reutilizarlo
     también con filas de BD que no pasan por un objeto User (p.ej. el
     listado del panel de admin).
+
+    Sobre `subscription_ends_at`: un plan de pago **caduca**. Antes esta
+    función devolvía True para basic/pro/premium sin mirar ninguna fecha, así
+    que una cuenta a la que se le perdiera el webhook de cancelación escribía
+    gratis para siempre y no saltaba ningún error en ninguna parte.
+
+    `subscription_ends_at` a NULL sigue dando acceso **a propósito**: son las
+    altas que no vienen de Stripe (cuentas de prueba, un plan concedido a mano
+    desde el panel de admin). Ahí no hay periodo que vencer.
+
+    Esta función es pura y se ejecuta en cada petición: aquí no se llama a
+    Stripe ni se toca la BD. Confirmar con Stripe una fecha vencida es cosa de
+    `guard_active_plan`, que solo corre en escrituras.
     """
     def _is_active():
         if role == 'admin':
             return True
         if plan in ('basic', 'pro', 'premium'):
-            return True
+            if subscription_ends_at in (None, ''):
+                return True     # alta sin periodo (manual/admin): no vence
+            fin = _a_fecha(subscription_ends_at)
+            if fin is None:
+                # Hay algo escrito y no se entiende. No puede colar como plan
+                # al día: eso sería exactamente el agujero que esto cierra.
+                return False
+            limite = fin + datetime.timedelta(days=MARGEN_SUSCRIPCION_DIAS)
+            return datetime.datetime.utcnow() < limite
         if plan == 'trial' and trial_ends_at:
-            ends = trial_ends_at
-            if isinstance(ends, str):
-                ends = datetime.datetime.fromisoformat(ends.replace('Z', ''))
-            return datetime.datetime.utcnow() < ends
+            ends = _a_fecha(trial_ends_at)
+            return ends is not None and datetime.datetime.utcnow() < ends
         return False
 
     active = _is_active()
     if plan in ('basic', 'pro', 'premium'):
-        label = plan
+        # Un plan de pago vencido se etiqueta 'expired', no 'pro': es lo que
+        # hace que la app le enseñe el cartel de renovar en vez de decirle que
+        # tiene un plan activo mientras le bloquea cada guardado.
+        label = plan if active else 'expired'
     elif plan == 'trial':
         label = 'trial' if active else 'expired'
     else:
@@ -85,7 +133,7 @@ def plan_allows_multi(plan, role, unlimited=False):
 class User(UserMixin):
     def __init__(self, id, email, nombre, role, active,
                  plan='trial', trial_ends_at=None, subscription_ends_at=None,
-                 unlimited_explotaciones=0):
+                 unlimited_explotaciones=0, pago_fallido_desde=None):
         self.id = id
         self.email = email
         self.nombre = nombre
@@ -95,15 +143,20 @@ class User(UserMixin):
         self.trial_ends_at = trial_ends_at
         self.subscription_ends_at = subscription_ends_at
         self.unlimited_explotaciones = bool(unlimited_explotaciones)
+        # Fecha del primer cobro fallido, o None. No afecta al acceso: el
+        # agricultor sigue pudiendo anotar mientras Stripe reintenta.
+        self.pago_fallido_desde = pago_fallido_desde
 
     def plan_is_active(self):
         """True si el usuario puede escribir datos (trial vigente, basic o pro)."""
-        _, active = compute_plan_status(self.plan, self.trial_ends_at, self.role)
+        _, active = compute_plan_status(self.plan, self.trial_ends_at, self.role,
+                                        self.subscription_ends_at)
         return active
 
     def plan_label(self):
         """Estado legible para el frontend."""
-        label, _ = compute_plan_status(self.plan, self.trial_ends_at, self.role)
+        label, _ = compute_plan_status(self.plan, self.trial_ends_at, self.role,
+                                       self.subscription_ends_at)
         return label
 
     def plan_allows_multi(self):
@@ -124,7 +177,7 @@ def load_user(user_id):
         return None
     return User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
                 u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
-                u.get('unlimited_explotaciones', 0))
+                u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'))
 
 
 @login_manager.unauthorized_handler

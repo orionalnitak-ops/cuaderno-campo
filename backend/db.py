@@ -892,7 +892,8 @@ def init_db():
             subscription_ends_at TIMESTAMP,
             stripe_customer_id TEXT,
             stripe_subscription_id TEXT,
-            unlimited_explotaciones INTEGER DEFAULT 0
+            unlimited_explotaciones INTEGER DEFAULT 0,
+            pago_fallido_desde TIMESTAMP
         )
     ''')
     for col, typ in [
@@ -902,6 +903,10 @@ def init_db():
         ('stripe_customer_id', 'TEXT'),
         ('stripe_subscription_id', 'TEXT'),
         ('unlimited_explotaciones', 'INTEGER DEFAULT 0'),
+        # Fecha del PRIMER cobro fallido mientras Stripe sigue reintentando.
+        # NULL = no hay ningún cobro caído. No quita acceso: solo dispara el
+        # aviso de "revisa tu tarjeta" en la app.
+        ('pago_fallido_desde', 'TIMESTAMP'),
     ]:
         _add_col(c, 'users', col, typ)
     # Admin accounts never expire

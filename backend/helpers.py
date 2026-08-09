@@ -52,6 +52,24 @@ def resolve_default_explotacion(conn, uid):
     return row['id'] if row else None
 
 
+def explotaciones_escribibles(conn, uid, limit):
+    """Ids de las explotaciones en las que el usuario puede ANOTAR, o None si
+    no tiene tope (admin, premium, súper usuarios).
+
+    Leer no se limita nunca: esto no esconde ni una parcela, solo decide dónde
+    se puede escribir. Son las `limit` primeras por `orden, id`, y el propio
+    agricultor elige cuál va primera marcándola como principal
+    (`POST /api/explotaciones/<id>/principal`, que reescribe `orden`).
+
+    Se ordena igual que el selector de la app, para que lo que ve coincida con
+    lo que puede hacer.
+    """
+    if limit is None:
+        return None
+    rows = dicts(conn, "SELECT id FROM explotacion WHERE user_id=? ORDER BY orden, id", (uid,))
+    return {r['id'] for r in rows[:limit]}
+
+
 def get_active_explotacion_id(conn=None):
     """Devuelve el id de la explotación activa para el usuario efectivo.
 

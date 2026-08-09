@@ -37,7 +37,8 @@ def admin_users():
                 "parcelas": p['n'] if p else 0,
                 "labores": l['n'] if l else 0,
             }
-            u['plan_label'], u['plan_active'] = compute_plan_status(u['plan'], u['trial_ends_at'], u['role'])
+            u['plan_label'], u['plan_active'] = compute_plan_status(
+                u['plan'], u['trial_ends_at'], u['role'], u.get('subscription_ends_at'))
         conn.close()
         return jsonify(users)
 
