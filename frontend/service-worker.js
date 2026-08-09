@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cuaderno-cache-v50';
+const CACHE_NAME = 'cuaderno-cache-v51';
 
 const APP_SHELL = [
   '/',
@@ -127,8 +127,10 @@ self.addEventListener('push', event => {
   const title = data.title || '⚠️ Alerta meteorológica';
   const options = {
     body: data.body || 'Nueva alerta AEMET para tu zona',
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-72.png',
+    // Los iconos viven en la raíz, no en /icons/ (esa carpeta nunca existió):
+    // las notificaciones salían sin icono. El badge reutiliza el favicon-32.
+    icon: '/icon-192.png',
+    badge: '/favicon-32.png',
     data: { url: data.url || '/' },
     requireInteraction: true,
   };
