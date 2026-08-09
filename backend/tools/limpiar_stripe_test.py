@@ -48,6 +48,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from db import get_db, dicts  # noqa: E402
 
 APLICAR = '--aplicar' in sys.argv
+_DESCONOCIDOS = [a for a in sys.argv[1:] if a.startswith('--') and a != '--aplicar']
 # Un `--aplicarr` mal tecleado NO activa la escritura: hace la pasada de solo
 # lectura y lo dice. Un dedazo tiene que caer del lado seguro, así que aquí no
 # se usa argparse a propósito: convertiría el dedazo en un error en vez de en
@@ -68,6 +69,13 @@ def _ruta_acta():
 def main():
     destino = 'PostgreSQL (producción)' if os.environ.get('DATABASE_URL') else 'SQLite local'
     print(f"\nBase de datos: {destino}\n")
+
+    # Un `--aplicar=true` o un `--Aplicar` no activan la escritura, y sin avisar
+    # se podría creer lo contrario. El dedazo sigue cayendo del lado seguro; lo
+    # que se añade es que se vea.
+    if _DESCONOCIDOS:
+        print(f"AVISO: no entiendo estos argumentos: {', '.join(_DESCONOCIDOS)}")
+        print("       Para escribir, el único que vale es exactamente --aplicar.\n")
 
     conn = get_db()
     try:
@@ -121,6 +129,13 @@ def main():
                 releida = json.load(f)
             if len(releida.get('cuentas', [])) != len(filas):
                 raise OSError('el acta no contiene todas las cuentas')
+            # Lleva emails de agricultores: solo su dueño. En Windows apenas
+            # cambia nada, pero el día que esto corra desde un servidor Linux el
+            # fichero no nace legible por todo el sistema.
+            try:
+                os.chmod(acta, 0o600)
+            except OSError:
+                pass
         except (OSError, ValueError) as err:
             print(f"\nNo se ha podido dejar el acta en {acta}: {err}")
             print("No se borra nada sin dejar constancia. Cancelado.\n")
