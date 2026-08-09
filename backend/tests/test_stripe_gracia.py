@@ -18,6 +18,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+import blueprints.stripe_bp as stripe_bp  # noqa: E402
 from blueprints.stripe_bp import (  # noqa: E402
     ESTADOS_CORTE, accion_suscripcion, aplicar_gracia, cortar_acceso,
 )
@@ -203,6 +204,93 @@ def test_trial_sigue_funcionando_igual():
     check("trial vigente activo",   vivo is True)
     check("trial caducado inactivo", muerto is False)
     check("y etiquetado expired",    lbl == 'expired')
+
+
+# ── 5. La consulta a Stripe cuando la fecha ya venció ─────────────────
+#
+# Es el único punto del backend que habla con Stripe fuera del checkout, y el
+# que decide si a un agricultor se le corta el cuaderno. Se prueba con un
+# Stripe de mentira: aquí no se toca la red.
+class _NoCierra:
+    """Envuelve la conexión para que el .close() del código no la mate."""
+
+    def __init__(self, c):
+        self._c = c
+
+    def __getattr__(self, n):
+        return getattr(self._c, n)
+
+    def close(self):
+        pass
+
+
+def _stripe_falso(status, fin=None):
+    """Un módulo stripe de mentira que contesta lo que se le diga."""
+    class _S:
+        Subscription = type('_Sub', (), {
+            'retrieve': staticmethod(lambda _id: {'status': status, 'current_period_end': fin})
+        })
+    return lambda: _S()
+
+
+def _escenario_vencido():
+    """Usuario 1 en pro con la fecha vencida hace 30 días."""
+    conn = _db()
+    vieja = (datetime.datetime.utcnow() - datetime.timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
+    conn.execute("UPDATE users SET plan='pro', subscription_ends_at=? WHERE id=1", (vieja,))
+    conn.commit()
+    stripe_bp.get_db = lambda: _NoCierra(conn)
+    return conn, vieja
+
+
+def test_reconciliar_revalida_al_que_si_paga():
+    """El caso que justifica llamar a Stripe: se perdió el webhook de una
+    renovación normal. Si esto falla, le cortas el cuaderno a un cliente."""
+    conn, vieja = _escenario_vencido()
+    futuro = int((datetime.datetime.utcnow() + datetime.timedelta(days=25)).timestamp())
+    stripe_bp._stripe = _stripe_falso('active', futuro)
+    check("conserva el acceso", stripe_bp.reconciliar_suscripcion(1, 'sub_1') is True)
+    u = _u(conn)
+    check("sigue en pro", u['plan'] == 'pro')
+    check("y se guarda la fecha buena", u['subscription_ends_at'] > vieja)
+
+
+def test_reconciliar_con_past_due_mantiene_acceso_y_avisa():
+    conn, _ = _escenario_vencido()
+    futuro = int((datetime.datetime.utcnow() + datetime.timedelta(days=25)).timestamp())
+    stripe_bp._stripe = _stripe_falso('past_due', futuro)
+    check("conserva el acceso", stripe_bp.reconciliar_suscripcion(1, 'sub_1') is True)
+    check("y queda marcado el impago", _u(conn)['pago_fallido_desde'] is not None)
+
+
+def test_reconciliar_corta_al_cancelado():
+    conn, _ = _escenario_vencido()
+    stripe_bp._stripe = _stripe_falso('canceled')
+    check("pierde el acceso", stripe_bp.reconciliar_suscripcion(1, 'sub_1') is False)
+    u = _u(conn)
+    check("baja a trial", u['plan'] == 'trial')
+    check("sin fecha de suscripción", u['subscription_ends_at'] is None)
+
+
+def test_reconciliar_falla_cerrado_si_stripe_no_responde():
+    """Un timeout de Stripe no puede convertirse en barra libre. Y tampoco
+    puede bajarle el plan a nadie: no sabemos nada, así que no se toca la BD."""
+    conn, _ = _escenario_vencido()
+
+    class _Boom:
+        Subscription = type('_Sub', (), {
+            'retrieve': staticmethod(lambda _id: (_ for _ in ()).throw(RuntimeError('timeout')))
+        })
+    stripe_bp._stripe = lambda: _Boom()
+    check("no concede acceso", stripe_bp.reconciliar_suscripcion(1, 'sub_1') is False)
+    check("y no toca el plan", _u(conn)['plan'] == 'pro')
+
+
+def test_reconciliar_sin_clave_no_concede():
+    _escenario_vencido()
+    stripe_bp._stripe = lambda: None
+    check("sin clave de Stripe, no se concede", stripe_bp.reconciliar_suscripcion(1, 'sub_1') is False)
+    check("sin sub_id tampoco", stripe_bp.reconciliar_suscripcion(1, None) is False)
 
 
 def test_la_columna_existe_en_el_esquema():
