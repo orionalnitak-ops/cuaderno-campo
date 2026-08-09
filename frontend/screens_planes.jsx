@@ -13,6 +13,9 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
     const planLabel    = currentUser?.plan;
     const planActive   = currentUser?.plan_active !== false;
     const hasActiveSub = planLabel === 'basic' || planLabel === 'pro' || planLabel === 'premium';
+    // Plan regalado desde el panel de admin: no hay nada que contratar ni ningún
+    // portal de Stripe al que ir, porque no existe suscripción a su nombre.
+    const esCortesia   = !!currentUser?.cortesia;
 
     const checkout = async (plan, billingOverride) => {
         setLoading(plan);
@@ -125,7 +128,15 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
                     boxSizing: 'border-box',
                 }}>
-                    <span>✅ Plan {planLabel === 'basic' ? 'Básico' : planLabel === 'premium' ? 'Premium' : 'Pro'} activo. Gestiona facturación y cancelación desde el portal.</span>
+                    <span>
+                        ✅ Plan {planLabel === 'basic' ? 'Básico' : planLabel === 'premium' ? 'Premium' : 'Pro'} activo.
+                        {esCortesia
+                            ? ' Es un acceso de cortesía: no hay ningún cobro asociado a tu cuenta.'
+                            : ' Gestiona facturación y cancelación desde el portal.'}
+                    </span>
+                    {/* El portal de Stripe necesita un cliente, y una cuenta de
+                        cortesía no lo tiene: el botón devolvería un error. */}
+                    {!esCortesia && (
                     <button onClick={openPortal} disabled={!!loading} style={{
                         background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8,
                         padding: '7px 14px', fontWeight: 700, fontSize: '0.78rem',
@@ -133,6 +144,7 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                     }}>
                         {loading === 'portal' ? 'Abriendo…' : 'Gestionar →'}
                     </button>
+                    )}
                 </div>
             )}
 
@@ -194,7 +206,12 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                 {PLANS.map(plan => {
                     const info = plan.annualOnly ? plan.yearly : (billing === 'yearly' ? plan.yearly : plan.monthly);
                     const showDiscount = billing === 'yearly' && !plan.annualOnly;
-                    const active = planLabel === plan.id;
+                    // `active` oculta el botón SOLO en la tarjeta del plan que ya
+                    // tienes. A una cuenta de cortesía le salían las demás — y a
+                    // quien tenga `premium`, que ya no es una tarjeta, le salían
+                    // todas. Un toque y se cobraba de verdad a alguien a quien se
+                    // le regaló el acceso.
+                    const active = planLabel === plan.id || esCortesia;
                     const isPopular = plan.popular;
 
                     return (
@@ -302,7 +319,7 @@ function ScreenPlanes({ currentUser, showToast, onClose }) {
                                         fontWeight: 700, fontSize: '0.92rem', color: plan.color,
                                         boxSizing: 'border-box',
                                     }}>
-                                        ✓ Plan activo
+                                        {planLabel === plan.id ? '✓ Plan activo' : 'Incluido en tu acceso'}
                                     </div>
                                 )}
 

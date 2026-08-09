@@ -8,6 +8,7 @@ import os
 from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
 from db import get_db, one
+from extensions import es_cuenta_cortesia
 
 bp = Blueprint('stripe_bp', __name__)
 logger = logging.getLogger(__name__)
@@ -254,9 +255,24 @@ def stripe_checkout():
     base_url = request.host_url.rstrip('/')
 
     conn = get_db()
-    u = one(conn, "SELECT stripe_customer_id FROM users WHERE id=?", (current_user.id,))
+    u = one(conn, "SELECT plan, stripe_customer_id, stripe_subscription_id FROM users WHERE id=?",
+            (current_user.id,))
     conn.close()
     customer_id = u.get('stripe_customer_id') if u else None
+
+    # Cuenta con el plan concedido a mano desde el panel: no se le abre el pago.
+    # Ya tiene acceso gratis, así que contratar aquí sería cobrarle por algo que
+    # le regalaste. Se lee de la BD y no de la sesión para decidir sobre el
+    # estado de AHORA, que es el que va a acabar en un cargo.
+    if u and es_cuenta_cortesia(u.get('plan'), customer_id, u.get('stripe_subscription_id')):
+        logger.warning('Checkout bloqueado: la cuenta %s tiene plan de cortesía (%s).',
+                       current_user.id, u.get('plan'))
+        return jsonify({
+            "error": "plan_de_cortesia",
+            "message": ("Tu cuenta ya tiene el plan activo sin coste, así que no hay nada "
+                        "que contratar. Si quieres pasar a una suscripción de pago, "
+                        "escríbenos a cuadernodigital@tualiado.es y lo preparamos."),
+        }), 403
 
     try:
         params = {

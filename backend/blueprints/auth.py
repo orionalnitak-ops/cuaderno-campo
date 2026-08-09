@@ -31,7 +31,8 @@ def auth_login():
 
     user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
                 u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
-                u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'))
+                u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'),
+                u.get('stripe_customer_id'), u.get('stripe_subscription_id'))
     login_user(user, remember=True)
     try:
         from blueprints.ia import _generar_alertas
@@ -85,7 +86,8 @@ def auth_register():
     conn.close()
     user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
                 u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
-                u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'))
+                u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'),
+                u.get('stripe_customer_id'), u.get('stripe_subscription_id'))
     login_user(user, remember=True)
     te = user.trial_ends_at
     return jsonify({
@@ -136,6 +138,9 @@ def auth_me():
         "trial_ends_at": trial_ends,
         "plan_active": current_user.plan_is_active(),
         "pago_fallido": pago_fallido,
+        # Plan regalado desde el panel: la app oculta los botones de contratar y
+        # el enlace al portal de Stripe, que para estas cuentas no existe.
+        "cortesia": current_user.es_cortesia,
         "allows_multi": current_user.plan_allows_multi(),
         "explotaciones_limit": current_user.explotaciones_limit(),
     })

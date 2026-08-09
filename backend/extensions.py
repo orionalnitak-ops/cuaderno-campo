@@ -130,10 +130,37 @@ def plan_allows_multi(plan, role, unlimited=False):
     return limit is None or limit > 1
 
 
+def es_cuenta_cortesia(plan, stripe_customer_id, stripe_subscription_id):
+    """True si el plan de pago se concedió a mano, sin pasar por Stripe.
+
+    Son las cuentas que se dan desde el panel de admin para que alguien pruebe
+    la app: el piloto, un amigo, una demo. Stripe **no les cobra nada**, porque
+    no existe ninguna suscripción a su nombre.
+
+    El problema que esto resuelve es el contrario: que se cobren ellos solos. En
+    la pantalla de planes, el botón de contratar solo se oculta en la tarjeta
+    del plan que ya tienes, así que a una cuenta de cortesía le sigue saliendo
+    "Contratar" en las demás — y a quien tenga `premium`, que ya no es una
+    tarjeta, **le salen todas**. Un toque y hay un cobro real de alguien a quien
+    le regalaste el acceso.
+
+    Cómo se distinguen sin inventar ninguna columna: quien pagó de verdad tiene
+    `stripe_customer_id`, y quien todavía no ha pagado está en `trial`. Un plan
+    de pago sin rastro de Stripe solo puede venir del panel de admin.
+
+    Para que una de estas cuentas pueda pagar de verdad, hay que devolverla a
+    `trial` desde el panel primero. Es a propósito: que pase por la puerta.
+    """
+    return (plan in ('basic', 'pro', 'premium')
+            and not stripe_customer_id
+            and not stripe_subscription_id)
+
+
 class User(UserMixin):
     def __init__(self, id, email, nombre, role, active,
                  plan='trial', trial_ends_at=None, subscription_ends_at=None,
-                 unlimited_explotaciones=0, pago_fallido_desde=None):
+                 unlimited_explotaciones=0, pago_fallido_desde=None,
+                 stripe_customer_id=None, stripe_subscription_id=None):
         self.id = id
         self.email = email
         self.nombre = nombre
@@ -146,6 +173,10 @@ class User(UserMixin):
         # Fecha del primer cobro fallido, o None. No afecta al acceso: el
         # agricultor sigue pudiendo anotar mientras Stripe reintenta.
         self.pago_fallido_desde = pago_fallido_desde
+        # Plan concedido a mano desde el panel, sin suscripción en Stripe. No se
+        # guardan los identificadores en el objeto: solo hace falta saber si los
+        # hay o no.
+        self.es_cortesia = es_cuenta_cortesia(plan, stripe_customer_id, stripe_subscription_id)
 
     def plan_is_active(self):
         """True si el usuario puede escribir datos (trial vigente, basic o pro)."""
@@ -177,7 +208,8 @@ def load_user(user_id):
         return None
     return User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
                 u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
-                u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'))
+                u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'),
+                u.get('stripe_customer_id'), u.get('stripe_subscription_id'))
 
 
 @login_manager.unauthorized_handler
