@@ -79,9 +79,12 @@ function ScreenUHC({ campana, showToast }) {
         return (
             <div style={{ maxWidth: 600, margin: '0 auto', padding: '16px 12px' }}>
                 <button onClick={() => setEditando(null)} style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--primary)', fontWeight: 600, fontSize: '0.9rem', marginBottom: 16,
-                }}>← Volver</button>
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    background: 'var(--primary)', border: 'none', borderRadius: 100,
+                    color: '#fff', fontWeight: 800, fontSize: '0.95rem',
+                    cursor: 'pointer', padding: '12px 22px', marginBottom: 16, minHeight: 48,
+                    boxShadow: '0 3px 12px rgba(0,105,76,0.30)',
+                }}><span style={{ fontSize: '1.1rem' }}>‹</span> Volver</button>
 
                 <h2 style={{ margin: '0 0 20px', fontSize: '1.1rem' }}>
                     {editando.id ? 'Editar grupo' : 'Nuevo grupo UHC'}
