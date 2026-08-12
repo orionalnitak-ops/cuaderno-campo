@@ -25,6 +25,12 @@ STRIPE_PRICES = {
     ('premium', 'yearly'):  os.environ.get('STRIPE_PRICE_PREMIUM_YEARLY', ''),
 }
 
+# Tasa de IVA (21% incluido) creada a mano en Stripe (NO es Stripe Tax, es
+# gratis). Se aplica a la suscripción para que la factura desglose base + IVA
+# y sea deducible por el agricultor autónomo. Cada entorno (test/live) tiene su
+# propio `txr_...`, por eso viaja en variable de entorno como los precios.
+STRIPE_TAX_RATE_IVA = os.environ.get('STRIPE_TAX_RATE_IVA', '')
+
 # Planes que conceden acceso de pago (usados para validar metadata del webhook).
 _PLANES_PAGO = ('basic', 'pro', 'premium')
 
@@ -338,6 +344,12 @@ def stripe_checkout():
         params = {
             "mode": "subscription",
             "line_items": [{"price": price_id, "quantity": 1}],
+            # Recoger NIF/CIF y dirección fiscal en el checkout: los agricultores
+            # son autónomos/empresas y necesitan factura COMPLETA para deducir el
+            # IVA (la simplificada solo permite deducir IRPF). Es gratis:
+            # tax_id_collection NO es Stripe Tax. Los datos quedan en el Customer.
+            "tax_id_collection": {"enabled": True},
+            "billing_address_collection": "required",
             "success_url": f"{base_url}/pago-completado?session_id={{CHECKOUT_SESSION_ID}}",
             "cancel_url":  f"{base_url}/#planes",
             # `billing` viaja en el metadata porque el evento
@@ -353,8 +365,19 @@ def stripe_checkout():
                              "billing": billing}
             },
         }
+        # El 21% de IVA se aplica como tasa manual (inclusive) para que la factura
+        # desglose base + IVA y el agricultor pueda deducir. `default_tax_rates` en
+        # subscription_data hace que TODAS las facturas de la suscripción lo lleven,
+        # no solo la primera. Si la variable está vacía (entorno sin configurar) no
+        # se aplica: la factura sale como hasta ahora, sin romper el cobro.
+        if STRIPE_TAX_RATE_IVA:
+            params["subscription_data"]["default_tax_rates"] = [STRIPE_TAX_RATE_IVA]
         if customer_id:
             params["customer"] = customer_id
+            # Con un customer ya existente, Stripe exige customer_update para
+            # GUARDAR en su ficha el NIF y la dirección recogidos en el checkout.
+            # Sin esto, con clientes recurrentes se piden pero no se guardan.
+            params["customer_update"] = {"name": "auto", "address": "auto"}
         else:
             params["customer_email"] = current_user.email
 
