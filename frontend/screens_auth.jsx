@@ -135,6 +135,13 @@ function ScreenLogin({ onLogin }) {
                                 {loading ? 'Entrando…' : '🔑  Iniciar sesión'}
                             </button>
                         </form>
+                        <p style={{ textAlign:'center', marginTop:16 }}>
+                            <button type="button" onClick={() => { window.location.href = '/recuperar'; }}
+                                style={{ background:'none', border:'none', color:'var(--primary)',
+                                         fontWeight:600, fontSize:'0.83rem', cursor:'pointer' }}>
+                                ¿Olvidaste tu contraseña?
+                            </button>
+                        </p>
                     </>
                 ) : (
                     <>
@@ -201,5 +208,196 @@ function ScreenLogin({ onLogin }) {
                 </p>
             </div>
         </div>
+    );
+}
+
+
+// ── Shell común para las pantallas públicas de correo (recuperar / reset / verificar) ──
+function ScreenAuthPublic({ titulo, children }) {
+    return (
+        <div style={{ minHeight: '100vh', background: 'var(--surface)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+            <div style={{
+                background: 'linear-gradient(160deg, var(--secondary-fixed) 0%, #1e3a5f 100%)',
+                padding: '48px 24px 32px', textAlign: 'center',
+            }}>
+                <div style={{
+                    width: 64, height: 64, borderRadius: 'var(--radius-xl)',
+                    background: 'linear-gradient(135deg, var(--primary), var(--primary-container))',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 32, margin: '0 auto 16px', boxShadow: 'var(--shadow-fab)',
+                }}>🌿</div>
+                <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.4rem', color: '#fff', margin: 0, letterSpacing: '-0.02em' }}>
+                    {titulo}
+                </h1>
+            </div>
+            <div style={{ flex: 1, padding: '28px 20px 32px', maxWidth: 440, width: '100%', margin: '0 auto' }}>
+                {children}
+                <p style={{ marginTop: 28, textAlign: 'center' }}>
+                    <a href="/" style={{ color: 'var(--primary)', fontWeight: 600, fontSize: '0.85rem', textDecoration: 'none' }}>
+                        ← Volver al inicio
+                    </a>
+                </p>
+            </div>
+        </div>
+    );
+}
+
+
+// ── Screen: Recuperar contraseña (pedir email) ──
+function ScreenRecuperar() {
+    const { useState } = React;
+    const [email, setEmail]     = useState('');
+    const [enviado, setEnviado] = useState(false);
+    const [loading, setLoading] = useState(false);
+
+    const submit = async (e) => {
+        e.preventDefault();
+        if (!email.trim()) return;
+        setLoading(true);
+        try {
+            await fetch('/api/auth/forgot-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email.trim().toLowerCase() }),
+                credentials: 'include',
+            });
+        } catch { /* respuesta idéntica pase lo que pase: no se filtra nada */ }
+        setEnviado(true);
+        setLoading(false);
+    };
+
+    return (
+        <ScreenAuthPublic titulo="Recuperar contraseña">
+            {enviado ? (
+                <div style={{ background:'rgba(0,105,76,0.08)', border:'1px solid rgba(0,105,76,0.20)', borderRadius:'var(--radius-lg)', padding:'18px 20px', fontSize:'0.9rem', color:'var(--on-background)', lineHeight:1.6 }}>
+                    ✅ Si ese correo está registrado, te hemos enviado un enlace para cambiar la contraseña. Revisa tu bandeja de entrada (y el spam, por si acaso).
+                </div>
+            ) : (
+                <>
+                    <p style={{ fontSize: '0.88rem', color: 'var(--on-surface-variant)', margin: '0 0 22px', lineHeight:1.6 }}>
+                        Escribe tu email y te enviamos un enlace para poner una contraseña nueva.
+                    </p>
+                    <form onSubmit={submit} style={{ display:'flex', flexDirection:'column', gap: 16 }}>
+                        <div>
+                            <label className="field-label">Email</label>
+                            <input className="input-field" type="email" placeholder="tu@email.es"
+                                value={email} onChange={e => setEmail(e.target.value)}
+                                autoComplete="email" autoFocus style={{ fontSize: '1rem' }} />
+                        </div>
+                        <button type="submit" className="btn-primary" disabled={loading} style={{ width:'100%', fontSize:'1rem' }}>
+                            {loading ? 'Enviando…' : '📩  Enviarme el enlace'}
+                        </button>
+                    </form>
+                </>
+            )}
+        </ScreenAuthPublic>
+    );
+}
+
+
+// ── Screen: Nueva contraseña (desde el enlace del correo) ──
+function ScreenNuevaContrasena() {
+    const { useState } = React;
+    const token = new URLSearchParams(window.location.search).get('token') || '';
+    const [password, setPassword] = useState('');
+    const [showPw, setShowPw]     = useState(false);
+    const [error, setError]       = useState('');
+    const [hecho, setHecho]       = useState(false);
+    const [loading, setLoading]   = useState(false);
+
+    const submit = async (e) => {
+        e.preventDefault();
+        if (password.length < 8) { setError('La contraseña debe tener al menos 8 caracteres'); return; }
+        setLoading(true); setError('');
+        try {
+            const res = await fetch('/api/auth/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token, password }),
+                credentials: 'include',
+            });
+            const data = await res.json();
+            if (!res.ok) { setError(data.error || 'No se pudo cambiar la contraseña'); }
+            else { setHecho(true); }
+        } catch { setError('Error de conexión.'); }
+        finally { setLoading(false); }
+    };
+
+    return (
+        <ScreenAuthPublic titulo="Nueva contraseña">
+            {hecho ? (
+                <div style={{ background:'rgba(0,105,76,0.08)', border:'1px solid rgba(0,105,76,0.20)', borderRadius:'var(--radius-lg)', padding:'18px 20px', fontSize:'0.9rem', color:'var(--on-background)', lineHeight:1.6 }}>
+                    ✅ Contraseña cambiada. Ya puedes <a href="/" style={{ color:'var(--primary)', fontWeight:700 }}>iniciar sesión</a> con la nueva.
+                </div>
+            ) : !token ? (
+                <div style={{ background:'rgba(153,63,58,0.10)', border:'1px solid rgba(153,63,58,0.20)', borderRadius:'var(--radius-lg)', padding:'14px 18px', fontSize:'0.88rem', color:'var(--tertiary)', fontWeight:600 }}>
+                    ⚠️ Enlace incompleto. Vuelve a pedir el correo de recuperación.
+                </div>
+            ) : (
+                <>
+                    <p style={{ fontSize: '0.88rem', color: 'var(--on-surface-variant)', margin: '0 0 22px', lineHeight:1.6 }}>
+                        Escribe tu contraseña nueva (mínimo 8 caracteres).
+                    </p>
+                    <form onSubmit={submit} style={{ display:'flex', flexDirection:'column', gap: 16 }}>
+                        <div>
+                            <label className="field-label">Nueva contraseña</label>
+                            <div style={{ position: 'relative' }}>
+                                <input className="input-field" type={showPw ? 'text' : 'password'}
+                                    placeholder="••••••••" value={password}
+                                    onChange={e => { setPassword(e.target.value); setError(''); }}
+                                    autoComplete="new-password" autoFocus style={{ fontSize: '1rem', paddingRight: 48 }} />
+                                <button type="button" onClick={() => setShowPw(s => !s)} style={{
+                                    position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
+                                    background: 'none', border: 'none', cursor: 'pointer',
+                                    fontSize: 18, color: 'var(--outline)', padding: 4,
+                                }}>{showPw ? '🙈' : '👁'}</button>
+                            </div>
+                        </div>
+                        {error && <div style={{ background:'rgba(153,63,58,0.10)', border:'1px solid rgba(153,63,58,0.20)', borderRadius:'var(--radius-lg)', padding:'12px 16px', fontSize:'0.85rem', color:'var(--tertiary)', fontWeight:600 }}>⚠️ {error}</div>}
+                        <button type="submit" className="btn-primary" disabled={loading} style={{ width:'100%', fontSize:'1rem' }}>
+                            {loading ? 'Guardando…' : '🔒  Guardar contraseña'}
+                        </button>
+                    </form>
+                </>
+            )}
+        </ScreenAuthPublic>
+    );
+}
+
+
+// ── Screen: Verificación de correo (consume el token al abrir el enlace) ──
+function ScreenVerificar() {
+    const { useState, useEffect } = React;
+    const [estado, setEstado] = useState('verificando'); // verificando | ok | error
+
+    useEffect(() => {
+        const token = new URLSearchParams(window.location.search).get('token') || '';
+        if (!token) { setEstado('error'); return; }
+        fetch('/api/auth/verify-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token }),
+            credentials: 'include',
+        })
+            .then(r => setEstado(r.ok ? 'ok' : 'error'))
+            .catch(() => setEstado('error'));
+    }, []);
+
+    return (
+        <ScreenAuthPublic titulo="Verificar correo">
+            {estado === 'verificando' && (
+                <p style={{ textAlign:'center', color:'var(--on-surface-variant)', fontSize:'0.9rem' }}>Verificando…</p>
+            )}
+            {estado === 'ok' && (
+                <div style={{ background:'rgba(0,105,76,0.08)', border:'1px solid rgba(0,105,76,0.20)', borderRadius:'var(--radius-lg)', padding:'18px 20px', fontSize:'0.9rem', color:'var(--on-background)', lineHeight:1.6 }}>
+                    ✅ Correo verificado. Gracias. Ya puedes <a href="/" style={{ color:'var(--primary)', fontWeight:700 }}>entrar al cuaderno</a>.
+                </div>
+            )}
+            {estado === 'error' && (
+                <div style={{ background:'rgba(153,63,58,0.10)', border:'1px solid rgba(153,63,58,0.20)', borderRadius:'var(--radius-lg)', padding:'14px 18px', fontSize:'0.88rem', color:'var(--tertiary)', fontWeight:600 }}>
+                    ⚠️ El enlace no es válido o ya ha caducado. No pasa nada: puedes seguir usando la app igualmente.
+                </div>
+            )}
+        </ScreenAuthPublic>
     );
 }

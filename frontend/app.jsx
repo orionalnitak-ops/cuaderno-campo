@@ -224,6 +224,7 @@ function App() {
     const [isOnline, setIsOnline]         = useState(navigator.onLine);
     const [pendingCount, setPendingCount] = useState(0);
     const [syncing, setSyncing]           = useState(false);
+    const [emailBannerCerrado, setEmailBannerCerrado] = useState(() => sessionStorage.getItem('email_banner_cerrado') === '1');
 
     // ── Multi-explotación ──
     const [explotaciones, setExplotaciones] = useState([]);
@@ -449,6 +450,13 @@ function App() {
         setShowModules(false);
     };
 
+    // ── Páginas públicas de correo (enlaces desde Resend) ──
+    // No dependen de la sesión: se resuelven por la URL antes que nada.
+    const _path = window.location.pathname;
+    if (_path === '/recuperar')        return <ScreenRecuperar />;
+    if (_path === '/nueva-contrasena') return <ScreenNuevaContrasena />;
+    if (_path === '/verificar')        return <ScreenVerificar />;
+
     // ── Loading ──
     if (authState === 'loading') {
         return (
@@ -568,6 +576,25 @@ function App() {
                     <button onClick={handleManualSync} disabled={syncing}>
                         {syncing ? 'Subiendo...' : 'Sincronizar'}
                     </button>
+                </div>
+            )}
+
+            {/* ── Aviso suave "verifica tu correo" — NO bloquea nada ── */}
+            {!isAdmin && currentUser?.email_verified === false && !emailBannerCerrado && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, zIndex: 200,
+                    background: 'linear-gradient(135deg, #b45309, #d97706)',
+                    color: '#fff', padding: '9px 16px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    gap: 12, fontSize: '0.8rem', fontWeight: 600,
+                }}>
+                    <span>✉️ Verifica tu correo con el enlace que te enviamos al registrarte.</span>
+                    <button onClick={() => { sessionStorage.setItem('email_banner_cerrado', '1'); setEmailBannerCerrado(true); }} style={{
+                        background: 'rgba(255,255,255,0.20)', border: 'none',
+                        borderRadius: 'var(--radius-full)', width: 24, height: 24,
+                        color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem',
+                        lineHeight: 1, flexShrink: 0,
+                    }} aria-label="Cerrar aviso">×</button>
                 </div>
             )}
 
