@@ -49,7 +49,7 @@ def test_registro_crea_cuenta_aunque_el_correo_falle():
     email_service.send_verificacion_bienvenida = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("resend caído"))
     with app_mod.app.test_request_context('/api/auth/register', method='POST',
             json={'nombre': 'Juan', 'email': 'juan@campo.es', 'password': 'clave1234'}):
-        resp = authbp.auth_register()
+        authbp.auth_register()
     fila = conn.execute("SELECT email, email_verified FROM users WHERE email=?", ('juan@campo.es',)).fetchone()
     check("la cuenta se crea igual", fila is not None)
     check("email_verified arranca a 0", fila['email_verified'] == 0)
@@ -74,7 +74,7 @@ def test_verify_email_marca_verificado_y_no_repite():
     import email_tokens
     tok = email_tokens.crear_token(conn, 5, 'verify', ttl_horas=168); conn.commit()
     with app_mod.app.test_request_context('/api/auth/verify-email', method='POST', json={'token': tok}):
-        resp = authbp.auth_verify_email()
+        authbp.auth_verify_email()
     fila = conn.execute("SELECT email_verified FROM users WHERE id=5").fetchone()
     check("queda verificado", fila['email_verified'] == 1)
     with app_mod.app.test_request_context('/api/auth/verify-email', method='POST', json={'token': tok}):
@@ -97,7 +97,7 @@ def test_forgot_password_envia_si_existe():
     llamadas = []
     email_service.send_password_reset = lambda user, token: llamadas.append((user['email'], token)) or True
     with app_mod.app.test_request_context('/api/auth/forgot-password', method='POST', json={'email': 'r@campo.es'}):
-        resp = authbp.auth_forgot_password()
+        authbp.auth_forgot_password()
     check("se envió el reset", len(llamadas) == 1 and llamadas[0][0] == 'r@campo.es')
     tok = conn.execute("SELECT token FROM email_tokens WHERE tipo='reset'").fetchone()
     check("se creó token reset", tok is not None)
@@ -123,7 +123,7 @@ def test_reset_password_cambia_el_hash():
     tok = email_tokens.crear_token(conn, 9, 'reset', ttl_horas=1); conn.commit()
     with app_mod.app.test_request_context('/api/auth/reset-password', method='POST',
             json={'token': tok, 'password': 'nuevaclave1'}):
-        resp = authbp.auth_reset_password()
+        authbp.auth_reset_password()
     fila = conn.execute("SELECT password_hash FROM users WHERE id=9").fetchone()
     check("la contraseña nueva valida", bcrypt.checkpw(b'nuevaclave1', fila['password_hash'].encode('utf-8')))
 

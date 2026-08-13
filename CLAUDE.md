@@ -193,7 +193,7 @@ Resumen rápido: 🔴 Stripe live · 🔴 SIEX (deadline 01/01/2027) · 🟠 Ema
 - **Hosting app (Flask):** VPS propio, la app corre en Docker detrás de un panel de despliegue
 - **Base de datos (Postgres):** servicio gestionado externo — conexión `psycopg2` vía `DATABASE_URL`, sin SDK. App y BD están en sitios distintos.
 - **Deploy:** push a `main` → webhook → se reconstruye la imagen Docker y se reinicia
-- **Variables de entorno necesarias:** `DATABASE_URL`, `SECRET_KEY`, `REDIS_URL`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `ALLOWED_ORIGINS`
+- **Variables de entorno necesarias:** `DATABASE_URL`, `SECRET_KEY`, `REDIS_URL`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `ALLOWED_ORIGINS`, `RESEND_API_KEY`, `EMAIL_FROM`, `PUBLIC_BASE_URL`
 
 > Los datos concretos (IP del servidor, proveedores, URL del webhook, credenciales del panel) **no van en el repo**: ver la política más abajo.
 
