@@ -1000,6 +1000,13 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
                                     {syncingAll ? `⏳ ${syncProgress}` : '⟳ SIGPAC'}
                                 </button>
                             )}
+                            <button
+                                onClick={() => onNavigate && onNavigate('inicio', 'importar-parcelas')}
+                                style={{ padding:'10px 12px', fontSize:'0.78rem', fontWeight:700,
+                                    background:'#0369a1', color:'#fff', border:'none', borderRadius:10, cursor:'pointer' }}
+                            >
+                                📊 Importar
+                            </button>
                             <button className="btn-primary" style={{ padding:'10px 14px', fontSize:'0.82rem' }} onClick={openNew}>
                                 + Nueva
                             </button>

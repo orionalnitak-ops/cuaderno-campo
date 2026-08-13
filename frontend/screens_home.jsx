@@ -30,7 +30,7 @@ function _wxDiaLabel(fechaStr) {
     return d.toLocaleDateString('es-ES', { weekday:'short', day:'numeric', month:'short' });
 }
 
-function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
+function ScreenHome({ campana, onOpenForm, showToast, onNavigate, initialView }) {
     const { useState, useEffect, useCallback } = React;
 
     // ── Estado principal ──
@@ -60,6 +60,14 @@ function ScreenHome({ campana, onOpenForm, showToast, onNavigate }) {
     const [gsheetUrl, setGsheetUrl]             = useState('');
     const [gsheetActivo, setGsheetActivo]       = useState(false);
     const fileRef = React.useRef(null);
+
+    // Acceso directo a la importación desde el menú Parcelas (botón "📊 Importar").
+    React.useEffect(() => {
+        if (initialView === 'importar-parcelas') {
+            setModalOpcion('tu');
+            setTuSubView('parcelas');
+        }
+    }, [initialView]);
 
     // ── Alertas IA ──
     const [iaAlertas, setIaAlertas] = useState([]);
@@ -1205,16 +1213,17 @@ function NlpFila({ icono, label, valor, badge, alerta }) {
 const S = {
     backBtn: {
         display: 'inline-flex', alignItems: 'center', gap: 6,
-        background: 'var(--surface-container-low)',
-        border: '1.5px solid var(--outline-variant)',
+        background: 'var(--primary)',
+        border: 'none',
         borderRadius: 100,
-        color: 'var(--on-surface)',
-        fontSize: '0.9rem', fontWeight: 700,
+        color: '#fff',
+        fontSize: '0.95rem', fontWeight: 800,
         cursor: 'pointer',
-        padding: '10px 18px',
+        padding: '12px 22px',
         marginBottom: 20,
         fontFamily: 'var(--font-body)',
-        minHeight: 44,
+        minHeight: 48,
+        boxShadow: '0 3px 12px rgba(0,105,76,0.30)',
     },
     btn: {
         border: 'none', borderRadius: 'var(--radius-lg)', padding: '14px 20px',

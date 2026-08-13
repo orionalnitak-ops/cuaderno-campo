@@ -48,6 +48,11 @@ const HELP_SCREENS = {
                 desc: 'Pulsa el botón "+ Nueva parcela" para añadir una. Necesitas la referencia SIGPAC: provincia, municipio, polígono, parcela y recinto.',
             },
             {
+                icon: '📊',
+                title: 'Importar desde Excel',
+                desc: 'Si ya tienes tus parcelas en una hoja de cálculo, pulsa "📊 Importar" en la barra de arriba para subirlas todas de una vez, sin escribirlas a mano. Al abrirlo verás la guía "¿Cómo preparar tu hoja de cálculo?" con las columnas que necesita el archivo.',
+            },
+            {
                 icon: '🔍',
                 title: 'Buscar en SIGPAC',
                 desc: 'Dentro del formulario hay un buscador que conecta con el SIGPAC oficial. Selecciona provincia, municipio, polígono y parcela de los desplegables.',
@@ -158,7 +163,7 @@ const HELP_SCREENS = {
             {
                 icon: '🏷️',
                 title: 'Nombre corto',
-                desc: 'En los datos de cada explotación puedes ponerle un "nombre corto" (ej: "Emilio", "Robert"…). Es la etiqueta que aparece en el selector para distinguirlas de un vistazo.',
+                desc: 'En los datos de cada explotación puedes ponerle un "nombre corto" (ej: "Juan", "Dolores"…). Es la etiqueta que aparece en el selector para distinguirlas de un vistazo.',
             },
             {
                 icon: '⭐',

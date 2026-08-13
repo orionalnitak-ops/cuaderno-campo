@@ -61,7 +61,7 @@ function NuevaExplotacionModal({ onClose, onCreated, onUpsell, showToast }) {
                 </p>
                 <div style={{ marginBottom:14 }}>
                     <label className="field-label">Nombre corto (para el selector)</label>
-                    <input className="input-field" value={nombreCorto} placeholder="Ej: Emilio, Robert, Lourdes…"
+                    <input className="input-field" value={nombreCorto} placeholder="Ej: Juan, Dolores, Francisco…"
                         onChange={e => setNombreCorto(e.target.value)} />
                 </div>
                 <div style={{ marginBottom:14 }}>
@@ -519,7 +519,7 @@ function App() {
 
     const renderScreen = () => {
         switch (screen) {
-            case 'inicio':    return <ScreenHome key={homeKey} campana={campana} onOpenForm={openForm} showToast={showMsg} onNavigate={navigate} />;
+            case 'inicio':    return <ScreenHome key={homeKey} campana={campana} onOpenForm={openForm} showToast={showMsg} onNavigate={navigate} initialView={screenArg} />;
             case 'parcelas':  return <ScreenParcelas campana={campana} showToast={showMsg} onNavigate={navigate} />;
             case 'historial': return <ScreenHistorial key={historialKey} campana={campana} onEdit={openForm} showToast={showMsg} />;
             case 'mas':       return <ScreenSettings  key={screenArg || 'mas'} campana={campana} onCampana={setCampana} showToast={showMsg} currentUser={currentUser} onLogout={handleLogout} onNavigate={navigate} initialSection={screenArg} />;
