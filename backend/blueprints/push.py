@@ -2,6 +2,7 @@
 blueprints/push.py — /api/push/*
 Web Push Notifications (VAPID) para alertas meteorológicas AEMET.
 """
+import datetime
 import hashlib
 import json
 import logging
@@ -11,6 +12,7 @@ from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
 
 from db import get_db, one, dicts
+import email_service
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('push', __name__)
@@ -109,6 +111,46 @@ def _send_push(sub: dict, payload: dict) -> bool:
 def _alertas_hash(alertas: list) -> str:
     txt = json.dumps(alertas, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(txt.encode()).hexdigest()[:16]
+
+
+def avisar_fin_de_trial():
+    """Avisa por correo a los trials que acaban en <=2 días y no fueron avisados.
+    Marca trial_reminder_sent=1. Devuelve cuántos avisó. Aislada del scheduler
+    para poder testearla sin APScheduler.
+
+    Comparar trial_ends_at <= ? como texto funciona porque las fechas están en
+    formato 'YYYY-MM-DD HH:MM:SS' (orden lexicográfico = cronológico)."""
+    limite = (datetime.datetime.utcnow() + datetime.timedelta(days=2)).strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_db()
+    pendientes = dicts(conn,
+        "SELECT id, email, nombre FROM users "
+        "WHERE plan='trial' AND trial_reminder_sent=0 "
+        "AND trial_ends_at IS NOT NULL AND trial_ends_at <= ?", (limite,))
+    enviados = 0
+    for u in pendientes:
+        try:
+            email_service.send_trial_ending({'email': u['email'], 'nombre': u['nombre']})
+        except Exception as e:
+            logger.error("Aviso de trial falló para %s: %s", u['email'], e)
+        conn.execute("UPDATE users SET trial_reminder_sent=1 WHERE id=?", (u['id'],))
+        enviados += 1
+    conn.commit(); conn.close()
+    return enviados
+
+
+def job_avisar_fin_de_trial():
+    """Job diario del scheduler. Redis SETNX evita que varios workers Gunicorn
+    envíen el mismo aviso por duplicado, igual que el job de alertas push."""
+    redis_url = os.environ.get('REDIS_URL')
+    if redis_url:
+        try:
+            import redis as _redis
+            r = _redis.from_url(redis_url, socket_connect_timeout=2)
+            if not r.set('cuaderno:trial_reminder_lock', '1', ex=23 * 3600, nx=True):
+                return  # otro worker ya lo ejecuta hoy
+        except Exception:
+            pass  # sin Redis → seguimos (OK en dev single-worker)
+    avisar_fin_de_trial()
 
 
 def job_check_push_alertas():
