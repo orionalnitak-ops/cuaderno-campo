@@ -139,11 +139,18 @@ def auth_me():
     # esto si enseña el aviso. Mandar la fecha exacta de un impago sería un dato
     # financiero viajando en cada sesión sin que nadie lo use.
     pago_fallido = bool(current_user.pago_fallido_desde)
+    # Flag para el aviso suave "verifica tu correo". Se lee de BD porque el modelo
+    # User no lo carga; no condiciona el acceso, solo si se muestra el banner.
+    conn = get_db()
+    row = one(conn, "SELECT email_verified FROM users WHERE id=?", (current_user.id,))
+    conn.close()
+    email_verified = bool(row and row.get('email_verified'))
     return jsonify({
         "id": current_user.id,
         "email": current_user.email,
         "nombre": current_user.nombre,
         "role": current_user.role,
+        "email_verified": email_verified,
         "impersonating": imp_info,
         "plan": current_user.plan_label(),
         "plan_raw": current_user.plan,
