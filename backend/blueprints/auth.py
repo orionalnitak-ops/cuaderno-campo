@@ -177,6 +177,58 @@ def auth_change_password():
     return jsonify({"status": "ok"})
 
 
+@bp.route('/api/auth/verify-email', methods=['POST'])
+@limiter.limit("10 per minute")
+def auth_verify_email():
+    token = ((request.json or {}).get('token') or '').strip()
+    conn = get_db()
+    uid = consumir_token(conn, token, 'verify')
+    if not uid:
+        conn.close()
+        return jsonify({"error": "Enlace no válido o caducado"}), 400
+    conn.execute("UPDATE users SET email_verified=1 WHERE id=?", (uid,))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True})
+
+
+@bp.route('/api/auth/forgot-password', methods=['POST'])
+@limiter.limit("5 per minute")
+def auth_forgot_password():
+    email = ((request.json or {}).get('email') or '').strip().lower()
+    conn = get_db()
+    u = one(conn, "SELECT id, email, nombre FROM users WHERE email=? AND active=1", (email,))
+    if u:
+        token = crear_token(conn, u['id'], 'reset', ttl_horas=1)
+        conn.commit()
+        try:
+            email_service.send_password_reset({'email': u['email'], 'nombre': u['nombre']}, token)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Correo de reset falló para %s: %s", email, e)
+    conn.close()
+    # Respuesta idéntica exista o no el email: no se filtra quién está registrado.
+    return jsonify({"ok": True})
+
+
+@bp.route('/api/auth/reset-password', methods=['POST'])
+@limiter.limit("5 per minute")
+def auth_reset_password():
+    data = request.json or {}
+    token = (data.get('token') or '').strip()
+    new_pw = (data.get('password') or '')
+    if len(new_pw) < 8:
+        return jsonify({"error": "La contraseña debe tener al menos 8 caracteres"}), 400
+    conn = get_db()
+    uid = consumir_token(conn, token, 'reset')
+    if not uid:
+        conn.close()
+        return jsonify({"error": "Enlace no válido o caducado"}), 400
+    new_hash = bcrypt.hashpw(new_pw.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    conn.execute("UPDATE users SET password_hash=? WHERE id=?", (new_hash, uid))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True})
+
+
 @bp.route('/api/account/export-data', methods=['GET'])
 @login_required
 def account_export_data():
