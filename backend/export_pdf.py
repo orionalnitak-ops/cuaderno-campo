@@ -109,6 +109,24 @@ def _yesno(val):
     return 'Sí' if val else 'No'
 
 
+# Etiqueta legible del motivo por el que un producto no lleva nº de registro MAPA.
+# Sustancias básicas y autorizaciones excepcionales (Reg. UE 1107/2009) no se
+# inscriben en el Registro de Fitosanitarios.
+_MOTIVO_SIN_REGISTRO = {
+    'sustancia_basica':        'Sin registro (sustancia básica)',
+    'autorizacion_excepcional': 'Sin registro (autoriz. excepcional)',
+}
+
+
+def _num_registro(r):
+    """Nº de registro MAPA para el PDF, o el motivo si el producto no tiene registro.
+    Así una fila de caolín no sale con la casilla en blanco ante el inspector."""
+    num = r.get('num_registro_mapa')
+    if num:
+        return num
+    return _MOTIVO_SIN_REGISTRO.get(r.get('motivo_sin_registro'), num)
+
+
 def _asesor_text(r):
     """Texto del asesor para la fila de trazabilidad.
 
@@ -332,7 +350,7 @@ def _trat_table(rows, styles):
             Paragraph(_fmt_date(r.get('fecha_aplicacion')), s['table_cell']),
             Paragraph(_v(r.get('nombre_finca') or r.get('parcela_etiqueta')), s['table_cell']),
             Paragraph(_v(r.get('producto_comercial')), s['table_cell']),
-            Paragraph(_v(r.get('num_registro_mapa')), s['table_cell']),
+            Paragraph(_v(_num_registro(r)), s['table_cell']),
             Paragraph(_v(r.get('sustancia_activa')), s['table_cell']),
             Paragraph(_v(r.get('plaga_objetivo')), s['table_cell']),
             Paragraph(dosis, s['table_cell']),
@@ -750,7 +768,7 @@ def _section_compras(conn, user_id, campana, styles, story, explotacion_id=None)
             _fmt_date(r.get('fecha')),
             _v(r.get('tipo_producto')),
             _v(r.get('producto')),
-            _v(r.get('num_registro_mapa')),
+            _v(_num_registro(r)),
             _v(r.get('sustancia_activa')),
             _v(r.get('proveedor')),
             cant,

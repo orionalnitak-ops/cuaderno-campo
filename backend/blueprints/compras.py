@@ -14,6 +14,11 @@ bp = Blueprint('compras', __name__)
 
 SIN_EXPLOTACION = "No tienes ninguna explotación creada"
 
+# Sustancias básicas y autorizaciones excepcionales no se inscriben en el Registro
+# de Fitosanitarios (Reg. UE 1107/2009): no tienen nº de registro MAPA. Mismo criterio
+# que en tratamientos.py; se guarda el motivo para mantener la trazabilidad.
+MOTIVOS_SIN_REGISTRO = {'sustancia_basica', 'autorizacion_excepcional'}
+
 
 def _validate_campana(campana):
     """Valida que la campaña tenga formato YYYY/YYYY con años consecutivos."""
@@ -38,10 +43,14 @@ def _validate_compra(data):
     if missing:
         return f"Campos obligatorios: {', '.join(missing)}"
     if data.get('tipo_producto') == 'fitosanitario':
-        fito_required = {
-            'num_registro_mapa': 'Nº de registro MAPA',
-            'sustancia_activa':  'Sustancia activa',
-        }
+        motivo = str(data.get('motivo_sin_registro', '') or '').strip()
+        if motivo and motivo not in MOTIVOS_SIN_REGISTRO:
+            return "Motivo de ausencia de nº de registro no válido"
+        # El nº de registro se exige salvo motivo válido (sustancia básica /
+        # autorización excepcional). La sustancia activa siempre.
+        fito_required = {'sustancia_activa': 'Sustancia activa'}
+        if not motivo:
+            fito_required['num_registro_mapa'] = 'Nº de registro MAPA'
         missing_fito = [label for field, label in fito_required.items() if not data.get(field)]
         if missing_fito:
             return f"Obligatorio para fitosanitarios (RD 1311/2012 Anexo III S5): {', '.join(missing_fito)}"
@@ -84,14 +93,15 @@ def manage_compras():
     c.execute('''
         INSERT INTO compras (user_id, explotacion_id, fecha, tipo_producto, producto, num_registro_mapa,
             sustancia_activa, proveedor, cantidad_valor, cantidad_unidad, num_lote,
-            num_factura, precio_total, campana, notas)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            num_factura, precio_total, campana, notas, motivo_sin_registro)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (uid, exp_id, data.get('fecha'), data.get('tipo_producto'), data.get('producto'),
           data.get('num_registro_mapa'), data.get('sustancia_activa'),
           data.get('proveedor'), _to_real(data.get('cantidad_valor')),
           data.get('cantidad_unidad', 'kg'), data.get('num_lote'),
           data.get('num_factura'), _to_real(data.get('precio_total')),
-          data.get('campana', '2025/2026'), data.get('notas')))
+          data.get('campana', '2025/2026'), data.get('notas'),
+          data.get('motivo_sin_registro') or None))
     conn.commit(); new_id = c.lastrowid; conn.close()
     _recalcular_patrones(uid, 'compras', None, data.get('fecha'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201
@@ -120,7 +130,7 @@ def manage_compra(cid):
         return jsonify({"error": err}), 400
     fields = ['fecha', 'tipo_producto', 'producto', 'num_registro_mapa', 'sustancia_activa',
               'proveedor', 'cantidad_valor', 'cantidad_unidad', 'num_lote', 'num_factura',
-              'precio_total', 'campana', 'notas']
+              'precio_total', 'campana', 'notas', 'motivo_sin_registro']
     sets = ', '.join(f"{f}=?" for f in fields)
     _real_co = {'cantidad_valor', 'precio_total'}
     conn.execute(f"UPDATE compras SET {sets}"

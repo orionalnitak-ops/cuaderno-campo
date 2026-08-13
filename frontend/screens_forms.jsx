@@ -310,6 +310,7 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
         fecha_aplicacion:         record?.fecha_aplicacion || today,
         producto_comercial:       record?.producto_comercial || '',
         num_registro_mapa:        record?.num_registro_mapa || '',
+        motivo_sin_registro:      record?.motivo_sin_registro || '',
         sustancia_activa:         record?.sustancia_activa || '',
         plaga_objetivo:           record?.plaga_objetivo || '',
         dosis_valor:              record?.dosis_valor || '',
@@ -460,7 +461,7 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
 
     const save = async () => {
         if ((!f.parcela_id && !f.uhc_id) || !f.fecha_aplicacion || !f.aplicador_id || !f.producto_comercial ||
-            !f.plaga_objetivo || !f.sustancia_activa || !f.num_registro_mapa || !f.dosis_valor ||
+            !f.plaga_objetivo || !f.sustancia_activa || (!f.num_registro_mapa && !f.motivo_sin_registro) || !f.dosis_valor ||
             !f.equipo_id || !f.plazo_seguridad_dias) {
             alert('Rellena todos los campos obligatorios (marcados con *)'); return;
         }
@@ -543,9 +544,27 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                         onConfirm={v => set('sustancia_activa', v)} />
                     <SugChip campo="sustancia_activa" sugerencias={sugerencias} valorActual={f.sustancia_activa} />
                 </FieldGroup>
-                <FieldGroup label="Nº Registro MAPA *">
-                    <ZoomInput label="Nº Registro MAPA" value={f.num_registro_mapa} placeholder="ES-00000-0"
-                        onConfirm={v => set('num_registro_mapa', v)} />
+                <FieldGroup label={f.motivo_sin_registro ? 'Nº Registro MAPA' : 'Nº Registro MAPA *'}>
+                    {!f.motivo_sin_registro && (
+                        <ZoomInput label="Nº Registro MAPA" value={f.num_registro_mapa} placeholder="ES-00000-0"
+                            onConfirm={v => set('num_registro_mapa', v)} />
+                    )}
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 6,
+                        fontSize: '0.82rem', color: '#374151', cursor: 'pointer', lineHeight: 1.35 }}>
+                        <input type="checkbox" checked={!!f.motivo_sin_registro} style={{ marginTop: 2, minWidth: 16, minHeight: 16 }}
+                            onChange={e => {
+                                if (e.target.checked) { set('motivo_sin_registro', 'sustancia_basica'); set('num_registro_mapa', ''); }
+                                else set('motivo_sin_registro', '');
+                            }} />
+                        Este producto no tiene nº de registro (sustancia básica o autorización excepcional)
+                    </label>
+                    {f.motivo_sin_registro && (
+                        <select className="input-field" style={{ marginTop: 8 }} value={f.motivo_sin_registro}
+                            onChange={e => set('motivo_sin_registro', e.target.value)}>
+                            <option value="sustancia_basica">Sustancia básica (caolín, vinagre, bicarbonato…)</option>
+                            <option value="autorizacion_excepcional">Autorización excepcional (art. 53)</option>
+                        </select>
+                    )}
                 </FieldGroup>
             </div>
             <FieldGroup label="Dosis *">
@@ -1325,6 +1344,7 @@ function FormCompra({ record, campana, onClose, isEdit }) {
         tipo_producto:     record?.tipo_producto     || '',
         producto:          record?.producto          || '',
         num_registro_mapa: record?.num_registro_mapa || '',
+        motivo_sin_registro: record?.motivo_sin_registro || '',
         sustancia_activa:  record?.sustancia_activa  || '',
         proveedor:         record?.proveedor         || '',
         cantidad_valor:    record?.cantidad_valor    || '',
@@ -1421,10 +1441,28 @@ function FormCompra({ record, campana, onClose, isEdit }) {
                     padding: '8px 12px', marginBottom: 12, fontSize: '0.8rem', color: '#92400e' }}>
                     ⚖️ Campos obligatorios por ley para fitosanitarios (RD 1311/2012 Anexo III S5)
                 </div>
-                <FieldGroup label="Nº de registro MAPA *">
-                    <ZoomInput label="Nº de registro MAPA" value={f.num_registro_mapa}
-                        placeholder="ES-XXXXX-X"
-                        onConfirm={v => set('num_registro_mapa', v)} />
+                <FieldGroup label={f.motivo_sin_registro ? 'Nº de registro MAPA' : 'Nº de registro MAPA *'}>
+                    {!f.motivo_sin_registro && (
+                        <ZoomInput label="Nº de registro MAPA" value={f.num_registro_mapa}
+                            placeholder="ES-XXXXX-X"
+                            onConfirm={v => set('num_registro_mapa', v)} />
+                    )}
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 6,
+                        fontSize: '0.82rem', color: '#374151', cursor: 'pointer', lineHeight: 1.35 }}>
+                        <input type="checkbox" checked={!!f.motivo_sin_registro} style={{ marginTop: 2, minWidth: 16, minHeight: 16 }}
+                            onChange={e => {
+                                if (e.target.checked) { set('motivo_sin_registro', 'sustancia_basica'); set('num_registro_mapa', ''); }
+                                else set('motivo_sin_registro', '');
+                            }} />
+                        Este producto no tiene nº de registro (sustancia básica o autorización excepcional)
+                    </label>
+                    {f.motivo_sin_registro && (
+                        <select className="input-field" style={{ marginTop: 8 }} value={f.motivo_sin_registro}
+                            onChange={e => set('motivo_sin_registro', e.target.value)}>
+                            <option value="sustancia_basica">Sustancia básica (caolín, vinagre, bicarbonato…)</option>
+                            <option value="autorizacion_excepcional">Autorización excepcional (art. 53)</option>
+                        </select>
+                    )}
                 </FieldGroup>
                 <FieldGroup label="Sustancia activa *">
                     <ZoomInput label="Sustancia activa" value={f.sustancia_activa}

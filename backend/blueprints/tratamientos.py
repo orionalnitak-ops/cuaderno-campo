@@ -25,6 +25,12 @@ bp = Blueprint('tratamientos', __name__)
 
 SIN_EXPLOTACION = "No tienes ninguna explotación creada"
 
+# Productos legalmente usables que NO se inscriben en el Registro de Fitosanitarios
+# y por tanto no tienen nº de registro MAPA (Reg. UE 1107/2009). Cuando el agricultor
+# marca uno de estos motivos, el nº de registro deja de exigirse pero se guarda la
+# razón para que el cuaderno siga siendo defendible en inspección y compatible con SIEX.
+MOTIVOS_SIN_REGISTRO = {'sustancia_basica', 'autorizacion_excepcional'}
+
 
 # ─────────────────────────────────────────────
 # VALIDADORES RD 1311/2012
@@ -45,7 +51,6 @@ def _validate_tratamiento(data):
     required = {
         'fecha_aplicacion':    'Fecha de aplicación',
         'producto_comercial':  'Producto comercial',
-        'num_registro_mapa':   'Nº Registro MAPA',
         'sustancia_activa':    'Sustancia activa',
         'plaga_objetivo':      'Plaga / enfermedad objetivo',
         'dosis_valor':         'Dosis',
@@ -54,6 +59,15 @@ def _validate_tratamiento(data):
         'plazo_seguridad_dias': 'Plazo de seguridad (días)',
     }
     missing = [label for field, label in required.items() if not data.get(field) and data.get(field) != 0]
+
+    # El nº de registro MAPA se exige salvo que se justifique su ausencia con un
+    # motivo válido (sustancia básica / autorización excepcional). El gate falla
+    # cerrado: sin número Y sin motivo válido, bloquea.
+    motivo = str(data.get('motivo_sin_registro', '') or '').strip()
+    if motivo and motivo not in MOTIVOS_SIN_REGISTRO:
+        return "Motivo de ausencia de nº de registro no válido"
+    if not motivo and not data.get('num_registro_mapa'):
+        missing.append('Nº Registro MAPA')
 
     if not data.get('parcela_id') and not data.get('uhc_id'):
         missing.append('Parcela SIGPAC o Grupo UHC (Anexo III S3)')
@@ -76,8 +90,9 @@ def _validate_tratamiento(data):
             return "La dosis debe ser mayor que cero"
     except (ValueError, TypeError):
         return "La dosis debe ser un número válido"
+    # Si se justificó la ausencia con un motivo válido, no hay número que validar.
     mapa = str(data.get('num_registro_mapa', '')).strip()
-    if not re.fullmatch(r'\d{4,6}(/\d+)?', mapa):
+    if not motivo and not re.fullmatch(r'\d{4,6}(/\d+)?', mapa):
         return "El Nº de Registro MAPA debe ser numérico (ej: 12345 o 12345/2)"
     return None
 
@@ -122,8 +137,8 @@ def _insert_tratamiento(c, uid, data, parcela_id, parcela_etiqueta, explotacion_
             plaga_objetivo, dosis_valor, dosis_unidad, volumen_caldo,
             equipo_id, condiciones_meteo, plazo_seguridad_dias,
             fecha_recoleccion_minima, eficacia, aplicador_id, notas, campana,
-            asesor, justificacion_actuacion, asesor_id
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            asesor, justificacion_actuacion, asesor_id, motivo_sin_registro
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
         uid, explotacion_id, parcela_id, parcela_etiqueta, data.get('fecha_aplicacion'),
         data.get('producto_comercial'), data.get('num_registro_mapa'), data.get('sustancia_activa'),
@@ -135,6 +150,7 @@ def _insert_tratamiento(c, uid, data, parcela_id, parcela_etiqueta, explotacion_
         data.get('campana', '2025/2026'),
         data.get('asesor'), data.get('justificacion_actuacion'),
         data.get('asesor_id') or None,
+        data.get('motivo_sin_registro') or None,
     ))
     return c.lastrowid
 
@@ -339,7 +355,7 @@ def manage_tratamiento(tid):
               'num_registro_mapa', 'sustancia_activa', 'plaga_objetivo', 'dosis_valor', 'dosis_unidad',
               'volumen_caldo', 'equipo_id', 'condiciones_meteo', 'plazo_seguridad_dias',
               'fecha_recoleccion_minima', 'eficacia', 'aplicador_id', 'notas', 'campana',
-              'asesor', 'justificacion_actuacion', 'asesor_id']
+              'asesor', 'justificacion_actuacion', 'asesor_id', 'motivo_sin_registro']
     sets = ', '.join(f"{f}=?" for f in fields)
     _real_t = {'dosis_valor', 'volumen_caldo'}
     _int_t  = {'equipo_id', 'plazo_seguridad_dias', 'aplicador_id', 'asesor_id'}

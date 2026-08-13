@@ -609,6 +609,7 @@ def init_db():
             precio_total REAL,
             campana TEXT DEFAULT '2025/2026',
             notas TEXT,
+            motivo_sin_registro TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             deleted_at TEXT
         )
@@ -618,7 +619,13 @@ def init_db():
         ('num_registro_mapa', 'TEXT'), ('sustancia_activa', 'TEXT'),
         ('proveedor', 'TEXT'), ('cantidad_valor', 'REAL'), ('cantidad_unidad', 'TEXT'),
         ('num_lote', 'TEXT'), ('num_factura', 'TEXT'), ('precio_total', 'REAL'),
-        ('campana', 'TEXT'), ('notas', 'TEXT'), ('deleted_at', 'TEXT'),
+        ('campana', 'TEXT'), ('notas', 'TEXT'),
+        # Motivo por el que el producto no tiene nº de registro MAPA: sustancias
+        # básicas (caolín, vinagre…) y autorizaciones excepcionales no se inscriben
+        # en el Registro de Fitosanitarios, así que num_registro_mapa va vacío y este
+        # campo justifica por qué. Vacío = el producto tiene nº de registro normal.
+        ('motivo_sin_registro', 'TEXT'),
+        ('deleted_at', 'TEXT'),
     ]:
         _add_col(c, 'compras', col, typ)
 
@@ -698,6 +705,7 @@ def init_db():
             aplicador_id INTEGER,
             notas TEXT,
             campana TEXT DEFAULT '2025/2026',
+            motivo_sin_registro TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -706,6 +714,9 @@ def init_db():
         ('parcela_id', 'INTEGER'), ('parcela_etiqueta', 'TEXT'),
         ('fecha_aplicacion', 'TEXT'), ('producto_comercial', 'TEXT'),
         ('num_registro_mapa', 'TEXT'), ('sustancia_activa', 'TEXT'),
+        # Ver nota en la tabla compras: justifica un num_registro_mapa vacío para
+        # sustancias básicas y autorizaciones excepcionales. Vacío = registro normal.
+        ('motivo_sin_registro', 'TEXT'),
         ('plaga_objetivo', 'TEXT'), ('dosis_valor', 'REAL'), ('dosis_unidad', 'TEXT'),
         ('volumen_caldo', 'REAL'), ('equipo_id', 'INTEGER'), ('condiciones_meteo', 'TEXT'),
         ('plazo_seguridad_dias', 'INTEGER'), ('fecha_recoleccion_minima', 'TEXT'),
