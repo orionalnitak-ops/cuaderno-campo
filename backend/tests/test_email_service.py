@@ -48,6 +48,51 @@ def test_status_no_2xx_devuelve_false():
     check("422 devuelve False", ok is False)
 
 
+def test_verificacion_bienvenida_lleva_enlace_con_token():
+    orig = email_service.send_email
+    enviados = []
+    email_service.send_email = lambda to, subject, html, reply_to=None: (
+        enviados.append((to, subject, html)), True)[1]
+    try:
+        ok = email_service.send_verificacion_bienvenida(
+            {'email': 'juan@campo.es', 'nombre': 'Juan'}, 'TOK123')
+    finally:
+        email_service.send_email = orig
+    check("devuelve True", ok is True)
+    to, subject, html = enviados[0]
+    check("va al agricultor", to == 'juan@campo.es')
+    check("enlace con base y token", 'https://cuaderno.tualiado.es/verificar?token=TOK123' in html)
+    check("saluda por su nombre", 'Juan' in html)
+
+
+def test_reset_lleva_enlace_de_nueva_contrasena():
+    orig = email_service.send_email
+    enviados = []
+    email_service.send_email = lambda to, subject, html, reply_to=None: (
+        enviados.append((to, subject, html)), True)[1]
+    try:
+        email_service.send_password_reset({'email': 'juan@campo.es', 'nombre': 'Juan'}, 'RST9')
+    finally:
+        email_service.send_email = orig
+    to, subject, html = enviados[0]
+    check("enlace de reset con token",
+          'https://cuaderno.tualiado.es/nueva-contrasena?token=RST9' in html)
+
+
+def test_trial_ending_menciona_la_prueba():
+    orig = email_service.send_email
+    enviados = []
+    email_service.send_email = lambda to, subject, html, reply_to=None: (
+        enviados.append((to, subject, html)), True)[1]
+    try:
+        email_service.send_trial_ending({'email': 'juan@campo.es', 'nombre': 'Juan'})
+    finally:
+        email_service.send_email = orig
+    to, subject, html = enviados[0]
+    check("va al agricultor", to == 'juan@campo.es')
+    check("apunta a planes", 'https://cuaderno.tualiado.es/#planes' in html)
+
+
 if __name__ == '__main__':
     print("\n== email_service: envío base ==\n")
     for nombre, fn in sorted(list(globals().items())):
