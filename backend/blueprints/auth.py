@@ -11,6 +11,8 @@ from flask_login import login_user, logout_user, login_required, current_user
 from db import get_db, one, dicts
 from extensions import User, limiter
 from helpers import get_uid
+from email_tokens import crear_token, consumir_token
+import email_service
 
 bp = Blueprint('auth', __name__)
 
@@ -75,6 +77,9 @@ def auth_register():
         new_id = c.lastrowid
         c.execute("INSERT INTO explotacion (user_id, campana_activa) VALUES (?,?)",
                   (new_id, '2025/2026'))
+        # Token de verificación (7 días). Va antes del commit para que entre en la
+        # misma transacción que el alta.
+        verify_token = crear_token(conn, new_id, 'verify', ttl_horas=168)
         conn.commit()
     except Exception as e:
         conn.close()
@@ -89,6 +94,13 @@ def auth_register():
                 u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'),
                 u.get('stripe_customer_id'), u.get('stripe_subscription_id'))
     login_user(user, remember=True)
+    # El correo NUNCA rompe el alta: si falla, se registra y el usuario entra igual.
+    try:
+        email_service.send_verificacion_bienvenida(
+            {'email': u['email'], 'nombre': u['nombre']}, verify_token)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("Correo de bienvenida falló para %s: %s", u['email'], e)
     te = user.trial_ends_at
     return jsonify({
         "id": user.id, "email": user.email, "nombre": user.nombre, "role": user.role,
