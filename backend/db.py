@@ -920,8 +920,29 @@ def init_db():
         ('pago_fallido_desde', 'TIMESTAMP'),
     ]:
         _add_col(c, 'users', col, typ)
+    # email_verified: aviso suave "verifica tu correo", NO bloquea el acceso.
+    _add_col(c, 'users', 'email_verified', 'INTEGER DEFAULT 0')
+    # trial_reminder_sent: que el job de fin de trial no avise dos veces.
+    _add_col(c, 'users', 'trial_reminder_sent', 'INTEGER DEFAULT 0')
     # Admin accounts never expire
     c.execute("UPDATE users SET plan='pro' WHERE role='admin' AND (plan='trial' OR plan IS NULL)")
+
+    # ── EMAILS TRANSACCIONALES: tokens de un solo uso (verify / reset) ──
+    # Una sola tabla para verificación y reset (mismo mecanismo, distinto `tipo`).
+    # Fechas como TIMESTAMP (igual que el resto del proyecto); se escriben con
+    # strftime y se leen igual en SQLite y Postgres (ver email_tokens.py).
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS email_tokens (
+            id {_PK},
+            token TEXT UNIQUE NOT NULL,
+            user_id INTEGER NOT NULL,
+            tipo TEXT NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            used_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    ''')
 
     # ── PUSH NOTIFICATIONS ──
     c.execute(f'''

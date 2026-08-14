@@ -290,10 +290,12 @@ def guard_active_plan():
 # ─────────────────────────────────────────────
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
-    from blueprints.push import job_check_push_alertas
+    from blueprints.push import job_check_push_alertas, job_avisar_fin_de_trial
     import atexit
     _scheduler = BackgroundScheduler(daemon=True)
     _scheduler.add_job(job_check_push_alertas, 'interval', minutes=30, id='push_alertas')
+    _scheduler.add_job(job_avisar_fin_de_trial, 'cron', hour=9, minute=0,
+                       id='avisar_fin_de_trial', replace_existing=True)
     _scheduler.start()
     atexit.register(lambda: _scheduler.shutdown(wait=False))
 except Exception as _sch_err:

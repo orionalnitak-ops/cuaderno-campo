@@ -3,6 +3,7 @@ extensions.py — Singletons de Flask que se inicializan con init_app().
 Importar desde aquí para evitar imports circulares entre blueprints y app.py.
 """
 import datetime
+import hashlib
 from flask import jsonify
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -157,7 +158,7 @@ def es_cuenta_cortesia(plan, stripe_customer_id, stripe_subscription_id):
 
 
 class User(UserMixin):
-    def __init__(self, id, email, nombre, role, active,
+    def __init__(self, id, email, nombre, role, active, password_hash='',
                  plan='trial', trial_ends_at=None, subscription_ends_at=None,
                  unlimited_explotaciones=0, pago_fallido_desde=None,
                  stripe_customer_id=None, stripe_subscription_id=None):
@@ -166,6 +167,10 @@ class User(UserMixin):
         self.nombre = nombre
         self.role = role
         self.active = active
+        # Deriva el id de sesión del hash de contraseña: si el hash cambia
+        # (reset de contraseña), la sesión guardada en la cookie deja de
+        # coincidir y Flask-Login cierra la sesión vieja sola.
+        self._session_token = hashlib.sha256((password_hash or '').encode('utf-8')).hexdigest()[:16]
         self.plan = plan
         self.trial_ends_at = trial_ends_at
         self.subscription_ends_at = subscription_ends_at
@@ -198,18 +203,30 @@ class User(UserMixin):
         """Nº máximo de explotaciones para este usuario, o None si ilimitado."""
         return explotaciones_limit(self.plan, self.role, self.unlimited_explotaciones)
 
+    def get_id(self):
+        """id + token derivado del password_hash: cambiar la contraseña
+        invalida automáticamente cualquier sesión anterior."""
+        return f"{self.id}:{self._session_token}"
+
 
 @login_manager.user_loader
 def load_user(user_id):
+    try:
+        raw_id, token = user_id.split(':', 1)
+    except ValueError:
+        return None
     conn = get_db()
-    u = one(conn, "SELECT * FROM users WHERE id=? AND active=1", (int(user_id),))
+    u = one(conn, "SELECT * FROM users WHERE id=? AND active=1", (int(raw_id),))
     conn.close()
     if not u:
         return None
-    return User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
+    user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'], u['password_hash'],
                 u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
                 u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'),
                 u.get('stripe_customer_id'), u.get('stripe_subscription_id'))
+    if user._session_token != token:
+        return None
+    return user
 
 
 @login_manager.unauthorized_handler

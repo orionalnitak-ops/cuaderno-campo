@@ -11,6 +11,8 @@ from flask_login import login_user, logout_user, login_required, current_user
 from db import get_db, one, dicts
 from extensions import User, limiter
 from helpers import get_uid
+from email_tokens import crear_token, consumir_token
+import email_service
 
 bp = Blueprint('auth', __name__)
 
@@ -29,7 +31,7 @@ def auth_login():
     if not u or not bcrypt.checkpw(password, u['password_hash'].encode('utf-8')):
         return jsonify({"error": "Email o contraseña incorrectos"}), 401
 
-    user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
+    user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'], u['password_hash'],
                 u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
                 u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'),
                 u.get('stripe_customer_id'), u.get('stripe_subscription_id'))
@@ -75,6 +77,9 @@ def auth_register():
         new_id = c.lastrowid
         c.execute("INSERT INTO explotacion (user_id, campana_activa) VALUES (?,?)",
                   (new_id, '2025/2026'))
+        # Token de verificación (7 días). Va antes del commit para que entre en la
+        # misma transacción que el alta.
+        verify_token = crear_token(conn, new_id, 'verify', ttl_horas=168)
         conn.commit()
     except Exception as e:
         conn.close()
@@ -84,11 +89,18 @@ def auth_register():
 
     u = one(conn, "SELECT * FROM users WHERE id=?", (new_id,))
     conn.close()
-    user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
+    user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'], u['password_hash'],
                 u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
                 u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'),
                 u.get('stripe_customer_id'), u.get('stripe_subscription_id'))
     login_user(user, remember=True)
+    # El correo NUNCA rompe el alta: si falla, se registra y el usuario entra igual.
+    try:
+        email_service.send_verificacion_bienvenida(
+            {'email': u['email'], 'nombre': u['nombre']}, verify_token)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("Correo de bienvenida falló para %s: %s", u['email'], e)
     te = user.trial_ends_at
     return jsonify({
         "id": user.id, "email": user.email, "nombre": user.nombre, "role": user.role,
@@ -127,11 +139,18 @@ def auth_me():
     # esto si enseña el aviso. Mandar la fecha exacta de un impago sería un dato
     # financiero viajando en cada sesión sin que nadie lo use.
     pago_fallido = bool(current_user.pago_fallido_desde)
+    # Flag para el aviso suave "verifica tu correo". Se lee de BD porque el modelo
+    # User no lo carga; no condiciona el acceso, solo si se muestra el banner.
+    conn = get_db()
+    row = one(conn, "SELECT email_verified FROM users WHERE id=?", (current_user.id,))
+    conn.close()
+    email_verified = bool(row and row.get('email_verified'))
     return jsonify({
         "id": current_user.id,
         "email": current_user.email,
         "nombre": current_user.nombre,
         "role": current_user.role,
+        "email_verified": email_verified,
         "impersonating": imp_info,
         "plan": current_user.plan_label(),
         "plan_raw": current_user.plan,
@@ -163,6 +182,58 @@ def auth_change_password():
     conn.execute("UPDATE users SET password_hash=? WHERE id=?", (new_hash, current_user.id))
     conn.commit(); conn.close()
     return jsonify({"status": "ok"})
+
+
+@bp.route('/api/auth/verify-email', methods=['POST'])
+@limiter.limit("5 per minute")
+def auth_verify_email():
+    token = ((request.json or {}).get('token') or '').strip()
+    conn = get_db()
+    uid = consumir_token(conn, token, 'verify')
+    if not uid:
+        conn.close()
+        return jsonify({"error": "Enlace no válido o caducado"}), 400
+    conn.execute("UPDATE users SET email_verified=1 WHERE id=?", (uid,))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True})
+
+
+@bp.route('/api/auth/forgot-password', methods=['POST'])
+@limiter.limit("5 per minute")
+def auth_forgot_password():
+    email = ((request.json or {}).get('email') or '').strip().lower()
+    conn = get_db()
+    u = one(conn, "SELECT id, email, nombre FROM users WHERE email=? AND active=1", (email,))
+    if u:
+        try:
+            token = crear_token(conn, u['id'], 'reset', ttl_horas=1)
+            conn.commit()
+            email_service.send_password_reset({'email': u['email'], 'nombre': u['nombre']}, token)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Error en forgot-password para %s: %s", email, e)
+    conn.close()
+    # Respuesta idéntica exista o no el email: no se filtra quién está registrado.
+    return jsonify({"ok": True})
+
+
+@bp.route('/api/auth/reset-password', methods=['POST'])
+@limiter.limit("5 per minute")
+def auth_reset_password():
+    data = request.json or {}
+    token = (data.get('token') or '').strip()
+    new_pw = (data.get('password') or '')
+    if len(new_pw) < 8 or len(new_pw) > 128:
+        return jsonify({"error": "La contraseña debe tener entre 8 y 128 caracteres"}), 400
+    conn = get_db()
+    uid = consumir_token(conn, token, 'reset')
+    if not uid:
+        conn.close()
+        return jsonify({"error": "Enlace no válido o caducado"}), 400
+    new_hash = bcrypt.hashpw(new_pw.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    conn.execute("UPDATE users SET password_hash=? WHERE id=?", (new_hash, uid))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True})
 
 
 @bp.route('/api/account/export-data', methods=['GET'])
