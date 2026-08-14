@@ -82,7 +82,7 @@ def _layout(titulo, cuerpo_html):
 
 
 def _boton(url, texto):
-    return (f'<a href="{url}" style="display:inline-block;background:#00694c;color:#fff;'
+    return (f'<a href="{escape(url, quote=True)}" style="display:inline-block;background:#00694c;color:#fff;'
             f'text-decoration:none;font-weight:700;padding:13px 24px;border-radius:10px;'
             f'font-size:15px;">{escape(texto)}</a>')
 
@@ -93,6 +93,7 @@ def send_verificacion_bienvenida(user, token):
     """Alta: bienvenida (tono Isra) + bloque de verificación (seco). Un solo correo."""
     nombre = escape((user.get('nombre') or '').split(' ')[0] or 'agricultor')
     url = f"{base_url()}/verificar?token={token}"
+    url_html = escape(url, quote=True)
     cuerpo = f"""\
 <p>Bienvenido, {nombre}.</p>
 <p>El papeleo del cuaderno ya no es tu problema. Apuntas en el campo, desde el móvil,
@@ -101,7 +102,7 @@ y lo demás se ordena solo. Eso es lo que acabas de estrenar.</p>
 <hr style="border:none;border-top:1px solid #eef1f0;margin:22px 0;">
 <p style="margin:0 0 14px;">Para confirmar tu correo, pulsa aquí:</p>
 <p style="text-align:center;margin:0 0 14px;">{_boton(url, 'Verificar mi correo')}</p>
-<p style="color:#6b7280;font-size:13px;">Si el botón no funciona, copia esta dirección en el navegador:<br>{url}</p>
+<p style="color:#6b7280;font-size:13px;">Si el botón no funciona, copia esta dirección en el navegador:<br>{url_html}</p>
 """
     return send_email(user['email'], 'Bienvenido a Cuaderno de Campo', _layout('Ya estás dentro', cuerpo))
 
@@ -109,10 +110,11 @@ y lo demás se ordena solo. Eso es lo que acabas de estrenar.</p>
 def send_password_reset(user, token):
     """Reset: técnico y seco. La acción manda."""
     url = f"{base_url()}/nueva-contrasena?token={token}"
+    url_html = escape(url, quote=True)
     cuerpo = f"""\
 <p>Has pedido cambiar tu contraseña. Pulsa el botón para poner una nueva:</p>
 <p style="text-align:center;margin:18px 0;">{_boton(url, 'Cambiar mi contraseña')}</p>
-<p style="color:#6b7280;font-size:13px;">Si el botón no funciona, copia esta dirección en el navegador:<br>{url}</p>
+<p style="color:#6b7280;font-size:13px;">Si el botón no funciona, copia esta dirección en el navegador:<br>{url_html}</p>
 <p style="color:#6b7280;font-size:13px;">El enlace caduca en 1 hora y solo sirve una vez. Si no has sido tú, ignora este correo: tu contraseña no cambia.</p>
 """
     return send_email(user['email'], 'Cambiar tu contraseña — Cuaderno de Campo',

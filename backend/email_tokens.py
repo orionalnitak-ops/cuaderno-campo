@@ -24,14 +24,16 @@ def crear_token(conn, user_id, tipo, ttl_horas):
 
 
 def consumir_token(conn, token, tipo):
-    """Valida un token del tipo dado y lo sella. Devuelve el user_id o None.
+    """Valida un token del tipo dado y lo sella de forma atómica (el UPDATE lleva
+    su propia condición used_at IS NULL, así que dos peticiones concurrentes con
+    el mismo token no pueden colarse las dos). Devuelve el user_id o None.
     Rechaza: inexistente, tipo distinto, ya usado, caducado. No hace commit."""
     if not token:
         return None
     fila = one(conn,
-               "SELECT id, user_id, expires_at, used_at FROM email_tokens WHERE token=? AND tipo=?",
+               "SELECT id, user_id, expires_at FROM email_tokens WHERE token=? AND tipo=?",
                (token, tipo))
-    if not fila or fila.get('used_at'):
+    if not fila:
         return None
     try:
         exp = datetime.datetime.strptime(str(fila['expires_at'])[:19], _FMT)
@@ -40,5 +42,9 @@ def consumir_token(conn, token, tipo):
     if exp < datetime.datetime.utcnow():
         return None
     ahora = datetime.datetime.utcnow().strftime(_FMT)
-    conn.execute("UPDATE email_tokens SET used_at=? WHERE id=?", (ahora, fila['id']))
+    cursor = conn.execute(
+        "UPDATE email_tokens SET used_at=? WHERE id=? AND used_at IS NULL",
+        (ahora, fila['id']))
+    if cursor.rowcount == 0:
+        return None
     return fila['user_id']
