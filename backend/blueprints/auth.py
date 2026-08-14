@@ -185,7 +185,7 @@ def auth_change_password():
 
 
 @bp.route('/api/auth/verify-email', methods=['POST'])
-@limiter.limit("10 per minute")
+@limiter.limit("5 per minute")
 def auth_verify_email():
     token = ((request.json or {}).get('token') or '').strip()
     conn = get_db()
@@ -223,8 +223,8 @@ def auth_reset_password():
     data = request.json or {}
     token = (data.get('token') or '').strip()
     new_pw = (data.get('password') or '')
-    if len(new_pw) < 8:
-        return jsonify({"error": "La contraseña debe tener al menos 8 caracteres"}), 400
+    if len(new_pw) < 8 or len(new_pw) > 128:
+        return jsonify({"error": "La contraseña debe tener entre 8 y 128 caracteres"}), 400
     conn = get_db()
     uid = consumir_token(conn, token, 'reset')
     if not uid:

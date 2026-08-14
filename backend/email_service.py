@@ -6,6 +6,7 @@ alta o un reset no se caigan porque Resend esté caído o el dominio sin verific
 """
 import os
 import logging
+from html import escape
 
 import requests
 
@@ -89,7 +90,7 @@ def _boton(url, texto):
 
 def send_verificacion_bienvenida(user, token):
     """Alta: bienvenida (tono Isra) + bloque de verificación (seco). Un solo correo."""
-    nombre = (user.get('nombre') or '').split(' ')[0] or 'agricultor'
+    nombre = escape((user.get('nombre') or '').split(' ')[0] or 'agricultor')
     url = f"{base_url()}/verificar?token={token}"
     cuerpo = f"""\
 <p>Bienvenido, {nombre}.</p>
@@ -119,7 +120,7 @@ def send_password_reset(user, token):
 
 def send_trial_ending(user):
     """Aviso de fin de trial: tono Isra, empuje suave a contratar."""
-    nombre = (user.get('nombre') or '').split(' ')[0] or 'agricultor'
+    nombre = escape((user.get('nombre') or '').split(' ')[0] or 'agricultor')
     url = f"{base_url()}/#planes"
     cuerpo = f"""\
 <p>{nombre}, tu prueba está a punto de terminar.</p>

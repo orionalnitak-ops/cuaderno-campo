@@ -129,11 +129,13 @@ def avisar_fin_de_trial():
     enviados = 0
     for u in pendientes:
         try:
-            email_service.send_trial_ending({'email': u['email'], 'nombre': u['nombre']})
+            ok = email_service.send_trial_ending({'email': u['email'], 'nombre': u['nombre']})
         except Exception as e:
             logger.error("Aviso de trial falló para %s: %s", u['email'], e)
-        conn.execute("UPDATE users SET trial_reminder_sent=1 WHERE id=?", (u['id'],))
-        enviados += 1
+            ok = False
+        if ok:
+            conn.execute("UPDATE users SET trial_reminder_sent=1 WHERE id=?", (u['id'],))
+            enviados += 1
     conn.commit(); conn.close()
     return enviados
 
