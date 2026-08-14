@@ -17,7 +17,13 @@ init_db()
 # APP SETUP
 # ─────────────────────────────────────────────
 frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend'))
-app = Flask(__name__, static_folder=frontend_dir, static_url_path='')
+# static_url_path distinto de '' a propósito: si coincidiera con la raíz,
+# Flask registraría su propia ruta automática con el mismo patrón que
+# serve_static() más abajo, y como la suya se registra antes, ganaría siempre
+# — dejando el fallback a index.html (necesario para las pantallas SPA como
+# /recuperar) como código muerto. Nada sirve archivos por esa ruta interna;
+# todo pasa por send_static_file() dentro de serve_static().
+app = Flask(__name__, static_folder=frontend_dir, static_url_path='/__flask_static_no_usar')
 
 _secret_key = os.environ.get('SECRET_KEY')
 if not _secret_key:
