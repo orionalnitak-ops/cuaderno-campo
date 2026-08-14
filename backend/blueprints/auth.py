@@ -31,7 +31,7 @@ def auth_login():
     if not u or not bcrypt.checkpw(password, u['password_hash'].encode('utf-8')):
         return jsonify({"error": "Email o contraseña incorrectos"}), 401
 
-    user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
+    user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'], u['password_hash'],
                 u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
                 u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'),
                 u.get('stripe_customer_id'), u.get('stripe_subscription_id'))
@@ -89,7 +89,7 @@ def auth_register():
 
     u = one(conn, "SELECT * FROM users WHERE id=?", (new_id,))
     conn.close()
-    user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'],
+    user = User(u['id'], u['email'], u['nombre'], u['role'], u['active'], u['password_hash'],
                 u.get('plan', 'trial'), u.get('trial_ends_at'), u.get('subscription_ends_at'),
                 u.get('unlimited_explotaciones', 0), u.get('pago_fallido_desde'),
                 u.get('stripe_customer_id'), u.get('stripe_subscription_id'))

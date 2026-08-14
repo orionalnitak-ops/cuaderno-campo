@@ -62,6 +62,7 @@ def send_email(to, subject, html, reply_to=None):
 def _layout(titulo, cuerpo_html):
     """Envoltorio HTML común: cabecera con la marca y cuerpo. Sobrio, una columna,
     legible en el móvil. Sin imágenes externas (algunos clientes las bloquean)."""
+    titulo = escape(titulo)
     return f"""\
 <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f4f6f5;padding:24px 0;">
   <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e9e7;">
@@ -83,7 +84,7 @@ def _layout(titulo, cuerpo_html):
 def _boton(url, texto):
     return (f'<a href="{url}" style="display:inline-block;background:#00694c;color:#fff;'
             f'text-decoration:none;font-weight:700;padding:13px 24px;border-radius:10px;'
-            f'font-size:15px;">{texto}</a>')
+            f'font-size:15px;">{escape(texto)}</a>')
 
 
 # ── Correos concretos ─────────────────────────────────────────────────────────
