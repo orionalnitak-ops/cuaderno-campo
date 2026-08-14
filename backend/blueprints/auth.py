@@ -205,13 +205,13 @@ def auth_forgot_password():
     conn = get_db()
     u = one(conn, "SELECT id, email, nombre FROM users WHERE email=? AND active=1", (email,))
     if u:
-        token = crear_token(conn, u['id'], 'reset', ttl_horas=1)
-        conn.commit()
         try:
+            token = crear_token(conn, u['id'], 'reset', ttl_horas=1)
+            conn.commit()
             email_service.send_password_reset({'email': u['email'], 'nombre': u['nombre']}, token)
         except Exception as e:
             import logging
-            logging.getLogger(__name__).error("Correo de reset falló para %s: %s", email, e)
+            logging.getLogger(__name__).error("Error en forgot-password para %s: %s", email, e)
     conn.close()
     # Respuesta idéntica exista o no el email: no se filtra quién está registrado.
     return jsonify({"ok": True})

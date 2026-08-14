@@ -13,7 +13,10 @@ _FMT = '%Y-%m-%d %H:%M:%S'
 
 
 def crear_token(conn, user_id, tipo, ttl_horas):
-    """Crea un token nuevo y devuelve su cadena. No hace commit (lo hace quien llama)."""
+    """Crea un token nuevo y devuelve su cadena. De paso, limpia tokens caducados
+    para que la tabla no crezca sin límite. No hace commit (lo hace quien llama)."""
+    ahora = datetime.datetime.utcnow().strftime(_FMT)
+    conn.execute("DELETE FROM email_tokens WHERE expires_at < ?", (ahora,))
     token = secrets.token_urlsafe(32)
     expires = (datetime.datetime.utcnow() + datetime.timedelta(hours=ttl_horas)).strftime(_FMT)
     conn.execute(
