@@ -131,11 +131,16 @@ def admin_delete_permanent(uid):
             conn.close()
             return jsonify({"error": "Usuario no encontrado"}), 404
         nombre = row[0]
-        # cultivos_campana no tiene user_id, va por parcela_id
+        # cultivos_campana y uhc_parcelas no tienen user_id, van por FK a parcelas/uhc
         conn.execute("DELETE FROM cultivos_campana WHERE parcela_id IN (SELECT id FROM parcelas WHERE user_id=?)", (uid,))
+        conn.execute("DELETE FROM uhc_parcelas WHERE parcela_id IN (SELECT id FROM parcelas WHERE user_id=?) "
+                     "OR uhc_id IN (SELECT id FROM unidades_homogeneas WHERE user_id=?)", (uid, uid))
+        conn.execute("DELETE FROM ia_feedback WHERE user_id=?", (uid,))
         # resto de tablas con user_id directo, en orden de dependencia
         for t in ['riego', 'abonado', 'cosecha', 'tratamientos', 'fertilizacion',
                   'labores', 'compras', 'equipos', 'aplicadores', 'asesores',
+                  'unidades_homogeneas', 'email_tokens', 'push_subscriptions',
+                  'ia_patrones', 'ia_alertas',
                   'parcelas', 'explotacion']:
             conn.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))  # nosec B608 — tabla viene de lista hardcodeada, no de input externo
         conn.execute("DELETE FROM users WHERE id=?", (uid,))
