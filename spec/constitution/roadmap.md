@@ -7,7 +7,7 @@
 | # | Feature | Estado | Urgencia |
 |---|---------|--------|----------|
 | 001 | Stripe live mode (precios EUR, actualmente en SEK) | Pendiente | 🔴 Crítico |
-| 002 | Compatibilidad SIEX — datos, catálogos y exportaciones | Pendiente | 🔴 Deadline 01/01/2027 |
+| 002 | Compatibilidad SIEX — datos, catálogos y exportaciones (ver desglose por bloque) | Pendiente | 🔴 Deadline 01/01/2027 |
 | 003 | Emails transaccionales (Resend) — verificación + bienvenida | Pendiente | 🟠 Alta |
 | 004 | Pantalla de ayuda visual (guía de inicio + ayuda contextual) | Implementado | 🟢 Cerrada |
 | 005 | Asistente IA estadístico | Implementado | 🟡 Media |
@@ -20,6 +20,21 @@
 > **Sobre el 004 — por qué se cierra.** La pantalla ya está implementada y en producción (`frontend/screens_ayuda.jsx`): guía de inicio de 6 slides con carrusel + swipe, y ayuda contextual `?` en todas las pantallas, cacheada offline. Los slides usan mini-maquetas `<div>`, no los SVG que constaban como "aprobados" (que no están en el repo). Decisión (2026-08-11): se da por hecha con lo que hay; el cambio a SVG es cosmético y solo se retomará si se detecta que la ayuda no se entiende bien en uso real.
 
 > **Sobre el 002 — qué significa exactamente.** Lo que la ley obliga el 01/01/2027 es que el **agricultor** lleve el cuaderno en formato digital e interoperable con SIEX. No obliga a que esta app envíe los datos por API: el titular puede acceder a su CUE y cumplimentarlo él mismo con sus credenciales digitales. El envío automático por IUWS requiere ser *entidad habilitada* (registro, certificado de sello de componente, autorización firmada por cada titular y, al parecer, estatutos que recojan la representación de terceros ante la administración agraria). Esa vía **no se asume de momento** y por tanto no se promete en ningún sitio. Pendiente de confirmar con `reacue@castillalamancha.es` si un titular puede importar en su CUE un fichero generado por una aplicación externa: si la respuesta es que sí, esa es la vía natural para esta app.
+>
+> **Desglose del 002 en bloques controlables** (auditoría 2026-08-26 contra Anexo VI + catálogos oficiales SIEX, ~74 campos de brecha total). Cada bloque es un spec y un PR independiente, ordenados de menos a más esfuerzo:
+>
+> | # | Bloque | Campos que faltan | Tipo de trabajo | Estado |
+> |---|--------|-------------------|------------------|--------|
+> | 018 | Cultivo | 2 | columna simple + código de catálogo en variedad | Pendiente |
+> | 019 | Cosecha / venta | 8 | columnas simples + distinguir venta directa vs comercializada | Pendiente |
+> | 020 | Riego | 9 | columnas simples + 2 catálogos (energía, buenas prácticas) | Pendiente |
+> | 021 | Fertilización | 11 | columnas + catálogo de producto + asesor de fertilización (concepto nuevo) | Pendiente |
+> | 022 | Tratamientos fitosanitarios | 12 | columnas + catálogo + validación del asesor (concepto nuevo) | Pendiente |
+> | 023 | Análisis suelo/agua/producto | 9 | módulo nuevo | Pendiente |
+> | 024 | Tratamiento de semillas | 11 | módulo nuevo | Pendiente |
+> | 025 | Post-cosecha | 12 | módulo nuevo | Pendiente |
+>
+> Ganadería (razas, especies, UGM) queda fuera: la app es puramente agrícola, confirmado en la auditoría.
 
 ## Módulos ya implementados (v0.9.0)
 
