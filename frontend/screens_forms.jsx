@@ -1303,7 +1303,7 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                     <FieldGroup label="Destino">
                         <select className="input-field" value={f.destino} onChange={e => set('destino', e.target.value)}>
                             <option value="">Seleccionar…</option>
-                            {['Almazara propia', 'Autoconsumo', 'Bodega', 'Cooperativa', 'Exportación', 'Mercado en fresco', 'Otro'].map(d => <option key={d}>{d}</option>)}
+                            {['Almazara propia', 'Almacén de cereales', 'Autoconsumo', 'Bodega', 'Cooperativa', 'Exportación', 'Mercado en fresco', 'Otro'].map(d => <option key={d}>{d}</option>)}
                         </select>
                         <SugChip campo="destino" sugerencias={sugerencias} valorActual={f.destino} />
                     </FieldGroup>
