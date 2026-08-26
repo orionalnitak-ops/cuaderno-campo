@@ -25,16 +25,18 @@
 >
 > | # | Bloque | Campos que faltan | Tipo de trabajo | Estado |
 > |---|--------|-------------------|------------------|--------|
-> | 018 | Cultivo | 2 | columna simple + código de catálogo en variedad | Pendiente |
-> | 019 | Cosecha / venta | 8 | columnas simples + distinguir venta directa vs comercializada | Pendiente |
-> | 020 | Riego | 9 | columnas simples + 2 catálogos (energía, buenas prácticas) | Pendiente |
-> | 021 | Fertilización | 11 | columnas + catálogo de producto + asesor de fertilización (concepto nuevo) | Pendiente |
-> | 022 | Tratamientos fitosanitarios | 12 | columnas + catálogo + validación del asesor (concepto nuevo) | Pendiente |
-> | 023 | Análisis suelo/agua/producto | 9 | módulo nuevo | Pendiente |
-> | 024 | Tratamiento de semillas | 11 | módulo nuevo | Pendiente |
-> | 025 | Post-cosecha | 12 | módulo nuevo | Pendiente |
+> | 018 | Cultivo | 2 | columna simple + código de catálogo en variedad | **Especificado** (`spec/features/018-siex-cultivo`) |
+> | 019 | Cosecha / venta | 8 | columnas simples + distinguir venta directa vs comercializada | **Especificado** (`spec/features/019-siex-cosecha`) |
+> | 020 | Riego | 9 | columnas simples + 2 catálogos (energía, buenas prácticas) | **Especificado** (`spec/features/020-siex-riego`) |
+> | 021 | Fertilización | 11 | columnas + catálogo de producto + asesor de fertilización (concepto nuevo) | **Especificado** (`spec/features/021-siex-fertilizacion`) |
+> | 022 | Tratamientos fitosanitarios | 12 | columnas + catálogo + doble validación de asesor (concepto nuevo) | **Especificado** (`spec/features/022-siex-tratamientos`) |
+> | 023 | Análisis suelo/agua/producto | 9 | módulo nuevo | **Especificado** (`spec/features/023-siex-analisis`) |
+> | 024 | Tratamiento de semillas | 11 | módulo nuevo | **Especificado** (`spec/features/024-siex-tratamiento-semillas`) |
+> | 025 | Post-cosecha | 12 | módulo nuevo | **Especificado** (`spec/features/025-siex-postcosecha`) |
 >
 > Ganadería (razas, especies, UGM) queda fuera: la app es puramente agrícola, confirmado en la auditoría.
+>
+> **Dos campos bloqueados, no por la app sino por SIEX**: `probFito` (problemática fitosanitaria, bloques 022/025) y el tipo de carné del aplicador (bloque 022) exigen catálogos que el propio Anexo VI marca como "por crear" — SIEX todavía no los ha publicado. `planAbon` en fertilización (021) está igual, marcado "pendiente confirmar" en el documento oficial. Los tres quedan fuera de alcance hasta que SIEX los publique — no es trabajo pendiente nuestro.
 
 ## Módulos ya implementados (v0.9.0)
 
