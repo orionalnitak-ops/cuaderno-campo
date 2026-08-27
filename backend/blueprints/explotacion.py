@@ -351,6 +351,15 @@ def historial():
             records.append({**r, '_modulo': 'abonado', '_fecha': r.get('fecha_preparacion', ''),
                             '_resumen': f"{r.get('cultivo','')} — N:{r.get('n_necesario_kg_ha','')} P:{r.get('p_necesario_kg_ha','')} K:{r.get('k_necesario_kg_ha','')} kg/ha"})
 
+    if modulo in ('todos', 'analisis'):
+        rows = dicts(conn, "SELECT * FROM analisis WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha DESC", (uid,) + pp)
+        _MATERIAL_NOMBRE = {1: 'Cultivo', 2: 'Producto cosechado', 3: 'Suelo', 4: 'Agua de riego'}
+        for r in apply_filters(rows, 'fecha'):
+            material = _MATERIAL_NOMBRE.get(r.get('material_cod'), '')
+            lab = f" — {r['rs_laboratorio']}" if r.get('rs_laboratorio') else ''
+            records.append({**r, '_modulo': 'analisis', '_fecha': r.get('fecha', ''),
+                            '_resumen': f"{material}{lab}"})
+
     if modulo in ('todos', 'cultivos_campana'):
         try:
             rows = dicts(conn, """

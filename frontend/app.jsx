@@ -18,6 +18,7 @@ const MODULE_CARDS = [
     { id: 'cosecha',       icon: '📦', title: 'Cosecha', desc: 'Recolección de producto, pesaje y control de lotes.', bg: 'linear-gradient(135deg, #9f1239, #db2777)' },
     { id: 'abonado',         icon: '📋', title: 'Plan de abonado',  desc: 'Planificación NPK anual por parcela y cultivo (RD 934/2025).', bg: 'linear-gradient(135deg, #0f766e, #0d9488)' },
     { id: 'cultivo_campana', icon: '🌾', title: 'Cultivo campaña', desc: 'Registra el cultivo y variedad por parcela para la campaña actual.', bg: 'linear-gradient(135deg, #166534, #16a34a)' },
+    { id: 'analisis',        icon: '🧪', title: 'Análisis', desc: 'Análisis de suelo, agua de riego, cultivo o producto cosechado.', bg: 'linear-gradient(135deg, #5b21b6, #7c3aed)' },
 ];
 
 // ── Modal de alta de explotación (feature multi) ──

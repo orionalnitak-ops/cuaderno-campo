@@ -92,6 +92,7 @@ from blueprints.push import bp as push_bp  # noqa: E402
 from blueprints.uhc import bp as uhc_bp  # noqa: E402
 from blueprints.ia import bp as ia_bp  # noqa: E402
 from blueprints.cumplimiento import bp as cumplimiento_bp  # noqa: E402
+from blueprints.analisis import bp as analisis_bp  # noqa: E402
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(admin_bp)
@@ -112,6 +113,7 @@ app.register_blueprint(push_bp)
 app.register_blueprint(uhc_bp)
 app.register_blueprint(ia_bp)
 app.register_blueprint(cumplimiento_bp)
+app.register_blueprint(analisis_bp)
 
 # ─────────────────────────────────────────────
 # STATIC SERVING

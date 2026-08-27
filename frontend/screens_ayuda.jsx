@@ -375,6 +375,32 @@ const HELP_SCREENS = {
             },
         ],
     },
+    analisis: {
+        title: '🧪 Análisis',
+        intro: 'Registra los análisis de laboratorio: de suelo, de agua de riego, del cultivo o del producto ya cosechado.',
+        steps: [
+            {
+                icon: '🗺️',
+                title: 'Parcela',
+                desc: 'Selecciona la parcela analizada. Si analizaste varias a la vez, crea un Grupo UHC y selecciónalo aquí en vez de una parcela.',
+            },
+            {
+                icon: '🧪',
+                title: 'Material analizado *',
+                desc: 'Indica qué se analizó: el cultivo en pie, el producto ya cosechado, el suelo o el agua de riego. Es el único campo obligatorio junto con la fecha.',
+            },
+            {
+                icon: '🌾',
+                title: 'Producto (solo cultivo o cosechado)',
+                desc: 'Si el material es "Cultivo" o "Producto cosechado", puedes elegir el producto exacto del catálogo oficial — el mismo que se usa al vender la cosecha.',
+            },
+            {
+                icon: '🏢',
+                title: 'Datos del laboratorio (opcional)',
+                desc: 'Razón social, dirección, provincia/municipio y nº de boletín — ninguno es obligatorio para guardar.',
+            },
+        ],
+    },
     uhc: {
         title: '🌱 Grupos UHC',
         intro: 'Un grupo junta parcelas que se trabajan igual (mismo cultivo) para que apuntes las faenas una sola vez. La administración lo llama "Unidad Homogénea de Cultivo (UHC)".',
