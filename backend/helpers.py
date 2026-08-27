@@ -245,6 +245,75 @@ CULTIVOS_LENOSOS_IACS = {
 }
 
 
+# ── Cruce IACS → SIEX del cultivo (feature 018) ────────────────────────────
+# SIEX usa su propio código numérico secuencial para el cultivo (`Cultivo.xlsx`,
+# 1.121 filas), un espacio de códigos totalmente distinto del IACS/SIGPAC
+# (`CULTIVOS_IACS` en frontend/screens_parcelas.jsx) y sin campo de cruce
+# directo entre ambos catálogos oficiales. Este dict es ese cruce, hecho a
+# mano una sola vez por nombre, SOLO para los cultivos que están hoy en
+# `CULTIVOS_IACS` — no los 1.121 del catálogo completo (ver spec 018).
+#
+# Duplicado aquí a propósito, igual que `CULTIVOS_LENOSOS_IACS`: el backend
+# no puede depender de un array de JSX. Si se añade un cultivo IACS nuevo,
+# hay que rellenar su cod_siex aquí a mano en ese momento.
+#
+# Los que no tienen match razonable se omiten (quedan sin autocompletado de
+# variedad, texto libre como hoy): 'Barbecho' (980) tiene varios tipos en el
+# catálogo SIEX (tradicional, medioambiental, sin producción...) sin un
+# "barbecho genérico" al que mapear sin inventarse cuál.
+#
+# Las categorías IACS que agrupan dos especies SIEX distintas bajo un mismo
+# código (Esparceta/Zulla, Veza/Yeros, Cerezo/Guindo, Melocotonero/Nectarino)
+# se resuelven con la primera especie nombrada — es una aproximación: si el
+# agricultor cultiva la segunda, el autocompletado sugerirá variedades de la
+# primera. Ninguno de los pilotos actuales cultiva estas categorías.
+CULTIVOS_COD_SIEX = {
+    '470':  '80',   # Arroz
+    '440':  '8',    # Avena
+    '430':  '5',    # Cebada
+    '450':  '6',    # Centeno
+    '454':  '4',    # Maíz
+    '460':  '7',    # Sorgo
+    '410':  '1',    # Trigo blando
+    '415':  '3',    # Trigo duro
+    '451':  '13',   # Triticale
+    '550':  '60',   # Alfalfa
+    '560':  '67',   # Esparceta / Zulla → Esparceta
+    '100':  '169',  # Ajo
+    '110':  '157',  # Cebolla
+    '160':  '153',  # Melón
+    '120':  '99',   # Patata
+    '162':  '156',  # Sandía
+    '140':  '197',  # Tomate
+    '720':  '35',   # Colza / Nabina → Colza
+    '701':  '33',   # Girasol
+    '780':  '590',  # Remolacha azucarera
+    '481':  '40',   # Guisante proteaginoso → Guisante
+    '490':  '41',   # Haba
+    '495':  '34',   # Soja
+    '484':  '52',   # Veza / Yeros → Veza
+    '1710': '104',  # Almendro
+    '1770': '110',  # Cerezo / Guindo → Cerezo
+    '1730': '111',  # Ciruelo
+    '1750': '218',  # Higuera
+    '1840': '207',  # Limonero
+    '1720': '105',  # Melocotonero / Nectarino → Melocotonero
+    '1830': '206',  # Naranjo
+    '1760': '112',  # Nogal
+    '1820': '101',  # Olivar → Olivo
+    '1740': '124',  # Pistachero → Pistacho
+    '1712': '103',  # Viñedo uva de mesa → Uva de mesa
+    '1711': '102',  # Viñedo vinificación → Viña
+}
+
+
+def cod_siex_de_cultivo(cod_iacs):
+    """Código de cultivo SIEX correspondiente a un código IACS, o None si no hay cruce."""
+    if cod_iacs is None:
+        return None
+    return CULTIVOS_COD_SIEX.get(str(cod_iacs).strip())
+
+
 def es_cultivo_lenoso(cod_iacs):
     """¿Este código IACS es de un cultivo leñoso (permanente)?
 

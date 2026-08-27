@@ -550,6 +550,10 @@ def init_db():
     _add_col(c, 'cultivos_campana', 'cultivo_iacs_cod', 'TEXT')
     _add_col(c, 'cultivos_campana', 'kg_sembrados', 'REAL')
     _add_col(c, 'cultivos_campana', 'precio_kg_compra', 'REAL')
+    # feature 018: código de variedad del catálogo SIEX, solo cuando el
+    # agricultor elige una sugerencia del autocompletado. NULL si escribe
+    # texto libre — cero regresión sobre los datos existentes.
+    _add_col(c, 'cultivos_campana', 'variedad_cod_siex', 'TEXT')
 
     # Migración: eliminar UNIQUE(parcela_id, campana) si todavía existe (permite múltiples cultivos por parcela)
     if not USE_PG:
@@ -573,6 +577,7 @@ def init_db():
                     notas TEXT,
                     kg_sembrados REAL,
                     precio_kg_compra REAL,
+                    variedad_cod_siex TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY(parcela_id) REFERENCES parcelas(id)
@@ -580,7 +585,8 @@ def init_db():
                 col_list=[
                     'id', 'parcela_id', 'campana', 'cultivo', 'cultivo_iacs_cod', 'variedad',
                     'fecha_siembra', 'fecha_recoleccion_prevista', 'superficie_cultivada_ha',
-                    'notas', 'kg_sembrados', 'precio_kg_compra', 'created_at', 'updated_at',
+                    'notas', 'kg_sembrados', 'precio_kg_compra', 'variedad_cod_siex',
+                    'created_at', 'updated_at',
                 ],
             )
     else:
@@ -590,6 +596,20 @@ def init_db():
                      DROP CONSTRAINT IF EXISTS cultivos_campana_parcela_id_campana_key""")
         c.execute("""ALTER TABLE cultivos_campana
                      DROP CONSTRAINT IF EXISTS cultivos_campana_parcela_id_campana_uniq""")
+
+    # ── REF VARIEDADES SIEX (feature 018) ──
+    # Catálogo oficial `Variedad - Especie - Tipo.xlsx` de SIEX (86.136 filas).
+    # No es dato de ningún agricultor: es un catálogo de referencia compartido,
+    # por eso no lleva user_id ni entra en TABLAS_POR_EXPLOTACION. Se rellena
+    # una vez con backend/tools/import_variedades_siex.py, no en cada arranque.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS ref_variedades_siex (
+            cod_cultivo_siex TEXT NOT NULL,
+            cod_variedad TEXT NOT NULL,
+            nombre TEXT NOT NULL,
+            PRIMARY KEY (cod_cultivo_siex, cod_variedad)
+        )
+    ''')
 
     # ── COMPRAS (Trazabilidad — Anexo III S5) ──
     c.execute(f'''
@@ -1216,6 +1236,9 @@ def _seed_if_needed(conn):
         ('idx_equipos_user',         'equipos',            'user_id'),
         ('idx_aplicadores_user',     'aplicadores',        'user_id'),
         ('idx_cultivos_campana',     'cultivos_campana',   'campana'),
+        # Autocompletado de variedad (feature 018): filtra por cultivo y hace
+        # LIKE 'texto%' sobre nombre, así que el índice compuesto cubre las dos.
+        ('idx_ref_variedades_siex',  'ref_variedades_siex', 'cod_cultivo_siex, nombre'),
     ]
     # Un índice por explotación en cada tabla acotada (feature 013): ahora TODA
     # consulta de datos del agricultor lleva `AND explotacion_id=?`, y sin índice

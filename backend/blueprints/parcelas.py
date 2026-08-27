@@ -11,7 +11,7 @@ from db import get_db, one, dicts, is_pac_eligible
 from helpers import (get_uid, _to_real, get_active_explotacion_id, estado_sigpac,
                      validar_alta_multirecinto, heredar_cultivos_lenosos,
                      campana_activa, sugerencias_lenosos, declarar_cultivos_lote,
-                     repartir_por_superficie)
+                     repartir_por_superficie, cod_siex_de_cultivo)
 from blueprints.fertilizacion import _parcelas_uhc
 from blueprints.ia import _recalcular_patrones
 from blueprints.sigpac import superficie_sigpac_parcela, referencia_catastral_parcela
@@ -349,16 +349,42 @@ def _declarar_cultivo_grupo(conn, uid, exp_id, data):
             INSERT INTO cultivos_campana
                 (parcela_id, explotacion_id, campana, cultivo, cultivo_iacs_cod, variedad,
                  fecha_siembra, fecha_recoleccion_prevista, superficie_cultivada_ha, notas,
-                 kg_sembrados, precio_kg_compra)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                 kg_sembrados, precio_kg_compra, variedad_cod_siex)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
         ''', (pid, exp_id, campana, data.get('cultivo'), cod,
               data.get('variedad'), data.get('fecha_siembra'),
               data.get('fecha_recoleccion_prevista'), sup, data.get('notas'),
-              reparto.get(pid), _to_real(data.get('precio_kg_compra'))))
+              reparto.get(pid), _to_real(data.get('precio_kg_compra')),
+              data.get('variedad_cod_siex')))
         res['creadas'] += 1
         res.setdefault('parcela_ids', []).append(pid)
 
     return res
+
+
+@bp.route('/api/catalogos/variedades', methods=['GET'])
+@login_required
+def buscar_variedades_siex():
+    """Sugerencias de variedad del catálogo SIEX para un cultivo IACS.
+
+    Solo autocompleta: no valida ni bloquea. Si el cultivo no tiene cruce
+    SIEX conocido (`cod_siex_de_cultivo` devuelve None) se responde con una
+    lista vacía, y el campo `variedad` del formulario sigue siendo texto
+    libre como siempre — ver spec/features/018-siex-cultivo.
+    """
+    cod_siex = cod_siex_de_cultivo(request.args.get('cultivo_iacs_cod'))
+    if not cod_siex:
+        return jsonify({"ok": True, "data": []})
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({"ok": True, "data": []})
+    conn = get_db()
+    rows = dicts(conn, """SELECT cod_variedad, nombre FROM ref_variedades_siex
+                          WHERE cod_cultivo_siex=? AND nombre LIKE ?
+                          ORDER BY nombre LIMIT 20""",
+                 (cod_siex, q.upper() + '%'))
+    conn.close()
+    return jsonify({"ok": True, "data": rows})
 
 
 @bp.route('/api/cultivos-campana', methods=['GET', 'POST'])
@@ -445,14 +471,15 @@ def manage_cultivos():
         INSERT INTO cultivos_campana
             (parcela_id, explotacion_id, campana, cultivo, cultivo_iacs_cod, variedad,
              fecha_siembra, fecha_recoleccion_prevista, superficie_cultivada_ha, notas,
-             kg_sembrados, precio_kg_compra)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+             kg_sembrados, precio_kg_compra, variedad_cod_siex)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (parcela_id, exp_id, data.get('campana'), data.get('cultivo'),
           data.get('cultivo_iacs_cod'),
           data.get('variedad'), data.get('fecha_siembra'),
           data.get('fecha_recoleccion_prevista'), _to_real(data.get('superficie_cultivada_ha')),
           data.get('notas'),
-          _to_real(data.get('kg_sembrados')), _to_real(data.get('precio_kg_compra'))))
+          _to_real(data.get('kg_sembrados')), _to_real(data.get('precio_kg_compra')),
+          data.get('variedad_cod_siex')))
     new_id = c.lastrowid
     conn.commit(); conn.close()
     _recalcular_patrones(uid, 'cultivo_campana', parcela_id, data.get('fecha_siembra'), exp_id)
@@ -547,7 +574,7 @@ def manage_cultivo(cid):
                 if resto + nueva_sup > parcela['superficie_ha'] + 0.01:
                     conn.close()
                     return jsonify({"error": f"La superficie asignada ({resto + nueva_sup:.2f} ha) supera las {parcela['superficie_ha']:.2f} ha de la parcela"}), 400
-    fields = ['cultivo', 'cultivo_iacs_cod', 'variedad', 'fecha_siembra', 'fecha_recoleccion_prevista', 'superficie_cultivada_ha', 'notas', 'kg_sembrados', 'precio_kg_compra']
+    fields = ['cultivo', 'cultivo_iacs_cod', 'variedad', 'fecha_siembra', 'fecha_recoleccion_prevista', 'superficie_cultivada_ha', 'notas', 'kg_sembrados', 'precio_kg_compra', 'variedad_cod_siex']
     real_fields = {'superficie_cultivada_ha', 'kg_sembrados', 'precio_kg_compra'}
     values = [_to_real(data.get(f)) if f in real_fields else data.get(f) for f in fields]
     sets = ', '.join(f"{f}=?" for f in fields)
