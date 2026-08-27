@@ -387,6 +387,26 @@ def buscar_variedades_siex():
     return jsonify({"ok": True, "data": rows})
 
 
+@bp.route('/api/catalogos/productos', methods=['GET'])
+@login_required
+def buscar_productos_siex():
+    """Productos SIEX (`ref_productos_siex`) del cultivo IACS dado, para la venta de cosecha.
+
+    A diferencia de variedades (86.136 filas), el catálogo de productos son
+    solo 693 filas en total: no hace falta autocompletado con límite, se
+    devuelve la lista entera ya filtrada por cultivo y el cliente la
+    renderiza en un desplegable — ver spec/features/019-siex-cosecha.
+    """
+    cod_siex = cod_siex_de_cultivo(request.args.get('cultivo_iacs_cod'))
+    if not cod_siex:
+        return jsonify({"ok": True, "data": []})
+    conn = get_db()
+    rows = dicts(conn, """SELECT id_producto, nombre FROM ref_productos_siex
+                          WHERE cod_cultivo_siex=? ORDER BY nombre""", (cod_siex,))
+    conn.close()
+    return jsonify({"ok": True, "data": rows})
+
+
 @bp.route('/api/cultivos-campana', methods=['GET', 'POST'])
 @login_required
 def manage_cultivos():
