@@ -427,6 +427,32 @@ const HELP_SCREENS = {
             },
         ],
     },
+    post_cosecha: {
+        title: '🏭 Post-cosecha',
+        intro: 'Registra los tratamientos fitosanitarios aplicados después de la cosecha: fumigación de grano almacenado, tratamiento de fruta en cámara y similares. Distinto de un tratamiento en campo (ese va en "Tratamiento fitosanitario").',
+        steps: [
+            {
+                icon: '🗺️',
+                title: 'Parcela y fecha *',
+                desc: 'Selecciona la parcela de origen del producto y la fecha de la actuación. Es lo único obligatorio junto con la fecha.',
+            },
+            {
+                icon: '🌾',
+                title: 'Producto vegetal tratado',
+                desc: 'Si la parcela tiene un cultivo asignado en esta campaña, puedes elegir el producto exacto del catálogo oficial — el mismo que se usa al vender la cosecha o al registrar un análisis.',
+            },
+            {
+                icon: '🧴',
+                title: 'Producto fitosanitario aplicado (opcional)',
+                desc: 'Si usaste un producto registrado, indica su nombre comercial. En ese caso el nº de registro MAPA pasa a ser obligatorio.',
+            },
+            {
+                icon: '⚖️',
+                title: 'Cantidad, justificación y eficacia (opcional)',
+                desc: 'Cuánto producto se usó y su unidad, por qué se actuó y cómo de bien funcionó — ninguno es obligatorio para guardar.',
+            },
+        ],
+    },
     uhc: {
         title: '🌱 Grupos UHC',
         intro: 'Un grupo junta parcelas que se trabajan igual (mismo cultivo) para que apuntes las faenas una sola vez. La administración lo llama "Unidad Homogénea de Cultivo (UHC)".',

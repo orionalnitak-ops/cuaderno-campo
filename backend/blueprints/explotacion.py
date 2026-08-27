@@ -370,6 +370,13 @@ def historial():
             records.append({**r, '_modulo': 'tratamiento_semillas', '_fecha': r.get('fecha_actuacion', ''),
                             '_resumen': f"{tipo}{prod}"})
 
+    if modulo in ('todos', 'post_cosecha'):
+        rows = dicts(conn, "SELECT * FROM post_cosecha WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha_actuacion DESC", (uid,) + pp)
+        for r in apply_filters(rows, 'fecha_actuacion'):
+            prod = f" — {r['producto_comercial']}" if r.get('producto_comercial') else ''
+            records.append({**r, '_modulo': 'post_cosecha', '_fecha': r.get('fecha_actuacion', ''),
+                            '_resumen': f"Post-cosecha{prod}"})
+
     if modulo in ('todos', 'cultivos_campana'):
         try:
             rows = dicts(conn, """

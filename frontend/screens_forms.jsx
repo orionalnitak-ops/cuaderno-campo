@@ -178,6 +178,7 @@ function ScreenForms({ modulo, record, campana, onClose }) {
         cultivo_campana: { icon: '🌾', title: 'Cultivo de Campaña',        color: '#16a34a' },
         analisis:        { icon: '🧪', title: 'Análisis',                  color: '#7c3aed' },
         tratamiento_semilla: { icon: '🌰', title: 'Tratamiento de semilla', color: '#ca8a04' },
+        post_cosecha:        { icon: '🏭', title: 'Post-cosecha',          color: '#4b5563' },
     };
     const cfg = MODULE_CONFIG[modulo] || { icon: '📝', title: 'Registro', color: '#374151' };
 
@@ -206,6 +207,7 @@ function ScreenForms({ modulo, record, campana, onClose }) {
                 {modulo === 'cultivo_campana' && <FormCultivoCampana  parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
                 {modulo === 'analisis'       && <FormAnalisis        parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
                 {modulo === 'tratamiento_semilla' && <FormTratamientoSemilla parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
+                {modulo === 'post_cosecha'  && <FormPostCosecha      parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
             </div>
         </div>
     );
@@ -2203,6 +2205,156 @@ function FormTratamientoSemilla({ parcelas, record, campana, onClose, isEdit }) 
                 <button className="btn-ghost" onClick={() => onClose()} style={{ flex: 1 }}>Cancelar</button>
                 <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 2 }}>
                     {saving ? 'Guardando…' : (isEdit ? '💾 Actualizar' : '✓ Guardar tratamiento')}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ── POST-COSECHA (feature 025, bloque 8/8 SIEX — último del roadmap) ──
+// Reutiliza JUSTIFICACION_ACTUACION_SIEX (definido arriba, feature 022) y
+// EFICACIA_TRATAMIENTO_SIEX (feature 024) tal cual: mismos catálogos, no se
+// duplican. `unidad_cod` tiene su propio pequeño subconjunto porque las
+// cantidades post-cosecha (fumigación de grano almacenado, ej.) admiten
+// toneladas, a diferencia de una dosis de semilla.
+const UNIDAD_CANTIDAD_POSTCOSECHA_SIEX = [
+    { cod: 5, nombre: 'kg' },
+    { cod: 4, nombre: 'L' },
+    { cod: 6, nombre: 't' },
+    { cod: 48, nombre: 'g' },
+    { cod: 51, nombre: 'mL' },
+];
+
+function FormPostCosecha({ parcelas, record, campana, onClose, isEdit }) {
+    const today = new Date().toISOString().split('T')[0];
+    const [saving, setSaving] = React.useState(false);
+    const [modoUHC, setModoUHC] = React.useState(false);
+    const [uhcList, setUhcList] = React.useState([]);
+    const [cultivo, setCultivo] = React.useState({});
+    const [f, setF] = React.useState({
+        parcela_id: record?.parcela_id || '', parcela_etiqueta: record?.parcela_etiqueta || '',
+        uhc_id: record?.uhc_id || '',
+        fecha_actuacion: record?.fecha_actuacion || today,
+        codigo_producto_siex: record?.codigo_producto_siex || null,
+        justificacion_actuacion_cod: record?.justificacion_actuacion_cod || null,
+        cantidad: record?.cantidad || '',
+        unidad_cod: record?.unidad_cod || null,
+        eficacia_cod: record?.eficacia_cod || null,
+        observaciones: record?.observaciones || '',
+        producto_comercial: record?.producto_comercial || '',
+        num_registro_mapa: record?.num_registro_mapa || '',
+        sustancia_activa: record?.sustancia_activa || '',
+        campana,
+    });
+    const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+
+    React.useEffect(() => {
+        if (!f.parcela_id) return;
+        fetch(`/api/cultivos-campana?parcela_id=${f.parcela_id}&campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json()).then(d => setCultivo(Array.isArray(d) && d[0] ? d[0] : {}));
+        const p = parcelas.find(x => String(x.id) === String(f.parcela_id));
+        if (p) set('parcela_etiqueta', p.nombre_finca);
+    }, [f.parcela_id]);
+
+    React.useEffect(() => {
+        fetch(`/api/uhc?campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setUhcList(Array.isArray(d) ? d : []))
+            .catch(() => {});
+    }, [campana]);
+
+    const save = async () => {
+        if ((!f.parcela_id && !f.uhc_id) || !f.fecha_actuacion) {
+            alert('Rellena: parcela (o grupo) y fecha'); return;
+        }
+        if (f.producto_comercial && !f.num_registro_mapa) {
+            alert('Indica el nº de registro MAPA del producto, o borra el nombre del producto'); return;
+        }
+        setSaving(true);
+        try {
+            const url = isEdit ? `/api/post-cosecha/${record.id}` : '/api/post-cosecha';
+            const res = isEdit
+                ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
+                : await window.OfflineSync.post('/api/post-cosecha', f);
+            if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar el tratamiento post-cosecha'); setSaving(false); return; }
+            const d = await res.json().catch(() => ({}));
+            onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte'
+                  : d.count > 1 ? `✅ Post-cosecha guardado en ${d.count} parcelas`
+                  : '✅ Post-cosecha guardado');
+        } catch { alert('Error al guardar el tratamiento post-cosecha'); setSaving(false); }
+    };
+
+    return (
+        <div>
+            <ParcelOrUhcSelect modoUHC={modoUHC} setModoUHC={setModoUHC} parcelas={parcelas} uhcList={uhcList}
+                parcelaId={f.parcela_id} uhcId={f.uhc_id}
+                onParcela={v => set('parcela_id', v)} onUhc={v => set('uhc_id', v)} />
+            <div className="responsive-grid cols-2">
+                <FieldGroup label="Fecha de la actuación *">
+                    <input type="date" className="input-field" value={f.fecha_actuacion} onChange={e => set('fecha_actuacion', e.target.value)} />
+                </FieldGroup>
+                <FieldGroup label="Justificación de la actuación">
+                    <select className="input-field" value={f.justificacion_actuacion_cod ?? ''}
+                        onChange={e => set('justificacion_actuacion_cod', e.target.value ? Number(e.target.value) : null)}>
+                        <option value="">Sin especificar…</option>
+                        {JUSTIFICACION_ACTUACION_SIEX.map(j => <option key={j.cod} value={j.cod}>{j.nombre}</option>)}
+                    </select>
+                </FieldGroup>
+            </div>
+
+            <ProductoSiexSelect cultivoIacsCod={cultivo?.cultivo_iacs_cod} value={f.codigo_producto_siex}
+                onChange={v => set('codigo_producto_siex', v)} />
+
+            <MasCampos>
+                <div className="responsive-grid cols-2">
+                    <FieldGroup label="Cantidad">
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <ZoomInput label="Cantidad" value={f.cantidad} placeholder="10" inputMode="decimal"
+                                style={{ flex: 2 }} onConfirm={v => set('cantidad', v)} />
+                            <select className="input-field" value={f.unidad_cod ?? ''} style={{ flex: 1 }}
+                                onChange={e => set('unidad_cod', e.target.value ? Number(e.target.value) : null)}>
+                                <option value="">Unidad…</option>
+                                {UNIDAD_CANTIDAD_POSTCOSECHA_SIEX.map(u => <option key={u.cod} value={u.cod}>{u.nombre}</option>)}
+                            </select>
+                        </div>
+                    </FieldGroup>
+                    <FieldGroup label="Eficacia del tratamiento">
+                        <select className="input-field" value={f.eficacia_cod ?? ''}
+                            onChange={e => set('eficacia_cod', e.target.value ? Number(e.target.value) : null)}>
+                            <option value="">Sin especificar…</option>
+                            {EFICACIA_TRATAMIENTO_SIEX.map(ef => <option key={ef.cod} value={ef.cod}>{ef.nombre}</option>)}
+                        </select>
+                    </FieldGroup>
+                </div>
+
+                <div style={{ fontWeight: 700, fontSize: '0.85rem', margin: '10px 0 6px' }}>
+                    🧴 Producto fitosanitario aplicado
+                </div>
+                <div className="responsive-grid cols-2">
+                    <FieldGroup label="Nombre comercial del producto">
+                        <ZoomInput label="Nombre comercial" value={f.producto_comercial} placeholder="Ej. Phostoxin"
+                            onConfirm={v => set('producto_comercial', v)} />
+                    </FieldGroup>
+                    <FieldGroup label={`Nº registro MAPA${f.producto_comercial ? ' *' : ''}`}>
+                        <ZoomInput label="Nº registro MAPA" value={f.num_registro_mapa} placeholder="12345"
+                            onConfirm={v => set('num_registro_mapa', v)} />
+                    </FieldGroup>
+                    <FieldGroup label="Sustancia activa">
+                        <ZoomInput label="Sustancia activa" value={f.sustancia_activa} placeholder="Fosfuro de aluminio"
+                            onConfirm={v => set('sustancia_activa', v)} />
+                    </FieldGroup>
+                </div>
+
+                <FieldGroup label="Observaciones">
+                    <ZoomInput label="Observaciones" value={f.observaciones} placeholder="Observaciones…"
+                        multiline onConfirm={v => set('observaciones', v)} />
+                </FieldGroup>
+            </MasCampos>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button className="btn-ghost" onClick={() => onClose()} style={{ flex: 1 }}>Cancelar</button>
+                <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 2 }}>
+                    {saving ? 'Guardando…' : (isEdit ? '💾 Actualizar' : '✓ Guardar post-cosecha')}
                 </button>
             </div>
         </div>

@@ -28,6 +28,7 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
         cultivos_campana:{ icon: '🌾', label: 'Cultivo campaña', chipClass: 'chip-cultivo',        accentColor: '#16a34a' },
         analisis:        { icon: '🧪', label: 'Análisis',        chipClass: 'chip-analisis',       accentColor: '#7c3aed' },
         tratamiento_semillas: { icon: '🌰', label: 'Trat. semilla', chipClass: 'chip-semilla',    accentColor: '#ca8a04' },
+        post_cosecha:    { icon: '🏭', label: 'Post-cosecha',      chipClass: 'chip-postcosecha',   accentColor: '#4b5563' },
     };
 
     const MODULE_PILLS = [
@@ -42,6 +43,7 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
         ['cultivos_campana', '🌾 Cultivo campaña'],
         ['analisis',         '🧪 Análisis'],
         ['tratamiento_semillas', '🌰 Trat. semilla'],
+        ['post_cosecha',     '🏭 Post-cosecha'],
     ];
 
     const fetchRecords = useCallback(() => {
@@ -95,7 +97,7 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
 
     const handleDelete = async (record) => {
         if (!confirm('¿Eliminar este registro?')) return;
-        const endpoint = { tratamientos: 'tratamientos', fertilizacion: 'fertilizacion', labores: 'labores', cosecha: 'cosecha', compras: 'compras', cultivos_campana: 'cultivos-campana', analisis: 'analisis', tratamiento_semillas: 'tratamiento-semillas' }[record._modulo];
+        const endpoint = { tratamientos: 'tratamientos', fertilizacion: 'fertilizacion', labores: 'labores', cosecha: 'cosecha', compras: 'compras', cultivos_campana: 'cultivos-campana', analisis: 'analisis', tratamiento_semillas: 'tratamiento-semillas', post_cosecha: 'post-cosecha' }[record._modulo];
         if (!endpoint) return;
         await fetch(`/api/${endpoint}/${record.id}`, { method: 'DELETE' });
         showToast('Registro eliminado');
