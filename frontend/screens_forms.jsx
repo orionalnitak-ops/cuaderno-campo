@@ -177,6 +177,7 @@ function ScreenForms({ modulo, record, campana, onClose }) {
         abonado:         { icon: '📋', title: 'Plan de abonado',           color: '#0d9488' },
         cultivo_campana: { icon: '🌾', title: 'Cultivo de Campaña',        color: '#16a34a' },
         analisis:        { icon: '🧪', title: 'Análisis',                  color: '#7c3aed' },
+        tratamiento_semilla: { icon: '🌰', title: 'Tratamiento de semilla', color: '#ca8a04' },
     };
     const cfg = MODULE_CONFIG[modulo] || { icon: '📝', title: 'Registro', color: '#374151' };
 
@@ -204,6 +205,7 @@ function ScreenForms({ modulo, record, campana, onClose }) {
                 {modulo === 'abonado'         && <FormAbonado         parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
                 {modulo === 'cultivo_campana' && <FormCultivoCampana  parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
                 {modulo === 'analisis'       && <FormAnalisis        parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
+                {modulo === 'tratamiento_semilla' && <FormTratamientoSemilla parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
             </div>
         </div>
     );
@@ -2024,6 +2026,179 @@ function FormAnalisis({ parcelas, record, campana, onClose, isEdit }) {
                 <button className="btn-ghost" onClick={() => onClose()} style={{ flex: 1 }}>Cancelar</button>
                 <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 2 }}>
                     {saving ? 'Guardando…' : (isEdit ? '💾 Actualizar' : '✓ Guardar análisis')}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ── Catálogos SIEX de tratamiento de semilla (feature 024, bloque 7/8) ──
+// Verificados contra `Tratamiento semilla.xlsx` (4 filas, empieza en el 2 —
+// no hay código 1, no es un error) y `Eficacia del tratamiento.xlsx` (3
+// filas). `unidad_cod` es un subconjunto pequeño de `Unidades de medida.xlsx`
+// (82 filas) con solo las unidades plausibles para una cantidad de semilla —
+// no se construye el selector completo de 82 opciones para 3 campos.
+const TRATAMIENTO_SEMILLA_SIEX = [
+    { cod: 2, nombre: 'Realizado en la explotación' },
+    { cod: 3, nombre: 'Realizado en un centro de acondicionamiento' },
+    { cod: 4, nombre: 'Adquisición de semilla tratada con producto autorizado en España' },
+    { cod: 5, nombre: 'Adquisición de semilla tratada fuera de España' },
+];
+
+const EFICACIA_TRATAMIENTO_SIEX = [
+    { cod: 1, nombre: 'Buena' },
+    { cod: 2, nombre: 'Regular' },
+    { cod: 3, nombre: 'Mala' },
+];
+
+const UNIDAD_CANTIDAD_SEMILLA_SIEX = [
+    { cod: 5, nombre: 'kg' },
+    { cod: 4, nombre: 'L' },
+    { cod: 48, nombre: 'g' },
+    { cod: 51, nombre: 'mL' },
+    { cod: 38, nombre: 'kg/kg de semilla' },
+    { cod: 39, nombre: 'L/kg de semilla' },
+];
+
+// ── TRATAMIENTO DE SEMILLA (feature 024, bloque 7/8 SIEX) ──
+function FormTratamientoSemilla({ parcelas, record, campana, onClose, isEdit }) {
+    const today = new Date().toISOString().split('T')[0];
+    const [saving, setSaving] = React.useState(false);
+    const [modoUHC, setModoUHC] = React.useState(false);
+    const [uhcList, setUhcList] = React.useState([]);
+    const [f, setF] = React.useState({
+        parcela_id: record?.parcela_id || '', parcela_etiqueta: record?.parcela_etiqueta || '',
+        uhc_id: record?.uhc_id || '',
+        superficie_tratada_ha: record?.superficie_tratada_ha || '',
+        tratamiento_cod: record?.tratamiento_cod || null,
+        fecha_actuacion: record?.fecha_actuacion || today,
+        cantidad: record?.cantidad || '',
+        unidad_cod: record?.unidad_cod || null,
+        eficacia_cod: record?.eficacia_cod || null,
+        observaciones: record?.observaciones || '',
+        producto_comercial: record?.producto_comercial || '',
+        num_registro_mapa: record?.num_registro_mapa || '',
+        sustancia_activa: record?.sustancia_activa || '',
+        campana,
+    });
+    const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+
+    React.useEffect(() => {
+        if (!f.parcela_id) return;
+        // Sugerencia editable, no forzada: si la superficie tratada está vacía,
+        // se rellena con la del cultivo de la parcela — mismo criterio que ya
+        // aplica tratamientos.py (bloque 022) para superficie_tratada_ha.
+        fetch(`/api/cultivos-campana?parcela_id=${f.parcela_id}&campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json()).then(d => {
+                const c = Array.isArray(d) && d[0] ? d[0] : null;
+                if (c && !isEdit && !f.superficie_tratada_ha && c.superficie_cultivada_ha) {
+                    set('superficie_tratada_ha', c.superficie_cultivada_ha);
+                }
+            }).catch(() => {});
+        const p = parcelas.find(x => String(x.id) === String(f.parcela_id));
+        if (p) set('parcela_etiqueta', p.nombre_finca);
+    }, [f.parcela_id]);
+
+    React.useEffect(() => {
+        fetch(`/api/uhc?campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setUhcList(Array.isArray(d) ? d : []))
+            .catch(() => {});
+    }, [campana]);
+
+    const save = async () => {
+        if ((!f.parcela_id && !f.uhc_id) || !f.tratamiento_cod || !f.fecha_actuacion) {
+            alert('Rellena: parcela (o grupo), tipo de tratamiento y fecha'); return;
+        }
+        if (f.producto_comercial && !f.num_registro_mapa) {
+            alert('Indica el nº de registro MAPA del producto, o borra el nombre del producto'); return;
+        }
+        setSaving(true);
+        try {
+            const url = isEdit ? `/api/tratamiento-semillas/${record.id}` : '/api/tratamiento-semillas';
+            const res = isEdit
+                ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
+                : await window.OfflineSync.post('/api/tratamiento-semillas', f);
+            if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar el tratamiento de semilla'); setSaving(false); return; }
+            const d = await res.json().catch(() => ({}));
+            onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte'
+                  : d.count > 1 ? `✅ Tratamiento de semilla guardado en ${d.count} parcelas`
+                  : '✅ Tratamiento de semilla guardado');
+        } catch { alert('Error al guardar el tratamiento de semilla'); setSaving(false); }
+    };
+
+    return (
+        <div>
+            <ParcelOrUhcSelect modoUHC={modoUHC} setModoUHC={setModoUHC} parcelas={parcelas} uhcList={uhcList}
+                parcelaId={f.parcela_id} uhcId={f.uhc_id}
+                onParcela={v => set('parcela_id', v)} onUhc={v => set('uhc_id', v)} />
+            <div className="responsive-grid cols-2">
+                <FieldGroup label="Tipo de tratamiento *">
+                    <select className="input-field" value={f.tratamiento_cod ?? ''}
+                        onChange={e => set('tratamiento_cod', e.target.value ? Number(e.target.value) : null)}>
+                        <option value="">Seleccionar…</option>
+                        {TRATAMIENTO_SEMILLA_SIEX.map(t => <option key={t.cod} value={t.cod}>{t.nombre}</option>)}
+                    </select>
+                </FieldGroup>
+                <FieldGroup label="Fecha de la actuación *">
+                    <input type="date" className="input-field" value={f.fecha_actuacion} onChange={e => set('fecha_actuacion', e.target.value)} />
+                </FieldGroup>
+                <FieldGroup label="Superficie tratada (ha)">
+                    <ZoomInput label="Superficie tratada (ha)" value={f.superficie_tratada_ha} placeholder="3.25" inputMode="decimal"
+                        onConfirm={v => set('superficie_tratada_ha', v)} />
+                </FieldGroup>
+            </div>
+
+            <MasCampos>
+                <div className="responsive-grid cols-2">
+                    <FieldGroup label="Cantidad">
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <ZoomInput label="Cantidad" value={f.cantidad} placeholder="25" inputMode="decimal"
+                                style={{ flex: 2 }} onConfirm={v => set('cantidad', v)} />
+                            <select className="input-field" value={f.unidad_cod ?? ''} style={{ flex: 1 }}
+                                onChange={e => set('unidad_cod', e.target.value ? Number(e.target.value) : null)}>
+                                <option value="">Unidad…</option>
+                                {UNIDAD_CANTIDAD_SEMILLA_SIEX.map(u => <option key={u.cod} value={u.cod}>{u.nombre}</option>)}
+                            </select>
+                        </div>
+                    </FieldGroup>
+                    <FieldGroup label="Eficacia del tratamiento">
+                        <select className="input-field" value={f.eficacia_cod ?? ''}
+                            onChange={e => set('eficacia_cod', e.target.value ? Number(e.target.value) : null)}>
+                            <option value="">Sin especificar…</option>
+                            {EFICACIA_TRATAMIENTO_SIEX.map(ef => <option key={ef.cod} value={ef.cod}>{ef.nombre}</option>)}
+                        </select>
+                    </FieldGroup>
+                </div>
+
+                <div style={{ fontWeight: 700, fontSize: '0.85rem', margin: '10px 0 6px' }}>
+                    🧴 Producto (si se ha usado uno registrado)
+                </div>
+                <div className="responsive-grid cols-2">
+                    <FieldGroup label="Nombre comercial del producto">
+                        <ZoomInput label="Nombre comercial" value={f.producto_comercial} placeholder="Ej. Vitavax 200 FF"
+                            onConfirm={v => set('producto_comercial', v)} />
+                    </FieldGroup>
+                    <FieldGroup label={`Nº registro MAPA${f.producto_comercial ? ' *' : ''}`}>
+                        <ZoomInput label="Nº registro MAPA" value={f.num_registro_mapa} placeholder="12345"
+                            onConfirm={v => set('num_registro_mapa', v)} />
+                    </FieldGroup>
+                    <FieldGroup label="Sustancia activa">
+                        <ZoomInput label="Sustancia activa" value={f.sustancia_activa} placeholder="Carboxina + Thiram"
+                            onConfirm={v => set('sustancia_activa', v)} />
+                    </FieldGroup>
+                </div>
+
+                <FieldGroup label="Observaciones">
+                    <ZoomInput label="Observaciones" value={f.observaciones} placeholder="Observaciones…"
+                        multiline onConfirm={v => set('observaciones', v)} />
+                </FieldGroup>
+            </MasCampos>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button className="btn-ghost" onClick={() => onClose()} style={{ flex: 1 }}>Cancelar</button>
+                <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 2 }}>
+                    {saving ? 'Guardando…' : (isEdit ? '💾 Actualizar' : '✓ Guardar tratamiento')}
                 </button>
             </div>
         </div>
