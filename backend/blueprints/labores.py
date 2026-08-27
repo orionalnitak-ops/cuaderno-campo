@@ -84,13 +84,19 @@ def _insert_cosecha(c, uid, data, parcela_id, parcela_etiqueta, exp_id, sup, pro
         INSERT INTO cosecha (user_id, explotacion_id, parcela_id, parcela_etiqueta, fecha_inicio, fecha_fin,
             cultivo, variedad, superficie_cosechada_ha, produccion_total_valor,
             produccion_total_unidad, rendimiento_kg_ha, destino, comprador,
-            precio_unidad, notas, campana)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            precio_unidad, notas, campana, fecha_venta, tipo_venta, codigo_producto_siex,
+            albaran, lote, nif_cliente, direccion_cliente, provincia_cliente_cod,
+            municipio_cliente_cod)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (uid, exp_id, parcela_id, parcela_etiqueta,
           data.get('fecha_inicio'), data.get('fecha_fin'), data.get('cultivo'),
           data.get('variedad'), sup, prod, data.get('produccion_total_unidad', 'kg'),
           rend, data.get('destino'), data.get('comprador'),
-          _to_real(data.get('precio_unidad')), data.get('notas'), data.get('campana', '2025/2026')))
+          _to_real(data.get('precio_unidad')), data.get('notas'), data.get('campana', '2025/2026'),
+          data.get('fecha_venta'), data.get('tipo_venta'), data.get('codigo_producto_siex'),
+          data.get('albaran'), data.get('lote'), data.get('nif_cliente'),
+          data.get('direccion_cliente'), data.get('provincia_cliente_cod'),
+          data.get('municipio_cliente_cod')))
     return c.lastrowid
 
 
@@ -306,7 +312,9 @@ def manage_cosecha_one(cid):
     data['superficie_cosechada_ha'] = sup or None
     fields = ['parcela_id', 'parcela_etiqueta', 'fecha_inicio', 'fecha_fin', 'cultivo',
               'variedad', 'superficie_cosechada_ha', 'produccion_total_valor', 'produccion_total_unidad',
-              'rendimiento_kg_ha', 'destino', 'comprador', 'precio_unidad', 'notas', 'campana']
+              'rendimiento_kg_ha', 'destino', 'comprador', 'precio_unidad', 'notas', 'campana',
+              'fecha_venta', 'tipo_venta', 'codigo_producto_siex', 'albaran', 'lote',
+              'nif_cliente', 'direccion_cliente', 'provincia_cliente_cod', 'municipio_cliente_cod']
     _real_c = {'precio_unidad'}
     sets = ', '.join(f"{f}=?" for f in fields)
     conn.execute(f"UPDATE cosecha SET {sets} WHERE id=? AND user_id=? AND explotacion_id=?",

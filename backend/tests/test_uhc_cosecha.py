@@ -46,7 +46,10 @@ CREATE TABLE cosecha (
     parcela_id INTEGER, parcela_etiqueta TEXT, fecha_inicio TEXT, fecha_fin TEXT,
     cultivo TEXT, variedad TEXT, superficie_cosechada_ha REAL,
     produccion_total_valor REAL, produccion_total_unidad TEXT, rendimiento_kg_ha REAL,
-    destino TEXT, comprador TEXT, precio_unidad REAL, notas TEXT, campana TEXT);
+    destino TEXT, comprador TEXT, precio_unidad REAL, notas TEXT, campana TEXT,
+    fecha_venta TEXT, tipo_venta TEXT, codigo_producto_siex INTEGER, albaran TEXT,
+    lote TEXT, nif_cliente TEXT, direccion_cliente TEXT, provincia_cliente_cod TEXT,
+    municipio_cliente_cod TEXT);
 """
 
 COSECHA = {

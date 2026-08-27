@@ -290,6 +290,11 @@ const HELP_SCREENS = {
                 title: 'Destino y lote',
                 desc: 'Indica el destino (venta, autoconsumo, almacén) y el número de lote si lo tienes. El lote permite rastrear el producto en caso de alerta sanitaria.',
             },
+            {
+                icon: '🧾',
+                title: 'Tipo de venta (opcional)',
+                desc: 'Si vendes a un cliente identificado (cooperativa, almacén…) marca "Comercializada" y rellena sus datos. Si es venta directa (mercadillo, tienda de la finca) no hace falta identificar a nadie. Ningún dato de este bloque es obligatorio para guardar.',
+            },
         ],
     },
     compra: {
