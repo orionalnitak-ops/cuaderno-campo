@@ -34,11 +34,18 @@ def manage_equipos():
         # aparecería en ningún listado: mejor fallar que crear un registro ciego.
         conn.close(); return jsonify({"error": SIN_EXPLOTACION}), 400
     data = request.json or {}
+    # feature 022 (bloque 5/8 SIEX): `nif_propietario` solo tiene sentido si el
+    # equipo NO es propio — limpiarlo aquí evita que un NIF quede colgado en un
+    # equipo marcado como propio (mismo bug que ya se corrigió en cosecha con
+    # los datos de cliente al desmarcar "venta comercializada").
+    nif_propietario = data.get('nif_propietario') if data.get('propio') is False else None
     c = conn.cursor()
-    c.execute('''INSERT INTO equipos (user_id, explotacion_id, descripcion, tipo, marca, modelo, num_registro_roma, fecha_iteaf, notas)
-                 VALUES (?,?,?,?,?,?,?,?,?)''',
+    c.execute('''INSERT INTO equipos (user_id, explotacion_id, descripcion, tipo, marca, modelo,
+                     num_registro_roma, fecha_iteaf, notas, propio, nif_propietario)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
               (uid, exp_id, data.get('descripcion'), data.get('tipo'), data.get('marca'),
-               data.get('modelo'), data.get('num_registro_roma'), data.get('fecha_iteaf'), data.get('notas')))
+               data.get('modelo'), data.get('num_registro_roma'), data.get('fecha_iteaf'), data.get('notas'),
+               data.get('propio'), nif_propietario))
     conn.commit(); new_id = c.lastrowid; conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
 
@@ -54,7 +61,10 @@ def manage_equipo(eid):
                      (eid, uid, exp_id))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     data = request.json or {}
-    fields = ['descripcion', 'tipo', 'marca', 'modelo', 'num_registro_roma', 'fecha_iteaf', 'notas']
+    if data.get('propio') is not False:
+        data['nif_propietario'] = None
+    fields = ['descripcion', 'tipo', 'marca', 'modelo', 'num_registro_roma', 'fecha_iteaf', 'notas',
+              'propio', 'nif_propietario']
     sets = ', '.join(f"{f}=?" for f in fields)
     conn.execute(f"UPDATE equipos SET {sets} WHERE id=? AND user_id=? AND explotacion_id=?",
                  [data.get(f) for f in fields] + [eid, uid, exp_id])

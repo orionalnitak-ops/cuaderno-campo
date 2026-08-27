@@ -137,8 +137,12 @@ def _insert_tratamiento(c, uid, data, parcela_id, parcela_etiqueta, explotacion_
             plaga_objetivo, dosis_valor, dosis_unidad, volumen_caldo,
             equipo_id, condiciones_meteo, plazo_seguridad_dias,
             fecha_recoleccion_minima, eficacia, aplicador_id, notas, campana,
-            asesor, justificacion_actuacion, asesor_id, motivo_sin_registro
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            asesor, justificacion_actuacion, asesor_id, motivo_sin_registro,
+            superficie_tratada_ha, justificacion_actuacion_cod, unidad_cod, eficacia_cod,
+            asesor_final_id, fecha_validacion_intermedia, fecha_validacion_final,
+            validacion_intermedia, validacion_final,
+            confirmacion_o_firma_intermedia, confirmacion_o_firma_final
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
         uid, explotacion_id, parcela_id, parcela_etiqueta, data.get('fecha_aplicacion'),
         data.get('producto_comercial'), data.get('num_registro_mapa'), data.get('sustancia_activa'),
@@ -151,12 +155,18 @@ def _insert_tratamiento(c, uid, data, parcela_id, parcela_etiqueta, explotacion_
         data.get('asesor'), data.get('justificacion_actuacion'),
         data.get('asesor_id') or None,
         data.get('motivo_sin_registro') or None,
+        _to_real(data.get('superficie_tratada_ha')), data.get('justificacion_actuacion_cod'),
+        data.get('unidad_cod'), data.get('eficacia_cod'),
+        data.get('asesor_final_id') or None, data.get('fecha_validacion_intermedia'),
+        data.get('fecha_validacion_final'), data.get('validacion_intermedia'),
+        data.get('validacion_final'), data.get('confirmacion_o_firma_intermedia'),
+        data.get('confirmacion_o_firma_final'),
     ))
     return c.lastrowid
 
 
-def _check_asesor(conn, data, uid, explotacion_id=None):
-    """Valida el asesor_id recibido. Devuelve (error, aviso).
+def _check_asesor(conn, data, uid, explotacion_id=None, field='asesor_id', etiqueta='Intermedia'):
+    """Valida el asesor_id (o asesor_final_id) recibido. Devuelve (error, aviso).
 
     - error: bloquea el guardado. Solo si el asesor no es del usuario (IDOR).
     - aviso: NO bloquea. Se devuelve al cliente para mostrarlo como advertencia.
@@ -166,32 +176,36 @@ def _check_asesor(conn, data, uid, explotacion_id=None):
     bloquearle el registro en plena parcela deja el módulo inservible.
     Ver spec/features/010-asesores/spec.md (decisión 2).
 
-    Normaliza `asesor_id` in place a int o None antes de validarlo: un `<select>`
+    Normaliza `field` in place a int o None antes de validarlo: un `<select>`
     vacío llega como '' pero un cliente puede mandar el string '0', que es truthy
     y colaba como id válido — el asesor 0 no existe y el guardado moría con un 403
     en vez de limpiar el campo.
-    """
-    raw = data.get('asesor_id')
-    try:
-        data['asesor_id'] = int(raw) or None
-    except (TypeError, ValueError):
-        data['asesor_id'] = None
 
-    if not data.get('asesor_id'):
+    `field`/`etiqueta` generalizan la función para el segundo asesor de la
+    feature 022 (validación Final, `asesor_final_id`) sin duplicar la lógica.
+    """
+    raw = data.get(field)
+    try:
+        data[field] = int(raw) or None
+    except (TypeError, ValueError):
+        data[field] = None
+
+    if not data.get(field):
         return None, None
     sql = "SELECT nombre, num_ropo FROM asesores WHERE id=? AND user_id=?"
-    params = [data['asesor_id'], uid]
+    params = [data[field], uid]
     if explotacion_id is not None:
         sql += " AND explotacion_id=?"
         params.append(explotacion_id)
     asesor = one(conn, sql, params)
     if not asesor:
-        return "Asesor no encontrado", None
+        return f"Asesor de validación {etiqueta} no encontrado", None
     if not (asesor.get('num_ropo') or '').strip():
         return None, (
-            f"Tratamiento guardado. Aviso: el asesor «{asesor.get('nombre')}» no tiene "
-            "nº ROPO registrado. La Orden APA/204/2023 identifica al asesor por ese "
-            "número — añádelo en Configuración → Asesores cuando lo tengas."
+            f"Tratamiento guardado. Aviso: el asesor «{asesor.get('nombre')}» "
+            f"(validación {etiqueta}) no tiene nº ROPO registrado. La Orden "
+            "APA/204/2023 identifica al asesor por ese número — añádelo en "
+            "Configuración → Asesores cuando lo tengas."
         )
     return None, None
 
@@ -250,6 +264,12 @@ def manage_tratamientos():
     if err_asesor:
         conn.close()
         return jsonify({"error": err_asesor}), 403
+    err_asesor_final, aviso_asesor_final = _check_asesor(
+        conn, data, uid, exp_id, field='asesor_final_id', etiqueta='Final')
+    if err_asesor_final:
+        conn.close()
+        return jsonify({"error": err_asesor_final}), 403
+    avisos = [a for a in (aviso_asesor, aviso_asesor_final) if a]
 
     c = conn.cursor()
 
@@ -281,8 +301,8 @@ def manage_tratamientos():
         for p in parcelas:
             _recalcular_patrones(uid, 'tratamientos', p['id'], data.get('fecha_aplicacion'), exp_id)
         resp = {"status": "ok", "count": len(ids), "ids": ids}
-        if aviso_asesor:
-            resp["aviso"] = aviso_asesor
+        if avisos:
+            resp["aviso"] = " ".join(avisos)
         return jsonify(resp), 201
 
     if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid, exp_id):
@@ -295,8 +315,8 @@ def manage_tratamientos():
     conn.close()
     _recalcular_patrones(uid, 'tratamientos', data.get('parcela_id'), data.get('fecha_aplicacion'), exp_id)
     resp = {"status": "ok", "id": new_id}
-    if aviso_asesor:
-        resp["aviso"] = aviso_asesor
+    if avisos:
+        resp["aviso"] = " ".join(avisos)
     return jsonify(resp), 201
 
 
@@ -345,6 +365,12 @@ def manage_tratamiento(tid):
     if err_asesor:
         conn.close()
         return jsonify({"error": err_asesor}), 403
+    err_asesor_final, aviso_asesor_final = _check_asesor(
+        conn, data, uid, exp_id, field='asesor_final_id', etiqueta='Final')
+    if err_asesor_final:
+        conn.close()
+        return jsonify({"error": err_asesor_final}), 403
+    avisos = [a for a in (aviso_asesor, aviso_asesor_final) if a]
     if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
@@ -355,16 +381,20 @@ def manage_tratamiento(tid):
               'num_registro_mapa', 'sustancia_activa', 'plaga_objetivo', 'dosis_valor', 'dosis_unidad',
               'volumen_caldo', 'equipo_id', 'condiciones_meteo', 'plazo_seguridad_dias',
               'fecha_recoleccion_minima', 'eficacia', 'aplicador_id', 'notas', 'campana',
-              'asesor', 'justificacion_actuacion', 'asesor_id', 'motivo_sin_registro']
+              'asesor', 'justificacion_actuacion', 'asesor_id', 'motivo_sin_registro',
+              'superficie_tratada_ha', 'justificacion_actuacion_cod', 'unidad_cod', 'eficacia_cod',
+              'asesor_final_id', 'fecha_validacion_intermedia', 'fecha_validacion_final',
+              'validacion_intermedia', 'validacion_final',
+              'confirmacion_o_firma_intermedia', 'confirmacion_o_firma_final']
     sets = ', '.join(f"{f}=?" for f in fields)
-    _real_t = {'dosis_valor', 'volumen_caldo'}
-    _int_t  = {'equipo_id', 'plazo_seguridad_dias', 'aplicador_id', 'asesor_id'}
+    _real_t = {'dosis_valor', 'volumen_caldo', 'superficie_tratada_ha'}
+    _int_t  = {'equipo_id', 'plazo_seguridad_dias', 'aplicador_id', 'asesor_id', 'asesor_final_id'}
     conn.execute(f"UPDATE tratamientos SET {sets}"
                  f" WHERE id=? AND user_id=? AND explotacion_id=? AND deleted_at IS NULL",
                  [_to_real(data.get(f)) if f in _real_t else (data.get(f) or None if f in _int_t else data.get(f)) for f in fields]
                  + [tid, uid, exp_id])
     conn.commit(); conn.close()
     resp = {"status": "ok"}
-    if aviso_asesor:
-        resp["aviso"] = aviso_asesor
+    if avisos:
+        resp["aviso"] = " ".join(avisos)
     return jsonify(resp)

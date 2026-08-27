@@ -201,6 +201,11 @@ const HELP_SCREENS = {
                 title: 'Equipo ROMA',
                 desc: 'Selecciona la maquinaria usada para aplicar. El equipo debe tener número de registro ROMA y la revisión ITEAF en vigor.',
             },
+            {
+                icon: '📋',
+                title: 'Datos SIEX (opcional)',
+                desc: 'Desplegando "más campos" puedes indicar la superficie tratada, un segundo asesor de validación Final además del habitual, y la justificación de la actuación del catálogo oficial — nada de esto es obligatorio para guardar.',
+            },
         ],
     },
     fertilizacion: {
