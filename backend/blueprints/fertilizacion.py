@@ -173,6 +173,21 @@ def _validate_abonado(data):
 # FERTILIZACIÓN
 # ─────────────────────────────────────────────
 
+# Columnas actualizables en fertilizacion. Se interpolan en el SQL del UPDATE
+# (los placeholders `?` no parametrizan identificadores de columna), así que
+# esta tupla DEBE ser siempre una constante hardcodeada y nunca derivar de
+# `data` (el request body) — mismo patrón que `_RIEGO_UPDATE_FIELDS` en riego.
+_FERTILIZACION_UPDATE_FIELDS = (
+    'parcela_id', 'parcela_etiqueta', 'fecha_aplicacion', 'tipo_fertilizante',
+    'producto', 'riqueza_npk', 'dosis_valor', 'dosis_unidad', 'densidad_g_ml',
+    'metodo_aplicacion', 'notas', 'campana',
+    'n_aplicado', 'p2o5_aplicado', 'k2o_aplicado',
+    'fecha_enterrado', 'decl_buenas_practicas', 'buena_practica_cod',
+    'material_fertilizante_cod', 'carbono_pct', 'albaran', 'unidad_cod',
+    'tipo_fertilizacion_cod', 'metodo_cod', 'asesor_id', 'fecha_asesoramiento',
+)
+
+
 def _insert_fertilizacion(c, uid, data, parcela_id, parcela_etiqueta, n_ap, p_ap, k_ap,
                           explotacion_id):
     """Inserta un único registro de fertilización para la parcela dada."""
@@ -181,14 +196,22 @@ def _insert_fertilizacion(c, uid, data, parcela_id, parcela_etiqueta, n_ap, p_ap
             user_id, explotacion_id, parcela_id, parcela_etiqueta, fecha_aplicacion,
             tipo_fertilizante, producto, riqueza_npk,
             dosis_valor, dosis_unidad, densidad_g_ml, metodo_aplicacion, notas, campana,
-            n_aplicado, p2o5_aplicado, k2o_aplicado
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            n_aplicado, p2o5_aplicado, k2o_aplicado,
+            fecha_enterrado, decl_buenas_practicas, buena_practica_cod,
+            material_fertilizante_cod, carbono_pct, albaran, unidad_cod,
+            tipo_fertilizacion_cod, metodo_cod, asesor_id, fecha_asesoramiento
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (uid, explotacion_id, parcela_id, parcela_etiqueta, data.get('fecha_aplicacion'),
           data.get('tipo_fertilizante'), data.get('producto'), data.get('riqueza_npk'),
           _to_real(data.get('dosis_valor')), data.get('dosis_unidad', 'kg/ha'),
           _to_real(data.get('densidad_g_ml')),
           data.get('metodo_aplicacion'), data.get('notas'), data.get('campana', '2025/2026'),
-          n_ap, p_ap, k_ap))
+          n_ap, p_ap, k_ap,
+          data.get('fecha_enterrado'), data.get('decl_buenas_practicas'),
+          data.get('buena_practica_cod'), data.get('material_fertilizante_cod'),
+          _to_real(data.get('carbono_pct')), data.get('albaran'), data.get('unidad_cod'),
+          data.get('tipo_fertilizacion_cod'), data.get('metodo_cod'), data.get('asesor_id'),
+          data.get('fecha_asesoramiento')))
     return c.lastrowid
 
 
@@ -245,6 +268,32 @@ def parcela_es_del_usuario(conn, parcela_id, uid, explotacion_id=None):
     return one(conn, sql, params) is not None
 
 
+def _check_asesor_fertilizacion(conn, data, uid, explotacion_id=None):
+    """Normaliza `asesor_id` in place a int o None y valida que sea del usuario.
+
+    Evita IDOR sobre `asesores` (Security Review PR #69): sin esto, un usuario
+    autenticado podría enviar el asesor_id de otro para referenciarlo. Mismo
+    problema que ya resuelve `_check_asesor` en tratamientos.py — no se
+    reutiliza esa función porque su mensaje de aviso está redactado para
+    tratamientos (ROPO, Orden APA/204/2023), que no aplica a fertilización.
+    """
+    raw = data.get('asesor_id')
+    try:
+        data['asesor_id'] = int(raw) or None
+    except (TypeError, ValueError):
+        data['asesor_id'] = None
+    if not data['asesor_id']:
+        return None
+    sql = "SELECT id FROM asesores WHERE id=? AND user_id=?"
+    params = [data['asesor_id'], uid]
+    if explotacion_id is not None:
+        sql += " AND explotacion_id=?"
+        params.append(explotacion_id)
+    if one(conn, sql, params) is None:
+        return "Asesor no encontrado"
+    return None
+
+
 @bp.route('/api/fertilizacion', methods=['GET', 'POST'])
 @login_required
 def manage_fertilizacion():
@@ -265,6 +314,11 @@ def manage_fertilizacion():
     if not exp_id:
         conn.close()
         return jsonify({"error": SIN_EXPLOTACION}), 400
+
+    asesor_err = _check_asesor_fertilizacion(conn, data, uid, exp_id)
+    if asesor_err:
+        conn.close()
+        return jsonify({"error": asesor_err}), 403
 
     n_ap, p_ap, k_ap = _calc_npk(data.get('riqueza_npk'), data.get('dosis_valor'),
                                   data.get('dosis_unidad', 'kg/ha'), data.get('densidad_g_ml'))
@@ -317,14 +371,15 @@ def manage_fertilizacion_one(fid):
     if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
+    asesor_err = _check_asesor_fertilizacion(conn, data, uid, exp_id)
+    if asesor_err:
+        conn.close()
+        return jsonify({"error": asesor_err}), 403
     n_ap, p_ap, k_ap = _calc_npk(data.get('riqueza_npk'), data.get('dosis_valor'),
                                   data.get('dosis_unidad', 'kg/ha'), data.get('densidad_g_ml'))
-    fields = ['parcela_id', 'parcela_etiqueta', 'fecha_aplicacion', 'tipo_fertilizante',
-              'producto', 'riqueza_npk', 'dosis_valor', 'dosis_unidad', 'densidad_g_ml',
-              'metodo_aplicacion', 'notas', 'campana',
-              'n_aplicado', 'p2o5_aplicado', 'k2o_aplicado']
+    fields = list(_FERTILIZACION_UPDATE_FIELDS)
     sets = ', '.join(f"{f}=?" for f in fields)
-    _real_f = {'dosis_valor', 'densidad_g_ml'}
+    _real_f = {'dosis_valor', 'densidad_g_ml', 'carbono_pct'}
     npk_map = {'n_aplicado': n_ap, 'p2o5_aplicado': p_ap, 'k2o_aplicado': k_ap}
     values = [_to_real(data.get(f)) if f in _real_f else npk_map.get(f, data.get(f)) for f in fields]
     conn.execute(f"UPDATE fertilizacion SET {sets}"

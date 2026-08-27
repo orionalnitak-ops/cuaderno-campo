@@ -695,6 +695,100 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
     );
 }
 
+// ── Catálogos SIEX de fertilización (feature 021, bloque 4/8) ───────────────
+// Los cuatro caben en un <select> estático, igual que en riego (feature 020):
+// ninguno pasa de 41 filas, no hace falta tabla de referencia ni endpoint.
+// Verificados contra los xlsx oficiales de Catalogos_xlsx.zip.
+const MATERIALES_FERTILIZANTES_SIEX = [
+    { cod: 0, nombre: 'Otros' },
+    { cod: 1, nombre: 'Estiércol líquido de aves' },
+    { cod: 2, nombre: 'Estiércol líquido de bovino' },
+    { cod: 3, nombre: 'Estiércol de porcino' },
+    { cod: 4, nombre: 'Estiércol sólido de aves' },
+    { cod: 5, nombre: 'Estiércol sólido de bovino' },
+    { cod: 6, nombre: 'Estiércol sólido de caprino' },
+    { cod: 7, nombre: 'Estiércol sólido de equino' },
+    { cod: 8, nombre: 'Estiércol sólido de ovino' },
+    { cod: 9, nombre: 'Inhibidores' },
+    { cod: 10, nombre: 'Otros tipos de estiércol sólido: conejo, visón, zorro…' },
+    { cod: 11, nombre: 'Productos fertilizantes bioestimulantes' },
+    { cod: 12, nombre: 'Productos fertilizantes enmiendas calizas' },
+    { cod: 13, nombre: 'Productos fertilizantes enmiendas orgánicas' },
+    { cod: 14, nombre: 'Productos fertilizantes: abonos inorgánicos' },
+    { cod: 15, nombre: 'Productos fertilizantes: abonos orgánicos' },
+    { cod: 16, nombre: 'Productos fertilizantes: abonos organominerales' },
+    { cod: 17, nombre: 'Productos fertilizantes otras enmiendas (retenedoras humedad, ácidas, etc.)' },
+    { cod: 18, nombre: 'Residuos: materiales conformes a las CMC 3, 4, 5, 6, 12, 13 y 14 del Anexo II del Reglamento (UE) 2019/1009' },
+    { cod: 19, nombre: 'Residuos: subproductos animales no aptos para consumo humano, tratados según el art. 20 del Reglamento (CE) 1069/2009' },
+    { cod: 20, nombre: 'Residuos: compost de alperujo' },
+    { cod: 21, nombre: 'Residuos: alperujo desecado' },
+    { cod: 22, nombre: 'Residuos: lodos de tratamiento de aguas residuales urbanas (lodos EDAR), RD 1310/1990, tratados' },
+    { cod: 23, nombre: 'Residuos: lodos calizos del proceso Kraft de fabricación de pasta de papel, para elevar el pH de suelos ácidos' },
+];
+
+const TIPOS_FERTILIZACION_SIEX = [
+    { cod: 1, nombre: 'Abonado de fondo' },
+    { cod: 2, nombre: 'Abonado de cobertera' },
+    { cod: 3, nombre: 'Aplicación de enmienda' },
+];
+
+const METODOS_FERTILIZACION_SIEX = [
+    { cod: 1, nombre: 'Esparcido general' },
+    { cod: 2, nombre: 'Esparcido general y enterrado' },
+    { cod: 3, nombre: 'Esparcido localizado' },
+    { cod: 4, nombre: 'Esparcido localizado y enterrado' },
+    { cod: 5, nombre: 'Riego por aspersión (fertirrigación)' },
+    { cod: 6, nombre: 'Riego localizado (fertirrigación)' },
+    { cod: 7, nombre: 'Aplicación foliar' },
+];
+
+// Solo las de ámbito "Fertilización" del catálogo "Buenas prácticas.xlsx" (98
+// filas en total, repartidas entre Fertilización/Riego/Fitosanitario) —
+// mismo catálogo compartido del bloque 020, nunca se mezclan ámbitos.
+const BUENAS_PRACTICAS_FERTILIZACION_SIEX = [
+    { cod: 0, nombre: 'No realiza buenas prácticas' },
+    { cod: 1, nombre: 'Aplicación de purines mediante sistema de bandas con mangueras o tubos rígidos' },
+    { cod: 2, nombre: 'Aplicación de purines mediante sistema de bandas de discos o rejas' },
+    { cod: 3, nombre: 'Aplicación de purines mediante inyección' },
+    { cod: 4, nombre: 'Dilución de purines, seguida de técnicas tales como un sistema de riego de baja presión' },
+    { cod: 5, nombre: 'Acidificación de los purines' },
+    { cod: 6, nombre: 'Dosis y momento de aplicación: el abonado se realizará en los momentos del ciclo del cultivo en los que el aprovechamiento del fertilizante pueda ser más rápido' },
+    { cod: 7, nombre: 'Fraccionamiento de los aportes de acuerdo con las necesidades del cultivo, siempre que sea técnicamente posible' },
+    { cod: 8, nombre: 'Incorporación de los fertilizantes en el suelo por sistemas de inyección en profundidad' },
+    { cod: 9, nombre: 'Incorporación de los fertilizantes en el suelo mediante mezcla de los gránulos del fertilizante con el suelo' },
+    { cod: 10, nombre: 'Emplear gránulos de urea recubiertos de un polímero' },
+    { cod: 11, nombre: 'Aplicar un riego inmediatamente después de la fertilización con abonos a base de urea' },
+    { cod: 12, nombre: 'Realizar la fertilización nitrogenada mediante fertirrigación (Sólo cuando haya necesidades de regadío)' },
+    { cod: 13, nombre: 'En el cultivo de arroz, realizar el abonado nitrogenado con el terreno seco' },
+    { cod: 14, nombre: 'Empleo de inhibidores de la ureasa con productos fertilizantes a base de urea' },
+    { cod: 15, nombre: 'Enterrado de purines y productos y materiales líquidos lo antes posible y siempre en las primeras 4 horas tras su aplicación' },
+    { cod: 16, nombre: 'Empleo de inhibidores de la ureasa o de la nitrificación aplicados a purines, con supervisión profesional en caso de aplicación directa al suelo o a la balsa de purín' },
+    { cod: 17, nombre: 'Aplicación de la tecnología de dosificación variable dentro de una misma parcela' },
+    { cod: 18, nombre: 'Enterrado de la urea, en el momento de su aplicación al suelo o, por lo menos, en las 4 horas siguientes' },
+    { cod: 19, nombre: 'Empleo de productos fertilizantes nitrogenados con inhibidores de la nitrificación' },
+    { cod: 20, nombre: 'Abonado en verde' },
+    { cod: 22, nombre: 'Si el material usado en el abonado aporta agua en cantidad considerable al cultivo (p. ej. estiércoles líquidos), se tendrá en cuenta ese volumen de agua incorporado para el cálculo' },
+    { cod: 24, nombre: 'En cultivos con riego por inundación, el abonado nitrogenado se aplicará cuando el suelo esté en sazón y se enterrará inmediatamente mediante una labor' },
+    { cod: 25, nombre: 'En riego localizado, la fertilización se efectuará disolviendo los abonos en el agua de riego, dosificándolos fraccionadamente durante el periodo de actividad vegetativa del cultivo' },
+    { cod: 27, nombre: 'El aporte de nutrientes con el agua de riego se ajustará para que su concentración sea lo más baja posible, adaptándose a las necesidades hídricas del cultivo y aplicándose en los momentos de máximo requerimiento' },
+    { cod: 31, nombre: 'Diseño en línea clave ("key-line")' },
+    { cod: 36, nombre: 'Monitorización de condiciones del suelo, clima y cultivo en tiempo real con sensores IoT' },
+    { cod: 37, nombre: 'Uso de drones y satélites para el monitoreo geoespacial de cultivos' },
+    { cod: 38, nombre: 'Análisis de datos agrícolas y apoyo a la toma de decisiones (DSS)' },
+    { cod: 39, nombre: 'Aplicación variable de insumos con equipos de precisión' },
+    { cod: 40, nombre: 'Manejo de maquinaria agrícola equipada con tecnología de precisión' },
+    { cod: 42, nombre: 'Uso de drones para aplicación precisa de insumos agrícolas' },
+    { cod: 43, nombre: 'Comunicación en campo mediante redes de sensores inalámbricos' },
+    { cod: 44, nombre: 'Acceso a información y servicios agrícolas a través de aplicaciones móviles' },
+    { cod: 45, nombre: 'Gestión de la explotación agrícola mediante software específico' },
+    { cod: 46, nombre: 'Limpieza y desinfección - Mantener limpias las instalaciones, equipos, vehículos y bebederos' },
+    { cod: 47, nombre: 'Formación continua del personal - Capacitar al personal en bienestar, sanidad, higiene, manejo y bioseguridad' },
+    { cod: 48, nombre: 'Evaluación y mejora continua - Revisar resultados productivos, sanitarios y ambientales para ajustar prácticas' },
+    { cod: 49, nombre: 'Rotación de cultivos' },
+    { cod: 57, nombre: 'Maquinaria autónoma: tractores y otros equipos agrícolas que pueden operar sin intervención humana' },
+    { cod: 58, nombre: 'Uso de sistemas de transferencia cerrados para realizar la carga en el tanque de aplicación' },
+];
+
 // ── 2. FERTILIZACIÓN ──
 function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
@@ -702,6 +796,9 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
     const [sugerencias, setSugerencias] = React.useState({});
     const [modoUHC, setModoUHC] = React.useState(false);
     const [uhcList, setUhcList] = React.useState([]);
+    const [asesores, setAsesores] = React.useState([]);
+    const [showAddAses, setShowAddAses] = React.useState(false);
+    const [newAses, setNewAses] = React.useState({ nombre: '', num_ropo: '', nif: '' });
     const [f, setF] = React.useState({
         parcela_id: record?.parcela_id || '', parcela_etiqueta: record?.parcela_etiqueta || '',
         uhc_id: record?.uhc_id || '',
@@ -712,6 +809,20 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
         densidad_g_ml: record?.densidad_g_ml || '',
         metodo_aplicacion: record?.metodo_aplicacion || '', notas: record?.notas || '',
         campana,
+        // feature 021 (bloque 4/8 SIEX): catálogos adicionales, nunca reemplazan
+        // tipo_fertilizante/producto/metodo_aplicacion de texto libre — ver
+        // spec/features/021-siex-fertilizacion.
+        fecha_enterrado:           record?.fecha_enterrado           || '',
+        decl_buenas_practicas:     record?.decl_buenas_practicas     ?? null,
+        buena_practica_cod:        record?.buena_practica_cod        || null,
+        material_fertilizante_cod: record?.material_fertilizante_cod || null,
+        carbono_pct:               record?.carbono_pct               || '',
+        albaran:                   record?.albaran                   || '',
+        unidad_cod:                record?.unidad_cod                || null,
+        tipo_fertilizacion_cod:    record?.tipo_fertilizacion_cod    || null,
+        metodo_cod:                record?.metodo_cod                || null,
+        asesor_id:                 record?.asesor_id                 || '',
+        fecha_asesoramiento:       record?.fecha_asesoramiento       || '',
     });
     const set = (k, v) => setF(x => ({ ...x, [k]: v }));
 
@@ -727,6 +838,28 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
             .then(d => setUhcList(Array.isArray(d) ? d : []))
             .catch(() => {});
     }, [campana]);
+
+    React.useEffect(() => {
+        fetch('/api/asesores', { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setAsesores(Array.isArray(d) ? d : []))
+            .catch(() => {});
+    }, []);
+
+    const saveNuevoAsesor = async () => {
+        if (!newAses.nombre.trim()) { alert('El nombre del asesor es obligatorio'); return; }
+        const res = await fetch('/api/asesores', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newAses), credentials: 'include'
+        });
+        if (!res.ok) { alert('Error al guardar el asesor'); return; }
+        const d = await res.json();
+        const lista = await fetch('/api/asesores', { credentials: 'include' }).then(r => r.json());
+        setAsesores(Array.isArray(lista) ? lista : []);
+        set('asesor_id', String(d.id));
+        setNewAses({ nombre: '', num_ropo: '', nif: '' });
+        setShowAddAses(false);
+    };
 
     React.useEffect(() => {
         if (isEdit) return;
@@ -868,6 +1001,118 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
                         </div>
                     )}
                 </div>
+
+                {/* feature 021 (bloque 4/8 SIEX): catálogos adicionales, ninguno
+                    obligatorio — nunca bloquean el guardado. */}
+                <div className="responsive-grid cols-2">
+                    <FieldGroup label="Material fertilizante (catálogo SIEX)">
+                        <select className="input-field" value={f.material_fertilizante_cod ?? ''}
+                            onChange={e => set('material_fertilizante_cod', e.target.value ? Number(e.target.value) : null)}>
+                            <option value="">Sin especificar…</option>
+                            {MATERIALES_FERTILIZANTES_SIEX.map(m => <option key={m.cod} value={m.cod}>{m.nombre}</option>)}
+                        </select>
+                    </FieldGroup>
+                    <FieldGroup label="Tipo de fertilización (catálogo SIEX)">
+                        <select className="input-field" value={f.tipo_fertilizacion_cod ?? ''}
+                            onChange={e => set('tipo_fertilizacion_cod', e.target.value ? Number(e.target.value) : null)}>
+                            <option value="">Sin especificar…</option>
+                            {TIPOS_FERTILIZACION_SIEX.map(t => <option key={t.cod} value={t.cod}>{t.nombre}</option>)}
+                        </select>
+                    </FieldGroup>
+                    <FieldGroup label="Método (catálogo SIEX)">
+                        <select className="input-field" value={f.metodo_cod ?? ''}
+                            onChange={e => set('metodo_cod', e.target.value ? Number(e.target.value) : null)}>
+                            <option value="">Sin especificar…</option>
+                            {METODOS_FERTILIZACION_SIEX.map(m => <option key={m.cod} value={m.cod}>{m.nombre}</option>)}
+                        </select>
+                    </FieldGroup>
+                    <FieldGroup label="Fecha de enterrado">
+                        <input type="date" className="input-field" value={f.fecha_enterrado}
+                            onChange={e => set('fecha_enterrado', e.target.value)} />
+                    </FieldGroup>
+                    <FieldGroup label="% Carbono orgánico">
+                        <ZoomInput label="% Carbono orgánico" value={f.carbono_pct} placeholder="2.5" inputMode="decimal"
+                            onConfirm={v => set('carbono_pct', v)} />
+                    </FieldGroup>
+                    <FieldGroup label="Nº de albarán">
+                        <ZoomInput label="Nº de albarán" value={f.albaran} placeholder="ALB-2025-0456"
+                            onConfirm={v => set('albaran', v)} />
+                    </FieldGroup>
+                    <FieldGroup label="Unidad de la cantidad">
+                        <select className="input-field" value={f.unidad_cod ?? ''}
+                            onChange={e => set('unidad_cod', e.target.value ? Number(e.target.value) : null)}>
+                            <option value="">Sin especificar…</option>
+                            <option value={1}>kg</option>
+                            <option value={2}>L</option>
+                            <option value={3}>t</option>
+                        </select>
+                    </FieldGroup>
+                    <FieldGroup label="¿Declara buenas prácticas?">
+                        <select className="input-field"
+                            value={f.decl_buenas_practicas === null ? '' : (f.decl_buenas_practicas ? '1' : '0')}
+                            onChange={e => {
+                                const v = e.target.value;
+                                set('decl_buenas_practicas', v === '' ? null : v === '1');
+                                if (v !== '1') set('buena_practica_cod', null);
+                            }}>
+                            <option value="">Sin especificar…</option>
+                            <option value="1">Sí</option>
+                            <option value="0">No</option>
+                        </select>
+                    </FieldGroup>
+                </div>
+
+                {f.decl_buenas_practicas === true && (
+                    <FieldGroup label="Buena práctica (solo ámbito Fertilización)">
+                        <select className="input-field" value={f.buena_practica_cod ?? ''}
+                            onChange={e => set('buena_practica_cod', e.target.value ? Number(e.target.value) : null)}>
+                            <option value="">Seleccionar…</option>
+                            {BUENAS_PRACTICAS_FERTILIZACION_SIEX.map(b => <option key={b.cod} value={b.cod}>{b.nombre}</option>)}
+                        </select>
+                    </FieldGroup>
+                )}
+
+                <FieldGroup label="Asesor de fertilización">
+                    {asesores.length > 0 ? (
+                        <select className="input-field" value={f.asesor_id}
+                            onChange={e => set('asesor_id', e.target.value)}>
+                            <option value="">-- Sin asesor --</option>
+                            {asesores.map(a => (
+                                <option key={a.id} value={a.id}>
+                                    {a.nombre}{a.num_ropo ? ` (ROPO ${a.num_ropo})` : ''}
+                                </option>
+                            ))}
+                        </select>
+                    ) : !showAddAses ? (
+                        <button type="button" className="btn-ghost"
+                            style={{ width: '100%', minHeight: 44, fontSize: '0.85rem' }}
+                            onClick={() => setShowAddAses(true)}>
+                            + Añadir mi asesor
+                        </button>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <input className="input-field" placeholder="Nombre completo *" value={newAses.nombre}
+                                onChange={e => setNewAses(x => ({ ...x, nombre: e.target.value }))} />
+                            <input className="input-field" placeholder="Nº ROPO (sección asesor)" value={newAses.num_ropo}
+                                onChange={e => setNewAses(x => ({ ...x, num_ropo: e.target.value }))} />
+                            <input className="input-field" placeholder="NIF" value={newAses.nif}
+                                onChange={e => setNewAses(x => ({ ...x, nif: e.target.value }))} />
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <button type="button" className="btn-ghost" style={{ flex: 1, minHeight: 44, fontSize: '0.85rem' }}
+                                    onClick={() => setShowAddAses(false)}>Cancelar</button>
+                                <button type="button" className="btn-primary" style={{ flex: 2, minHeight: 44, fontSize: '0.85rem' }}
+                                    onClick={saveNuevoAsesor}>Guardar asesor</button>
+                            </div>
+                        </div>
+                    )}
+                </FieldGroup>
+                {f.asesor_id && (
+                    <FieldGroup label="Fecha de asesoramiento">
+                        <input type="date" className="input-field" value={f.fecha_asesoramiento}
+                            onChange={e => set('fecha_asesoramiento', e.target.value)} />
+                    </FieldGroup>
+                )}
+
                 <FieldGroup label="Notas">
                     <ZoomInput label="Notas" value={f.notas} placeholder="Observaciones…"
                         multiline onConfirm={v => set('notas', v)} />
