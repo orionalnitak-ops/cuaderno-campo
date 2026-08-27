@@ -7,7 +7,7 @@
 | # | Feature | Estado | Urgencia |
 |---|---------|--------|----------|
 | 001 | Stripe live mode (precios EUR, actualmente en SEK) | Pendiente | 🔴 Crítico |
-| 002 | Compatibilidad SIEX — datos, catálogos y exportaciones (ver desglose por bloque) | Pendiente | 🔴 Deadline 01/01/2027 |
+| 002 | Compatibilidad SIEX — datos, catálogos y exportaciones (ver desglose por bloque) | Implementado (8/8 bloques) | 🟢 Cerrado — ver nota |
 | 003 | Emails transaccionales (Resend) — verificación + bienvenida | Pendiente | 🟠 Alta |
 | 004 | Pantalla de ayuda visual (guía de inicio + ayuda contextual) | Implementado | 🟢 Cerrada |
 | 005 | Asistente IA estadístico | Implementado | 🟡 Media |
@@ -21,18 +21,20 @@
 
 > **Sobre el 002 — qué significa exactamente.** Lo que la ley obliga el 01/01/2027 es que el **agricultor** lleve el cuaderno en formato digital e interoperable con SIEX. No obliga a que esta app envíe los datos por API: el titular puede acceder a su CUE y cumplimentarlo él mismo con sus credenciales digitales. El envío automático por IUWS requiere ser *entidad habilitada* (registro, certificado de sello de componente, autorización firmada por cada titular y, al parecer, estatutos que recojan la representación de terceros ante la administración agraria). Esa vía **no se asume de momento** y por tanto no se promete en ningún sitio. Pendiente de confirmar con `reacue@castillalamancha.es` si un titular puede importar en su CUE un fichero generado por una aplicación externa: si la respuesta es que sí, esa es la vía natural para esta app.
 >
-> **Desglose del 002 en bloques controlables** (auditoría 2026-08-26 contra Anexo VI + catálogos oficiales SIEX, ~74 campos de brecha total). Cada bloque es un spec y un PR independiente, ordenados de menos a más esfuerzo:
+> **Los 8 bloques están implementados y mergeados en `main` (2026-08-27)**: los datos y catálogos SIEX ya se capturan y guardan en BD. **No se cierra del todo el 002**: queda pendiente reflejarlos en `export_pdf.py`/`exports.py` (decisión deliberada — sin urgencia legal porque el deadline es 01/01/2027) y confirmar con `reacue@castillalamancha.es` la vía de envío/importación real.
+>
+> **Desglose del 002 en bloques controlables** (auditoría 2026-08-26 contra Anexo VI + catálogos oficiales SIEX, ~74 campos de brecha total). Cada bloque tuvo su spec y su PR independiente, ordenados de menos a más esfuerzo:
 >
 > | # | Bloque | Campos que faltan | Tipo de trabajo | Estado |
 > |---|--------|-------------------|------------------|--------|
-> | 018 | Cultivo | 2 | columna simple + código de catálogo en variedad | **Especificado** (`spec/features/018-siex-cultivo`) |
-> | 019 | Cosecha / venta | 8 | columnas simples + distinguir venta directa vs comercializada | **Especificado** (`spec/features/019-siex-cosecha`) |
-> | 020 | Riego | 9 | columnas simples + 2 catálogos (energía, buenas prácticas) | **Especificado** (`spec/features/020-siex-riego`) |
-> | 021 | Fertilización | 11 | columnas + catálogo de producto + asesor de fertilización (concepto nuevo) | **Especificado** (`spec/features/021-siex-fertilizacion`) |
-> | 022 | Tratamientos fitosanitarios | 12 | columnas + catálogo + doble validación de asesor (concepto nuevo) | **Especificado** (`spec/features/022-siex-tratamientos`) |
-> | 023 | Análisis suelo/agua/producto | 9 | módulo nuevo | **Especificado** (`spec/features/023-siex-analisis`) |
-> | 024 | Tratamiento de semillas | 11 | módulo nuevo | **Especificado** (`spec/features/024-siex-tratamiento-semillas`) |
-> | 025 | Post-cosecha | 12 | módulo nuevo | **Especificado** (`spec/features/025-siex-postcosecha`) |
+> | 018 | Cultivo | 2 | columna simple + código de catálogo en variedad | ✅ Mergeado (PR #65) |
+> | 019 | Cosecha / venta | 8 | columnas simples + distinguir venta directa vs comercializada | ✅ Mergeado (PR #67) |
+> | 020 | Riego | 9 | columnas simples + 2 catálogos (energía, buenas prácticas) | ✅ Mergeado (PR #68) |
+> | 021 | Fertilización | 11 | columnas + catálogo de producto + asesor de fertilización (concepto nuevo) | ✅ Mergeado (PR #69) |
+> | 022 | Tratamientos fitosanitarios | 12 | columnas + catálogo + doble validación de asesor (concepto nuevo) | ✅ Mergeado (PR #73) |
+> | 023 | Análisis suelo/agua/producto | 9 | módulo nuevo | ✅ Mergeado (PR #74) |
+> | 024 | Tratamiento de semillas | 11 | módulo nuevo | ✅ Mergeado (PR #75) |
+> | 025 | Post-cosecha | 12 | módulo nuevo | ✅ Mergeado (PR #77) |
 >
 > Ganadería (razas, especies, UGM) queda fuera: la app es puramente agrícola, confirmado en la auditoría.
 >
