@@ -26,6 +26,7 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
         riego:           { icon: '💧', label: 'Riego',            chipClass: 'chip-riego',           accentColor: '#0369a1' },
         abonado:         { icon: '📋', label: 'Plan abonado',    chipClass: 'chip-abonado',        accentColor: '#0f766e' },
         cultivos_campana:{ icon: '🌾', label: 'Cultivo campaña', chipClass: 'chip-cultivo',        accentColor: '#16a34a' },
+        analisis:        { icon: '🧪', label: 'Análisis',        chipClass: 'chip-analisis',       accentColor: '#7c3aed' },
     };
 
     const MODULE_PILLS = [
@@ -38,6 +39,7 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
         ['riego',            '💧 Riego'],
         ['abonado',          '📋 Plan abono'],
         ['cultivos_campana', '🌾 Cultivo campaña'],
+        ['analisis',         '🧪 Análisis'],
     ];
 
     const fetchRecords = useCallback(() => {
@@ -91,7 +93,7 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
 
     const handleDelete = async (record) => {
         if (!confirm('¿Eliminar este registro?')) return;
-        const endpoint = { tratamientos: 'tratamientos', fertilizacion: 'fertilizacion', labores: 'labores', cosecha: 'cosecha', compras: 'compras', cultivos_campana: 'cultivos-campana' }[record._modulo];
+        const endpoint = { tratamientos: 'tratamientos', fertilizacion: 'fertilizacion', labores: 'labores', cosecha: 'cosecha', compras: 'compras', cultivos_campana: 'cultivos-campana', analisis: 'analisis' }[record._modulo];
         if (!endpoint) return;
         await fetch(`/api/${endpoint}/${record.id}`, { method: 'DELETE' });
         showToast('Registro eliminado');
@@ -207,7 +209,9 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
                                 </div>
                                 {/* Content */}
                                 <div style={{ flex: 1, minWidth: 0 }}
-                                    onClick={() => onEdit && onEdit(r._modulo?.replace(/s$/, '').replace('labore', 'labor'), r)}>
+                                    // "análisis" ya termina en "s" en singular: el replace(/s$/) genérico lo
+                                    // deja en "analisi", así que se restaura igual que ya se hace con "labore".
+                                    onClick={() => onEdit && onEdit(r._modulo?.replace(/s$/, '').replace('labore', 'labor').replace('analisi', 'analisis'), r)}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                                         <span className={`chip ${meta.chipClass}`} style={{ fontSize: '0.6rem' }}>{meta.label.toUpperCase()}</span>
                                         <span style={{ fontSize: '0.72rem', color: 'var(--outline)', marginLeft: 'auto', flexShrink: 0 }}>

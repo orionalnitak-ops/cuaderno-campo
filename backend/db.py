@@ -901,6 +901,34 @@ def init_db():
         )
     ''')
 
+    # ── ANÁLISIS (feature 023, bloque 6/8 SIEX) ──
+    # Módulo nuevo, no columnas sobre una tabla existente: unifica los dos
+    # nodos <analisis> del Anexo VI (colgado de <cultivo> y de <recinto>) en
+    # una sola tabla, igual que el resto de módulos cuelgan de una parcela.
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS analisis (
+            id {_PK},
+            user_id INTEGER NOT NULL,
+            explotacion_id INTEGER,
+            parcela_id INTEGER,
+            parcela_etiqueta TEXT,
+            material_cod INTEGER,
+            codigo_producto_siex INTEGER,
+            fecha TEXT,
+            rs_laboratorio TEXT,
+            direccion_laboratorio TEXT,
+            provincia_laboratorio_cod TEXT,
+            municipio_laboratorio_cod TEXT,
+            num_boletin TEXT,
+            tipo_analisis_cod INTEGER,
+            notas TEXT,
+            campana TEXT DEFAULT '2025/2026',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TEXT
+        )
+    ''')
+
     # ── LABORES ──
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS labores (
@@ -1332,6 +1360,8 @@ def _seed_if_needed(conn):
         ('idx_labores_parcela',      'labores',            'parcela_id'),
         ('idx_riego_user',           'riego',              'user_id'),
         ('idx_abonado_user',         'abonado',            'user_id'),
+        ('idx_analisis_user',        'analisis',           'user_id'),
+        ('idx_analisis_parcela',     'analisis',           'parcela_id'),
         ('idx_compras_user',         'compras',            'user_id'),
         ('idx_cultivos_parcela',     'cultivos_campana',   'parcela_id'),
         ('idx_cosecha_user',         'cosecha',            'user_id'),

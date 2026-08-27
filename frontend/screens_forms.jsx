@@ -176,6 +176,7 @@ function ScreenForms({ modulo, record, campana, onClose }) {
         riego:           { icon: '💧', title: 'Riego',                    color: '#0ea5e9' },
         abonado:         { icon: '📋', title: 'Plan de abonado',           color: '#0d9488' },
         cultivo_campana: { icon: '🌾', title: 'Cultivo de Campaña',        color: '#16a34a' },
+        analisis:        { icon: '🧪', title: 'Análisis',                  color: '#7c3aed' },
     };
     const cfg = MODULE_CONFIG[modulo] || { icon: '📝', title: 'Registro', color: '#374151' };
 
@@ -202,6 +203,7 @@ function ScreenForms({ modulo, record, campana, onClose }) {
                 {modulo === 'riego'         && <FormRiego         parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
                 {modulo === 'abonado'         && <FormAbonado         parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
                 {modulo === 'cultivo_campana' && <FormCultivoCampana  parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
+                {modulo === 'analisis'       && <FormAnalisis        parcelas={parcelas} record={record} campana={campana} onClose={onClose} isEdit={isEdit} />}
             </div>
         </div>
     );
@@ -1565,10 +1567,12 @@ function ProductoSiexSelect({ cultivoIacsCod, value, onChange }) {
     );
 }
 
-// ── ClienteProvinciaMunicipio (feature 019) ─────────────────────────────────
+// ── ProvinciaMunicipioSelect (feature 019, generalizado en 023) ─────────────
 // Mismo patrón de provincia→municipio que el alta de parcela
-// (screens_parcelas.jsx), aplicado al cliente de una venta comercializada.
-function ClienteProvinciaMunicipio({ provinciaCod, municipioCod, onProvincia, onMunicipio }) {
+// (screens_parcelas.jsx). Se usó primero para el cliente de una venta
+// comercializada; `entidad` permite reutilizarlo tal cual para el
+// laboratorio de un análisis (bloque 6/8) sin duplicar la lógica de fetch.
+function ProvinciaMunicipioSelect({ provinciaCod, municipioCod, onProvincia, onMunicipio, entidad = 'cliente' }) {
     const [municipios, setMunicipios] = React.useState([]);
 
     React.useEffect(() => {
@@ -1580,7 +1584,7 @@ function ClienteProvinciaMunicipio({ provinciaCod, municipioCod, onProvincia, on
 
     return (
         <div className="responsive-grid cols-2">
-            <FieldGroup label="Provincia del cliente">
+            <FieldGroup label={`Provincia del ${entidad}`}>
                 <select className="input-field" value={provinciaCod || ''}
                     onChange={e => { onProvincia(e.target.value); onMunicipio(''); }}>
                     <option value="">Seleccionar…</option>
@@ -1589,7 +1593,7 @@ function ClienteProvinciaMunicipio({ provinciaCod, municipioCod, onProvincia, on
                     ))}
                 </select>
             </FieldGroup>
-            <FieldGroup label="Municipio del cliente">
+            <FieldGroup label={`Municipio del ${entidad}`}>
                 <select className="input-field" value={municipioCod || ''} disabled={!provinciaCod || municipios.length === 0}
                     onChange={e => onMunicipio(e.target.value)}>
                     <option value="">Seleccionar…</option>
@@ -1850,7 +1854,7 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                                     onConfirm={v => set('direccion_cliente', v)} />
                             </FieldGroup>
                         </div>
-                        <ClienteProvinciaMunicipio provinciaCod={f.provincia_cliente_cod} municipioCod={f.municipio_cliente_cod}
+                        <ProvinciaMunicipioSelect provinciaCod={f.provincia_cliente_cod} municipioCod={f.municipio_cliente_cod}
                             onProvincia={v => set('provincia_cliente_cod', v)} onMunicipio={v => set('municipio_cliente_cod', v)} />
                     </div>
                 )}
@@ -1865,6 +1869,161 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                 <button className="btn-ghost" onClick={() => onClose()} style={{ flex: 1 }}>Cancelar</button>
                 <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 2 }}>
                     {saving ? 'Guardando…' : (isEdit ? '💾 Actualizar' : '✓ Guardar cosecha')}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ── Catálogos SIEX de análisis (feature 023, bloque 6/8) ────────────────────
+// Los dos caben en un <select> estático: 4 y 6 filas — ver
+// spec/features/023-siex-analisis. codigo_producto_siex reutiliza
+// ProductoSiexSelect y ref_productos_siex, ya construidos en el bloque 019.
+const MATERIAL_ANALIZADO_SIEX = [
+    { cod: 1, nombre: 'Cultivo' },
+    { cod: 2, nombre: 'Producto cosechado' },
+    { cod: 3, nombre: 'Suelo' },
+    { cod: 4, nombre: 'Agua de riego' },
+];
+
+const TIPO_ANALISIS_SIEX = [
+    { cod: 1, nombre: 'Residuos de sustancias activas fitosanitarias' },
+    { cod: 2, nombre: 'Microbiológico' },
+    { cod: 3, nombre: 'Análisis metales pesados' },
+    { cod: 4, nombre: 'Nutrientes' },
+    { cod: 5, nombre: 'Parámetros del suelo' },
+    { cod: 6, nombre: 'Presencia OMG' },
+];
+
+// Solo Cultivo (1) y Producto cosechado (2) admiten codigo_producto_siex —
+// Suelo y Agua de riego no analizan un cultivo. Mismo criterio que aplica
+// el backend en _insert_analisis: no se pregunta lo que no puede aplicarse.
+const _MATERIAL_CON_PRODUCTO = new Set([1, 2]);
+
+// ── ANÁLISIS DE SUELO/AGUA/PRODUCTO (feature 023, bloque 6/8 SIEX) ──
+function FormAnalisis({ parcelas, record, campana, onClose, isEdit }) {
+    const today = new Date().toISOString().split('T')[0];
+    const [saving, setSaving] = React.useState(false);
+    const [modoUHC, setModoUHC] = React.useState(false);
+    const [uhcList, setUhcList] = React.useState([]);
+    const [cultivo, setCultivo] = React.useState({});
+    const [f, setF] = React.useState({
+        parcela_id: record?.parcela_id || '', parcela_etiqueta: record?.parcela_etiqueta || '',
+        uhc_id: record?.uhc_id || '',
+        material_cod: record?.material_cod || null,
+        codigo_producto_siex: record?.codigo_producto_siex || null,
+        fecha: record?.fecha || today,
+        rs_laboratorio: record?.rs_laboratorio || '',
+        direccion_laboratorio: record?.direccion_laboratorio || '',
+        provincia_laboratorio_cod: record?.provincia_laboratorio_cod || '',
+        municipio_laboratorio_cod: record?.municipio_laboratorio_cod || '',
+        num_boletin: record?.num_boletin || '',
+        tipo_analisis_cod: record?.tipo_analisis_cod || null,
+        notas: record?.notas || '',
+        campana,
+    });
+    const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+
+    React.useEffect(() => {
+        if (!f.parcela_id) return;
+        fetch(`/api/cultivos-campana?parcela_id=${f.parcela_id}&campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json()).then(d => setCultivo(Array.isArray(d) && d[0] ? d[0] : {}));
+        const p = parcelas.find(x => String(x.id) === String(f.parcela_id));
+        if (p) set('parcela_etiqueta', p.nombre_finca);
+    }, [f.parcela_id]);
+
+    React.useEffect(() => {
+        fetch(`/api/uhc?campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setUhcList(Array.isArray(d) ? d : []))
+            .catch(() => {});
+    }, [campana]);
+
+    // Si el material deja de ser Cultivo/Producto, el producto elegido ya no
+    // tiene sentido — se limpia en vez de quedar colgado (mismo bug que ya se
+    // corrigió en cosecha con los datos de cliente).
+    React.useEffect(() => {
+        if (!_MATERIAL_CON_PRODUCTO.has(Number(f.material_cod))) {
+            set('codigo_producto_siex', null);
+        }
+    }, [f.material_cod]);
+
+    const save = async () => {
+        if ((!f.parcela_id && !f.uhc_id) || !f.material_cod || !f.fecha) {
+            alert('Rellena: parcela (o grupo), material analizado y fecha'); return;
+        }
+        setSaving(true);
+        try {
+            const url = isEdit ? `/api/analisis/${record.id}` : '/api/analisis';
+            const res = isEdit
+                ? await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f), credentials: 'include' })
+                : await window.OfflineSync.post('/api/analisis', f);
+            if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Error al guardar el análisis'); setSaving(false); return; }
+            const d = await res.json().catch(() => ({}));
+            onClose(res._savedOffline ? '⏳ Guardado sin conexión — se subirá al conectarte'
+                  : d.count > 1 ? `✅ Análisis guardado en ${d.count} parcelas`
+                  : '✅ Análisis guardado');
+        } catch { alert('Error al guardar el análisis'); setSaving(false); }
+    };
+
+    return (
+        <div>
+            <ParcelOrUhcSelect modoUHC={modoUHC} setModoUHC={setModoUHC} parcelas={parcelas} uhcList={uhcList}
+                parcelaId={f.parcela_id} uhcId={f.uhc_id}
+                onParcela={v => set('parcela_id', v)} onUhc={v => set('uhc_id', v)} />
+            <div className="responsive-grid cols-2">
+                <FieldGroup label="Material analizado *">
+                    <select className="input-field" value={f.material_cod ?? ''}
+                        onChange={e => set('material_cod', e.target.value ? Number(e.target.value) : null)}>
+                        <option value="">Seleccionar…</option>
+                        {MATERIAL_ANALIZADO_SIEX.map(m => <option key={m.cod} value={m.cod}>{m.nombre}</option>)}
+                    </select>
+                </FieldGroup>
+                <FieldGroup label="Fecha del análisis *">
+                    <input type="date" className="input-field" value={f.fecha} onChange={e => set('fecha', e.target.value)} />
+                </FieldGroup>
+            </div>
+
+            {_MATERIAL_CON_PRODUCTO.has(Number(f.material_cod)) && (
+                <ProductoSiexSelect cultivoIacsCod={cultivo?.cultivo_iacs_cod} value={f.codigo_producto_siex}
+                    onChange={v => set('codigo_producto_siex', v)} />
+            )}
+
+            <MasCampos>
+                <FieldGroup label="Tipo de análisis (catálogo SIEX)">
+                    <select className="input-field" value={f.tipo_analisis_cod ?? ''}
+                        onChange={e => set('tipo_analisis_cod', e.target.value ? Number(e.target.value) : null)}>
+                        <option value="">Sin especificar…</option>
+                        {TIPO_ANALISIS_SIEX.map(t => <option key={t.cod} value={t.cod}>{t.nombre}</option>)}
+                    </select>
+                </FieldGroup>
+                <div className="responsive-grid cols-2">
+                    <FieldGroup label="Laboratorio (razón social)">
+                        <ZoomInput label="Laboratorio" value={f.rs_laboratorio} placeholder="Laboratorio Agrícola S.L."
+                            onConfirm={v => set('rs_laboratorio', v)} />
+                    </FieldGroup>
+                    <FieldGroup label="Nº de boletín">
+                        <ZoomInput label="Nº de boletín" value={f.num_boletin} placeholder="BOL-2026-0123"
+                            onConfirm={v => set('num_boletin', v)} />
+                    </FieldGroup>
+                    <FieldGroup label="Dirección del laboratorio">
+                        <ZoomInput label="Dirección del laboratorio" value={f.direccion_laboratorio} placeholder="Calle, número"
+                            onConfirm={v => set('direccion_laboratorio', v)} />
+                    </FieldGroup>
+                </div>
+                <ProvinciaMunicipioSelect provinciaCod={f.provincia_laboratorio_cod} municipioCod={f.municipio_laboratorio_cod}
+                    onProvincia={v => set('provincia_laboratorio_cod', v)} onMunicipio={v => set('municipio_laboratorio_cod', v)}
+                    entidad="laboratorio" />
+                <FieldGroup label="Notas">
+                    <ZoomInput label="Notas" value={f.notas} placeholder="Observaciones…"
+                        multiline onConfirm={v => set('notas', v)} />
+                </FieldGroup>
+            </MasCampos>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button className="btn-ghost" onClick={() => onClose()} style={{ flex: 1 }}>Cancelar</button>
+                <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 2 }}>
+                    {saving ? 'Guardando…' : (isEdit ? '💾 Actualizar' : '✓ Guardar análisis')}
                 </button>
             </div>
         </div>
