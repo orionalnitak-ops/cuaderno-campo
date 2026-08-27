@@ -360,6 +360,16 @@ def historial():
             records.append({**r, '_modulo': 'analisis', '_fecha': r.get('fecha', ''),
                             '_resumen': f"{material}{lab}"})
 
+    if modulo in ('todos', 'tratamiento_semillas'):
+        rows = dicts(conn, "SELECT * FROM tratamiento_semillas WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha_actuacion DESC", (uid,) + pp)
+        _TRAT_SEMILLA_NOMBRE = {2: 'Realizado en la explotación', 3: 'Realizado en centro de acondicionamiento',
+                                 4: 'Adquirida tratada en España', 5: 'Adquirida tratada fuera de España'}
+        for r in apply_filters(rows, 'fecha_actuacion'):
+            tipo = _TRAT_SEMILLA_NOMBRE.get(r.get('tratamiento_cod'), '')
+            prod = f" — {r['producto_comercial']}" if r.get('producto_comercial') else ''
+            records.append({**r, '_modulo': 'tratamiento_semillas', '_fecha': r.get('fecha_actuacion', ''),
+                            '_resumen': f"{tipo}{prod}"})
+
     if modulo in ('todos', 'cultivos_campana'):
         try:
             rows = dicts(conn, """

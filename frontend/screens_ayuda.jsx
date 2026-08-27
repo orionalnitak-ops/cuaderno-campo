@@ -401,6 +401,32 @@ const HELP_SCREENS = {
             },
         ],
     },
+    tratamiento_semilla: {
+        title: '🌰 Tratamiento de semilla',
+        intro: 'Registra la desinfección o el tratamiento fungicida de la semilla antes de sembrarla — ya sea que lo hicieras tú en la finca o que compraras la semilla ya tratada.',
+        steps: [
+            {
+                icon: '🗺️',
+                title: 'Parcela',
+                desc: 'Selecciona la parcela donde se va a sembrar. Si son varias con el mismo cultivo, usa un Grupo UHC.',
+            },
+            {
+                icon: '🌰',
+                title: 'Tipo de tratamiento *',
+                desc: 'Indica si el tratamiento se hizo en tu explotación, en un centro de acondicionamiento, o si compraste la semilla ya tratada (en España o fuera). Es obligatorio junto con la fecha.',
+            },
+            {
+                icon: '🧴',
+                title: 'Producto (opcional)',
+                desc: 'Si usaste un producto registrado, indica su nombre comercial. En ese caso el nº de registro MAPA pasa a ser obligatorio.',
+            },
+            {
+                icon: '⚖️',
+                title: 'Cantidad y eficacia (opcional)',
+                desc: 'Cuánto producto se usó y su unidad, y cómo de bien funcionó el tratamiento — ninguno de los dos es obligatorio para guardar.',
+            },
+        ],
+    },
     uhc: {
         title: '🌱 Grupos UHC',
         intro: 'Un grupo junta parcelas que se trabajan igual (mismo cultivo) para que apuntes las faenas una sola vez. La administración lo llama "Unidad Homogénea de Cultivo (UHC)".',

@@ -929,6 +929,36 @@ def init_db():
         )
     ''')
 
+    # ── TRATAMIENTO DE SEMILLAS (feature 024, bloque 7/8 SIEX) ──
+    # Módulo nuevo, colgado de la parcela como el resto — distinto de
+    # `tratamientos` (bloque 022, aplicaciones fitosanitarias en campo) aunque
+    # comparte el mismo sub-bloque ASPAFITOS del Anexo VI (producto_comercial/
+    # num_registro_mapa/sustancia_activa, texto libre, sin catálogo — mismo
+    # patrón ya usado en tratamientos.py).
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS tratamiento_semillas (
+            id {_PK},
+            user_id INTEGER NOT NULL,
+            explotacion_id INTEGER,
+            parcela_id INTEGER,
+            parcela_etiqueta TEXT,
+            superficie_tratada_ha REAL,
+            tratamiento_cod INTEGER,
+            fecha_actuacion TEXT,
+            cantidad REAL,
+            unidad_cod INTEGER,
+            eficacia_cod INTEGER,
+            observaciones TEXT,
+            producto_comercial TEXT,
+            num_registro_mapa TEXT,
+            sustancia_activa TEXT,
+            campana TEXT DEFAULT '2025/2026',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TEXT
+        )
+    ''')
+
     # ── LABORES ──
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS labores (
@@ -1362,6 +1392,8 @@ def _seed_if_needed(conn):
         ('idx_abonado_user',         'abonado',            'user_id'),
         ('idx_analisis_user',        'analisis',           'user_id'),
         ('idx_analisis_parcela',     'analisis',           'parcela_id'),
+        ('idx_trat_semillas_user',   'tratamiento_semillas', 'user_id'),
+        ('idx_trat_semillas_parc',   'tratamiento_semillas', 'parcela_id'),
         ('idx_compras_user',         'compras',            'user_id'),
         ('idx_cultivos_parcela',     'cultivos_campana',   'parcela_id'),
         ('idx_cosecha_user',         'cosecha',            'user_id'),
