@@ -94,6 +94,7 @@ from blueprints.ia import bp as ia_bp  # noqa: E402
 from blueprints.cumplimiento import bp as cumplimiento_bp  # noqa: E402
 from blueprints.analisis import bp as analisis_bp  # noqa: E402
 from blueprints.tratamiento_semillas import bp as tratamiento_semillas_bp  # noqa: E402
+from blueprints.post_cosecha import bp as post_cosecha_bp  # noqa: E402
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(admin_bp)
@@ -116,6 +117,7 @@ app.register_blueprint(ia_bp)
 app.register_blueprint(cumplimiento_bp)
 app.register_blueprint(analisis_bp)
 app.register_blueprint(tratamiento_semillas_bp)
+app.register_blueprint(post_cosecha_bp)
 
 # ─────────────────────────────────────────────
 # STATIC SERVING

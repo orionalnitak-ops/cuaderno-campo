@@ -20,6 +20,7 @@ const MODULE_CARDS = [
     { id: 'cultivo_campana', icon: '🌾', title: 'Cultivo campaña', desc: 'Registra el cultivo y variedad por parcela para la campaña actual.', bg: 'linear-gradient(135deg, #166534, #16a34a)' },
     { id: 'analisis',        icon: '🧪', title: 'Análisis', desc: 'Análisis de suelo, agua de riego, cultivo o producto cosechado.', bg: 'linear-gradient(135deg, #5b21b6, #7c3aed)' },
     { id: 'tratamiento_semilla', icon: '🌰', title: 'Tratamiento de semilla', desc: 'Desinfección o tratamiento fungicida de la semilla antes de sembrar.', bg: 'linear-gradient(135deg, #854d0e, #ca8a04)' },
+    { id: 'post_cosecha', icon: '🏭', title: 'Post-cosecha', desc: 'Fumigación de grano almacenado, tratamiento de fruta en cámara y similares.', bg: 'linear-gradient(135deg, #374151, #6b7280)' },
 ];
 
 // ── Modal de alta de explotación (feature multi) ──

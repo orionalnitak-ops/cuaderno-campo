@@ -959,6 +959,37 @@ def init_db():
         )
     ''')
 
+    # ── POST-COSECHA (feature 025, bloque 8/8 SIEX) ──
+    # Módulo nuevo, último del roadmap SIEX. Casi idéntico en forma a
+    # `tratamientos` (bloque 022) pero referido a un producto ya cosechado, no
+    # a un cultivo en pie — de ahí `codigo_producto_siex` en vez de
+    # `parcela`+`cultivo` como eje del tratamiento. Reutiliza `ref_productos_siex`
+    # (bloques 019/023), no reimporta catálogo. `probFito` no se codifica: SIEX
+    # no ha publicado ese catálogo todavía (mismo bloqueo que en 022).
+    c.execute(f'''
+        CREATE TABLE IF NOT EXISTS post_cosecha (
+            id {_PK},
+            user_id INTEGER NOT NULL,
+            explotacion_id INTEGER,
+            parcela_id INTEGER,
+            parcela_etiqueta TEXT,
+            fecha_actuacion TEXT,
+            codigo_producto_siex INTEGER,
+            justificacion_actuacion_cod INTEGER,
+            cantidad REAL,
+            unidad_cod INTEGER,
+            eficacia_cod INTEGER,
+            observaciones TEXT,
+            producto_comercial TEXT,
+            num_registro_mapa TEXT,
+            sustancia_activa TEXT,
+            campana TEXT DEFAULT '2025/2026',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TEXT
+        )
+    ''')
+
     # ── LABORES ──
     c.execute(f'''
         CREATE TABLE IF NOT EXISTS labores (
@@ -1394,6 +1425,8 @@ def _seed_if_needed(conn):
         ('idx_analisis_parcela',     'analisis',           'parcela_id'),
         ('idx_trat_semillas_user',   'tratamiento_semillas', 'user_id'),
         ('idx_trat_semillas_parc',   'tratamiento_semillas', 'parcela_id'),
+        ('idx_post_cosecha_user',    'post_cosecha',         'user_id'),
+        ('idx_post_cosecha_parc',    'post_cosecha',         'parcela_id'),
         ('idx_compras_user',         'compras',            'user_id'),
         ('idx_cultivos_parcela',     'cultivos_campana',   'parcela_id'),
         ('idx_cosecha_user',         'cosecha',            'user_id'),
