@@ -342,12 +342,20 @@ def _insert_riego(c, uid, data, parcela_id, parcela_etiqueta, explotacion_id):
     c.execute('''
         INSERT INTO riego (
             user_id, explotacion_id, parcela_id, parcela_etiqueta, fecha,
-            tipo_riego, volumen_m3, horas_riego, fuente_agua, notas, campana
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            tipo_riego, volumen_m3, horas_riego, fuente_agua, notas, campana,
+            superficie_ha, sistema_riego_cod, unidad_cantidad_cod, dosis_valor,
+            dosis_unidad, origen_agua_cod, num_contador, tipo_energia_cod,
+            decl_buenas_practicas, buena_practica_cod
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (uid, explotacion_id, parcela_id, parcela_etiqueta, data.get('fecha'),
           data.get('tipo_riego'), _to_real(data.get('volumen_m3')),
           _to_real(data.get('horas_riego')), data.get('fuente_agua'), data.get('notas'),
-          data.get('campana', '2025/2026')))
+          data.get('campana', '2025/2026'),
+          _to_real(data.get('superficie_ha')), data.get('sistema_riego_cod'),
+          data.get('unidad_cantidad_cod'), _to_real(data.get('dosis_valor')),
+          data.get('dosis_unidad'), data.get('origen_agua_cod'), data.get('num_contador'),
+          data.get('tipo_energia_cod'), data.get('decl_buenas_practicas'),
+          data.get('buena_practica_cod')))
     return c.lastrowid
 
 
@@ -421,9 +429,12 @@ def manage_riego_one(rid):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
     fields = ['parcela_id', 'parcela_etiqueta', 'fecha', 'tipo_riego', 'volumen_m3',
-              'horas_riego', 'fuente_agua', 'notas', 'campana']
+              'horas_riego', 'fuente_agua', 'notas', 'campana',
+              'superficie_ha', 'sistema_riego_cod', 'unidad_cantidad_cod', 'dosis_valor',
+              'dosis_unidad', 'origen_agua_cod', 'num_contador', 'tipo_energia_cod',
+              'decl_buenas_practicas', 'buena_practica_cod']
     sets = ', '.join(f"{f}=?" for f in fields)
-    numeric = {'volumen_m3', 'horas_riego'}
+    numeric = {'volumen_m3', 'horas_riego', 'superficie_ha', 'dosis_valor'}
     values = [_to_real(data.get(f)) if f in numeric else data.get(f) for f in fields]
     conn.execute(f"UPDATE riego SET {sets}"
                  f" WHERE id=? AND user_id=? AND explotacion_id=? AND deleted_at IS NULL",
