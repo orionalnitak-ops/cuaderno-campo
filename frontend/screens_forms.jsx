@@ -832,6 +832,18 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
         if (p) set('parcela_etiqueta', p.nombre_finca);
     }, [f.parcela_id]);
 
+    // `unidad_cod` (catálogo SIEX kg/L/t) duplicaba la misma información que ya
+    // lleva `dosis_unidad` (texto libre): pedir los dos por separado solo abría
+    // la puerta a que no coincidieran. Se deriva del prefijo de dosis_unidad.
+    React.useEffect(() => {
+        const u = (f.dosis_unidad || '').toLowerCase();
+        let cod = null;
+        if (u.startsWith('kg')) cod = 1;
+        else if (u.startsWith('l')) cod = 2;
+        else if (u.startsWith('t')) cod = 3;
+        set('unidad_cod', cod);
+    }, [f.dosis_unidad]);
+
     React.useEffect(() => {
         fetch(`/api/uhc?campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
             .then(r => r.json())
@@ -1037,15 +1049,6 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
                     <FieldGroup label="Nº de albarán">
                         <ZoomInput label="Nº de albarán" value={f.albaran} placeholder="ALB-2025-0456"
                             onConfirm={v => set('albaran', v)} />
-                    </FieldGroup>
-                    <FieldGroup label="Unidad de la cantidad">
-                        <select className="input-field" value={f.unidad_cod ?? ''}
-                            onChange={e => set('unidad_cod', e.target.value ? Number(e.target.value) : null)}>
-                            <option value="">Sin especificar…</option>
-                            <option value={1}>kg</option>
-                            <option value={2}>L</option>
-                            <option value={3}>t</option>
-                        </select>
                     </FieldGroup>
                     <FieldGroup label="¿Declara buenas prácticas?">
                         <select className="input-field"
