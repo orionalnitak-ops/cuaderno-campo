@@ -229,6 +229,30 @@ function EquipoModal({ equipo, onSave, onClose }) {
                             style={{ cursor:'pointer' }} />
                     </div>
                 ))}
+                {/* feature 022 (bloque 5/8 SIEX): equipo propio o ajeno — la mayoría
+                    de equipos registrados hoy son del propio agricultor, así que
+                    "sin especificar" se trata como propio. Si se marca ajeno, pide
+                    el NIF del propietario; si se vuelve a marcar propio, se limpia
+                    (mismo bug ya corregido en cosecha con los datos de cliente). */}
+                <div style={{ marginBottom:14 }}>
+                    <label className="field-label">¿Equipo propio?</label>
+                    <select className="input-field" value={form.propio === false ? 'no' : 'si'}
+                        onChange={e => {
+                            const propio = e.target.value !== 'no';
+                            setForm(f => ({ ...f, propio, nif_propietario: propio ? '' : f.nif_propietario }));
+                        }}>
+                        <option value="si">Sí</option>
+                        <option value="no">No (equipo ajeno)</option>
+                    </select>
+                </div>
+                {form.propio === false && (
+                    <div style={{ marginBottom:14 }}>
+                        <label className="field-label">NIF del propietario</label>
+                        <input type="text" className="input-field" value={form.nif_propietario||''} readOnly
+                            onClick={() => setZoomField({ key:'nif_propietario', label:'NIF del propietario', type:'text', placeholder:'' })}
+                            style={{ cursor:'pointer' }} />
+                    </div>
+                )}
                 <button className="btn-primary" style={{ width:'100%', marginTop:8 }} onClick={() => onSave(form)}>
                     {equipo && equipo.id ? 'Actualizar equipo' : 'Añadir equipo'}
                 </button>

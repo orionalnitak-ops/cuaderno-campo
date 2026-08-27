@@ -286,6 +286,22 @@ function MasCampos({ children }) {
     );
 }
 
+// ── Catálogo SIEX de justificación de la actuación (feature 022, bloque 5/8) ──
+// 6 filas, cabe en un <select> estático — ver spec/features/022-siex-tratamientos.
+// Convive con `justificacion_actuacion` de texto libre, que suele llevar una
+// frase completa ("se detectó plaga X el día Y") y no un valor de catálogo:
+// no se puede derivar el código de un texto libre sin arriesgar una lectura
+// equivocada, así que aquí sí hace falta preguntarlo aparte (a diferencia de
+// unidad_cod/eficacia_cod, que sí se derivan solos más abajo).
+const JUSTIFICACION_ACTUACION_SIEX = [
+    { cod: 1, nombre: 'Superación de umbrales' },
+    { cod: 2, nombre: 'Monitorización' },
+    { cod: 3, nombre: 'Sistema de apoyo a la toma de decisión (DSS)' },
+    { cod: 4, nombre: 'Aviso por Comunidad Autónoma' },
+    { cod: 5, nombre: 'Recomendación de asesor' },
+    { cod: 6, nombre: 'Medidor de alerta fitosanitaria' },
+];
+
 // ── 1. TRATAMIENTO FITOSANITARIO ──
 function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
@@ -327,6 +343,19 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
         asesor:                   record?.asesor || '',
         justificacion_actuacion:  record?.justificacion_actuacion || '',
         campana,
+        // feature 022 (bloque 5/8 SIEX): catálogos adicionales y segundo asesor
+        // (validación Final) — ver spec/features/022-siex-tratamientos.
+        superficie_tratada_ha:       record?.superficie_tratada_ha       || '',
+        justificacion_actuacion_cod: record?.justificacion_actuacion_cod || null,
+        unidad_cod:                  record?.unidad_cod                  || null,
+        eficacia_cod:                record?.eficacia_cod                || null,
+        fecha_validacion_intermedia: record?.fecha_validacion_intermedia || '',
+        validacion_intermedia:       record?.validacion_intermedia       || '',
+        confirmacion_o_firma_intermedia: record?.confirmacion_o_firma_intermedia || '',
+        asesor_final_id:             record?.asesor_final_id             || '',
+        fecha_validacion_final:      record?.fecha_validacion_final      || '',
+        validacion_final:            record?.validacion_final            || '',
+        confirmacion_o_firma_final:  record?.confirmacion_o_firma_final  || '',
     });
     const set = (k, v) => setF(x => ({ ...x, [k]: v }));
 
@@ -336,6 +365,48 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
         const a = asesores.find(x => String(x.id) === String(f.asesor_id));
         return !!a && !(a.num_ropo || '').trim();
     }, [f.asesor_id, asesores]);
+
+    const asesorFinalSinRopo = React.useMemo(() => {
+        if (!f.asesor_final_id) return false;
+        const a = asesores.find(x => String(x.id) === String(f.asesor_final_id));
+        return !!a && !(a.num_ropo || '').trim();
+    }, [f.asesor_final_id, asesores]);
+
+    // eficacia_cod y unidad_cod duplicarían lo que ya dicen `eficacia` y
+    // `dosis_unidad` — se derivan solos en vez de preguntarse dos veces, mismo
+    // criterio ya aplicado en riego y fertilización (bloques 3 y 4).
+    // El catálogo SIEX de eficacia solo tiene 3 niveles (Buena/Regular/Mala)
+    // frente a los 5 que ya usa la app; el mapeo es una aproximación editorial,
+    // no una traducción literal.
+    React.useEffect(() => {
+        const map = { 'Muy alta': 1, 'Alta': 1, 'Media': 2, 'Baja': 3, 'Nula': 3 };
+        set('eficacia_cod', map[f.eficacia] || null);
+    }, [f.eficacia]);
+
+    React.useEffect(() => {
+        const map = { 'kg/ha': 17, 'L/ha': 18, 'g/ha': 49 };
+        // 'cc/ha' y 'L/100L' no tienen equivalente en el catálogo oficial de
+        // unidades SIEX — se dejan sin código, igual que probFito/tipoCarnet en
+        // este mismo bloque cuando SIEX no publica catálogo.
+        set('unidad_cod', map[f.dosis_unidad] || null);
+    }, [f.dosis_unidad]);
+
+    // Si se quita un asesor, sus datos de validación dejan de tener sentido y
+    // no deben quedar colgados en el registro — mismo bug que ya se corrigió
+    // en cosecha con los datos de cliente al desmarcar "venta comercializada".
+    React.useEffect(() => {
+        if (!f.asesor_id) {
+            setF(x => ({ ...x, fecha_validacion_intermedia: '', validacion_intermedia: '',
+                confirmacion_o_firma_intermedia: '' }));
+        }
+    }, [f.asesor_id]);
+
+    React.useEffect(() => {
+        if (!f.asesor_final_id) {
+            setF(x => ({ ...x, fecha_validacion_final: '', validacion_final: '',
+                confirmacion_o_firma_final: '' }));
+        }
+    }, [f.asesor_final_id]);
 
     React.useEffect(() => {
         fetch('/api/equipos', { credentials: 'include' })
@@ -386,7 +457,17 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
     React.useEffect(() => {
         if (!f.parcela_id) return;
         fetch(`/api/cultivos-campana?parcela_id=${f.parcela_id}&campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
-            .then(r => r.json()).then(d => setCultivo(Array.isArray(d) && d[0] ? d[0] : {}));
+            .then(r => r.json()).then(d => {
+                const c = Array.isArray(d) && d[0] ? d[0] : {};
+                setCultivo(c);
+                // Sugerencia editable, no forzada: si la superficie tratada está
+                // vacía, se rellena con la del cultivo de la parcela — igual que
+                // ya hace cosecha con superficie_cosechada_ha. El agricultor la
+                // cambia si trató solo una parte.
+                if (!isEdit && !f.superficie_tratada_ha && c.superficie_cultivada_ha) {
+                    set('superficie_tratada_ha', c.superficie_cultivada_ha);
+                }
+            });
         const p = parcelas.find(x => String(x.id) === String(f.parcela_id));
         if (p) set('parcela_etiqueta', p.nombre_finca);
     }, [f.parcela_id]);
@@ -594,6 +675,10 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                         <ZoomInput label="Volumen de caldo (L/ha)" value={f.volumen_caldo} placeholder="300" inputMode="numeric"
                             onConfirm={v => set('volumen_caldo', v)} />
                     </FieldGroup>
+                    <FieldGroup label="Superficie tratada (ha)">
+                        <ZoomInput label="Superficie tratada (ha)" value={f.superficie_tratada_ha} placeholder="3.25" inputMode="decimal"
+                            onConfirm={v => set('superficie_tratada_ha', v)} />
+                    </FieldGroup>
                     <FieldGroup label="Condiciones meteorológicas">
                         <ZoomInput label="Condiciones meteorológicas" value={f.condiciones_meteo} placeholder="T 22°C · V <3 m/s · HR 45%"
                             onConfirm={v => set('condiciones_meteo', v)} />
@@ -618,7 +703,7 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                         <div style={{ fontSize: '0.85rem', color: '#991b1b', fontWeight: 600 }}>{plazoAlert}</div>
                     </div>
                 )}
-                <FieldGroup label="Asesor fitosanitario">
+                <FieldGroup label="Asesor fitosanitario (validación Intermedia)">
                     {asesores.length > 0 ? (
                         <>
                             <select className="input-field" value={f.asesor_id}
@@ -671,6 +756,72 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                         Exigido por la Orden APA/204/2023. Se guarda una vez y lo reutilizas en cada tratamiento.
                     </div>
                 </FieldGroup>
+                {f.asesor_id && (
+                    <div className="responsive-grid cols-2">
+                        <FieldGroup label="Fecha de validación (Intermedia)">
+                            <input type="date" className="input-field" value={f.fecha_validacion_intermedia}
+                                onChange={e => set('fecha_validacion_intermedia', e.target.value)} />
+                        </FieldGroup>
+                        <FieldGroup label="Confirmación o firma electrónica">
+                            <select className="input-field" value={f.confirmacion_o_firma_intermedia}
+                                onChange={e => set('confirmacion_o_firma_intermedia', e.target.value)}>
+                                <option value="">Sin especificar…</option>
+                                <option value="C">Confirmación</option>
+                                <option value="F">Firma electrónica</option>
+                            </select>
+                        </FieldGroup>
+                        <div style={{ gridColumn: '1/-1' }}>
+                            <FieldGroup label="Código o descripción de la validación">
+                                <ZoomInput label="Validación" value={f.validacion_intermedia} placeholder="Visto bueno del asesor, informe adjunto…"
+                                    onConfirm={v => set('validacion_intermedia', v)} />
+                            </FieldGroup>
+                        </div>
+                    </div>
+                )}
+
+                {/* feature 022 (bloque 5/8 SIEX): segundo asesor, validación Final —
+                    opcional, solo tiene sentido si ya hay algún asesor dado de alta. */}
+                {asesores.length > 0 && (
+                    <FieldGroup label="Asesor de validación Final (opcional)">
+                        <select className="input-field" value={f.asesor_final_id}
+                            onChange={e => set('asesor_final_id', e.target.value)}>
+                            <option value="">-- Sin asesor de validación Final --</option>
+                            {asesores.map(a => (
+                                <option key={a.id} value={a.id}>
+                                    {a.nombre}{a.num_ropo ? ` (ROPO ${a.num_ropo})` : ''}
+                                </option>
+                            ))}
+                        </select>
+                        {asesorFinalSinRopo && (
+                            <div style={{ marginTop: 6, padding: '8px 10px', background: '#fffbeb',
+                                border: '1px solid #fde68a', borderRadius: 8, fontSize: '0.78rem', color: '#92400e' }}>
+                                ⚠️ Este asesor no tiene nº ROPO guardado.
+                            </div>
+                        )}
+                        {f.asesor_final_id && (
+                            <div className="responsive-grid cols-2" style={{ marginTop: 8 }}>
+                                <FieldGroup label="Fecha de validación (Final)">
+                                    <input type="date" className="input-field" value={f.fecha_validacion_final}
+                                        onChange={e => set('fecha_validacion_final', e.target.value)} />
+                                </FieldGroup>
+                                <FieldGroup label="Confirmación o firma electrónica">
+                                    <select className="input-field" value={f.confirmacion_o_firma_final}
+                                        onChange={e => set('confirmacion_o_firma_final', e.target.value)}>
+                                        <option value="">Sin especificar…</option>
+                                        <option value="C">Confirmación</option>
+                                        <option value="F">Firma electrónica</option>
+                                    </select>
+                                </FieldGroup>
+                                <div style={{ gridColumn: '1/-1' }}>
+                                    <FieldGroup label="Código o descripción de la validación">
+                                        <ZoomInput label="Validación" value={f.validacion_final} placeholder="Visto bueno del asesor, informe adjunto…"
+                                            onConfirm={v => set('validacion_final', v)} />
+                                    </FieldGroup>
+                                </div>
+                            </div>
+                        )}
+                    </FieldGroup>
+                )}
                 <FieldGroup label="Justificación de la actuación">
                     <ZoomInput label="Justificación de la actuación" value={f.justificacion_actuacion}
                         placeholder="Umbral de daño superado, aviso fitosanitario, inspección visual…"
@@ -678,6 +829,13 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                     <div style={{ fontSize: '0.72rem', color: 'var(--on-surface-variant)', marginTop: 3 }}>
                         Exigido por la Orden APA/204/2023
                     </div>
+                </FieldGroup>
+                <FieldGroup label="Justificación (catálogo SIEX, opcional)">
+                    <select className="input-field" value={f.justificacion_actuacion_cod ?? ''}
+                        onChange={e => set('justificacion_actuacion_cod', e.target.value ? Number(e.target.value) : null)}>
+                        <option value="">Sin especificar…</option>
+                        {JUSTIFICACION_ACTUACION_SIEX.map(j => <option key={j.cod} value={j.cod}>{j.nombre}</option>)}
+                    </select>
                 </FieldGroup>
                 <FieldGroup label="Notas">
                     <ZoomInput label="Notas" value={f.notas} placeholder="Observaciones adicionales…"

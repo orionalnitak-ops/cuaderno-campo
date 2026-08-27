@@ -668,6 +668,17 @@ def init_db():
         ('num_registro_roma', 'TEXT'), ('fecha_iteaf', 'TEXT'),
     ]:
         _add_col(c, 'equipos', col, typ)
+    # feature 022 (bloque 5/8 SIEX): `propio` nace NULL en vez de con el
+    # DEFAULT TRUE que pide el spec — un DEFAULT en _add_col marcaría como
+    # "propio" todos los equipos ya registrados sin que el agricultor lo haya
+    # dicho. El frontend sí trata "sin especificar" como propio al mostrarlo
+    # (es la inmensa mayoría de los casos), pero eso es una decisión de UI,
+    # no un dato que la migración deba inventarse por su cuenta.
+    for col, typ in [
+        ('propio', 'INTEGER'),
+        ('nif_propietario', 'TEXT'),
+    ]:
+        _add_col(c, 'equipos', col, typ)
 
     # ── APLICADORES ──
     c.execute(f'''
@@ -749,6 +760,25 @@ def init_db():
         # elimina: los tratamientos ya registrados por los pilotos guardan ahí el
         # nombre tecleado a mano y deben seguir apareciendo en PDF/Excel.
         ('asesor_id', 'INTEGER'),
+    ]:
+        _add_col(c, 'tratamientos', col, typ)
+    # feature 022 (bloque 5/8 SIEX): `asesor_id` pasa a significar "asesor de
+    # validación Intermedia" sin renombrarse ni tocar los tratamientos ya
+    # guardados por los pilotos — mismo criterio que `asesor` TEXT conviviendo
+    # con `asesor_id` desde el principio. `asesor_final_id` es el segundo
+    # asesor (validación Final) que SIEX permite además del primero.
+    for col, typ in [
+        ('superficie_tratada_ha', 'REAL'),
+        ('justificacion_actuacion_cod', 'INTEGER'),
+        ('unidad_cod', 'INTEGER'),
+        ('eficacia_cod', 'INTEGER'),
+        ('asesor_final_id', 'INTEGER'),
+        ('fecha_validacion_intermedia', 'TEXT'),
+        ('fecha_validacion_final', 'TEXT'),
+        ('validacion_intermedia', 'TEXT'),
+        ('validacion_final', 'TEXT'),
+        ('confirmacion_o_firma_intermedia', 'TEXT'),
+        ('confirmacion_o_firma_final', 'TEXT'),
     ]:
         _add_col(c, 'tratamientos', col, typ)
 
