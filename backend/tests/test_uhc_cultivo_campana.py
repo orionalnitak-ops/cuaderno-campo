@@ -43,7 +43,8 @@ CREATE TABLE cultivos_campana (
     id INTEGER PRIMARY KEY AUTOINCREMENT, parcela_id INTEGER, explotacion_id INTEGER,
     campana TEXT, cultivo TEXT, cultivo_iacs_cod TEXT, variedad TEXT,
     fecha_siembra TEXT, fecha_recoleccion_prevista TEXT,
-    superficie_cultivada_ha REAL, notas TEXT, kg_sembrados REAL, precio_kg_compra REAL);
+    superficie_cultivada_ha REAL, notas TEXT, kg_sembrados REAL, precio_kg_compra REAL,
+    variedad_cod_siex TEXT);
 """
 
 DECL = {

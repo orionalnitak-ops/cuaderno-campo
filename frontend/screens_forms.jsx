@@ -1838,6 +1838,56 @@ function FormAbonado({ parcelas, record, campana, onClose, isEdit }) {
     );
 }
 
+// ── VariedadAutocomplete (feature 018) ──────────────────────────────────────
+// Sugiere variedades del catálogo SIEX cuando el cultivo seleccionado tiene
+// cruce conocido (`cod_siex` en CULTIVOS_IACS). Sigue siendo un input de texto
+// libre: elegir una sugerencia guarda también su código SIEX, pero escribir
+// algo que no está en la lista se guarda igual, sin bloquear nada.
+function VariedadAutocomplete({ cultivoIacsCod, value, onChange, placeholder }) {
+    const [opciones, setOpciones] = React.useState([]);
+    const [abierto, setAbierto] = React.useState(false);
+    const debounceRef = React.useRef(null);
+
+    React.useEffect(() => {
+        clearTimeout(debounceRef.current);
+        if (!cultivoIacsCod || !value || value.trim().length < 2) { setOpciones([]); return; }
+        debounceRef.current = setTimeout(() => {
+            fetch(`/api/catalogos/variedades?cultivo_iacs_cod=${encodeURIComponent(cultivoIacsCod)}&q=${encodeURIComponent(value.trim())}`,
+                { credentials: 'include' })
+                .then(r => r.ok ? r.json() : { ok: false })
+                .then(d => setOpciones(d.ok ? d.data : []))
+                .catch(() => setOpciones([]));
+        }, 250);
+        return () => clearTimeout(debounceRef.current);
+    }, [value, cultivoIacsCod]);
+
+    return (
+        <div style={{ position: 'relative' }}>
+            <input type="text" className="input-field" placeholder={placeholder}
+                value={value}
+                onChange={e => { onChange(e.target.value, null); setAbierto(true); }}
+                onFocus={() => setAbierto(true)}
+                onBlur={() => setTimeout(() => setAbierto(false), 150)} />
+            {abierto && opciones.length > 0 && (
+                <div style={{
+                    position: 'absolute', zIndex: 20, top: '100%', left: 0, right: 0,
+                    background: '#fff', border: '1px solid #d1d5db', borderRadius: 8,
+                    marginTop: 2, maxHeight: 200, overflowY: 'auto',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                }}>
+                    {opciones.map(o => (
+                        <div key={o.cod_variedad}
+                            onMouseDown={() => { onChange(o.nombre, o.cod_variedad); setAbierto(false); }}
+                            style={{ padding: '8px 10px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid #f3f4f6' }}>
+                            {o.nombre}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ── ExistingCultivoRow ───────────────────────────────────────────────────────
 function ExistingCultivoRow({ cv, onDeleted, onUpdated }) {
     const [editing, setEditing] = React.useState(false);
@@ -1847,6 +1897,7 @@ function ExistingCultivoRow({ cv, onDeleted, onUpdated }) {
         cultivo_iacs_cod: cv.cultivo_iacs_cod || '',
         cultivo:          cv.cultivo          || '',
         variedad:         cv.variedad         || '',
+        variedad_cod_siex: cv.variedad_cod_siex || null,
         superficie_cultivada_ha:    cv.superficie_cultivada_ha    || '',
         fecha_siembra:              cv.fecha_siembra              || '',
         fecha_recoleccion_prevista: cv.fecha_recoleccion_prevista || '',
@@ -1937,8 +1988,9 @@ function ExistingCultivoRow({ cv, onDeleted, onUpdated }) {
             </FieldGroup>
             <div className="responsive-grid cols-2">
                 <FieldGroup label="Variedad">
-                    <input type="text" className="input-field" placeholder="Picual, Tempranillo…"
-                        value={f.variedad} onChange={e => set('variedad', e.target.value)} />
+                    <VariedadAutocomplete cultivoIacsCod={f.cultivo_iacs_cod} value={f.variedad}
+                        placeholder="Picual, Tempranillo…"
+                        onChange={(v, cod) => { set('variedad', v); set('variedad_cod_siex', cod); }} />
                 </FieldGroup>
                 <FieldGroup label="Superficie (ha)">
                     <ZoomInput label="Superficie (ha)" type="number" inputMode="decimal"
@@ -2055,6 +2107,7 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
         cultivo_iacs_cod: '',
         cultivo: '',
         variedad: '',
+        variedad_cod_siex: null,
         fecha_siembra: '',
         fecha_recoleccion_prevista: '',
         superficie_cultivada_ha: '',
@@ -2065,6 +2118,7 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
         isEdit && record
             ? [{ ...emptyEntry(), _id: record.id, cultivo_iacs_cod: record.cultivo_iacs_cod || '',
                  cultivo: record.cultivo || '', variedad: record.variedad || '',
+                 variedad_cod_siex: record.variedad_cod_siex || null,
                  fecha_siembra: record.fecha_siembra || '',
                  fecha_recoleccion_prevista: record.fecha_recoleccion_prevista || '',
                  superficie_cultivada_ha: record.superficie_cultivada_ha || '',
@@ -2113,7 +2167,8 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                     body: JSON.stringify({
                         uhc_id: uhcId, campana,
                         cultivo: cv.cultivo, cultivo_iacs_cod: cv.cultivo_iacs_cod,
-                        variedad: cv.variedad, fecha_siembra: cv.fecha_siembra,
+                        variedad: cv.variedad, variedad_cod_siex: cv.variedad_cod_siex,
+                        fecha_siembra: cv.fecha_siembra,
                         fecha_recoleccion_prevista: cv.fecha_recoleccion_prevista,
                         notas: cv.notas,
                     }),
@@ -2166,7 +2221,8 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                 const body = {
                     parcela_id, campana,
                     cultivo: cv.cultivo, cultivo_iacs_cod: cv.cultivo_iacs_cod,
-                    variedad: cv.variedad, fecha_siembra: cv.fecha_siembra,
+                    variedad: cv.variedad, variedad_cod_siex: cv.variedad_cod_siex,
+                    fecha_siembra: cv.fecha_siembra,
                     fecha_recoleccion_prevista: cv.fecha_recoleccion_prevista,
                     superficie_cultivada_ha: cv.superficie_cultivada_ha,
                     notas: cv.notas,
@@ -2347,8 +2403,9 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
 
                     <div className="responsive-grid cols-2">
                         <FieldGroup label="Variedad">
-                            <input type="text" className="input-field" placeholder="Picual, Tempranillo…"
-                                value={cv.variedad} onChange={e => setField(idx, 'variedad', e.target.value)} />
+                            <VariedadAutocomplete cultivoIacsCod={cv.cultivo_iacs_cod} value={cv.variedad}
+                                placeholder="Picual, Tempranillo…"
+                                onChange={(v, cod) => { setField(idx, 'variedad', v); setField(idx, 'variedad_cod_siex', cod); }} />
                             {idx === 0 && <SugChip campo="variedad" sugerencias={sugerencias} valorActual={cv.variedad} />}
                         </FieldGroup>
                         {/* Con grupo, cada fila lleva la superficie de SU parcela: pedirla

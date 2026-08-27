@@ -346,7 +346,7 @@ const HELP_SCREENS = {
             {
                 icon: '🌾',
                 title: 'Cultivo y variedad',
-                desc: 'Elige la especie (trigo, olivar, viñedo…) y escribe la variedad si la conoces. Estos datos aparecen en el PDF oficial del cuaderno.',
+                desc: 'Elige la especie (trigo, olivar, viñedo…) y escribe la variedad si la conoces — te sugerimos variedades del catálogo oficial mientras escribes. Estos datos aparecen en el PDF oficial del cuaderno.',
             },
             {
                 icon: '📐',
