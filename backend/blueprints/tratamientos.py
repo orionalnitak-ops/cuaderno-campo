@@ -165,6 +165,9 @@ def _insert_tratamiento(c, uid, data, parcela_id, parcela_etiqueta, explotacion_
     return c.lastrowid
 
 
+_ASESOR_FIELDS_PERMITIDOS = frozenset({'asesor_id', 'asesor_final_id'})
+
+
 def _check_asesor(conn, data, uid, explotacion_id=None, field='asesor_id', etiqueta='Intermedia'):
     """Valida el asesor_id (o asesor_final_id) recibido. Devuelve (error, aviso).
 
@@ -183,7 +186,13 @@ def _check_asesor(conn, data, uid, explotacion_id=None, field='asesor_id', etiqu
 
     `field`/`etiqueta` generalizan la función para el segundo asesor de la
     feature 022 (validación Final, `asesor_final_id`) sin duplicar la lógica.
+    `field` solo lo pasan los dos call-sites de este archivo, nunca el cliente,
+    pero se restringe igual: barato de blindar y evita que una refactorización
+    futura acabe leyendo/escribiendo una clave de `data` que no tocaba
+    (Security Review del PR #73).
     """
+    if field not in _ASESOR_FIELDS_PERMITIDOS:
+        raise ValueError(f"Campo de asesor no permitido: {field!r}")
     raw = data.get(field)
     try:
         data[field] = int(raw) or None

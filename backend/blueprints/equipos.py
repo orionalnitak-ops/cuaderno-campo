@@ -19,6 +19,19 @@ bp = Blueprint('equipos', __name__)
 SIN_EXPLOTACION = "No tienes ninguna explotación creada"
 
 
+def _coerce_propio(raw):
+    """Normaliza `propio` a True/False/None antes de guardarlo.
+
+    Sin esto, un cliente que mande un valor que no sea exactamente `False`
+    (p. ej. un string suelto) se cuela en una columna INTEGER como texto en
+    vez de 0/1/NULL — SQLite no lo rechaza, pero deja el dato sucio. `None`
+    significa "sin especificar" (se trata como propio al mostrarlo).
+    """
+    if raw is None:
+        return None
+    return bool(raw)
+
+
 @bp.route('/api/equipos', methods=['GET', 'POST'])
 @login_required
 def manage_equipos():
@@ -38,14 +51,15 @@ def manage_equipos():
     # equipo NO es propio — limpiarlo aquí evita que un NIF quede colgado en un
     # equipo marcado como propio (mismo bug que ya se corrigió en cosecha con
     # los datos de cliente al desmarcar "venta comercializada").
-    nif_propietario = data.get('nif_propietario') if data.get('propio') is False else None
+    propio = _coerce_propio(data.get('propio'))
+    nif_propietario = data.get('nif_propietario') if propio is False else None
     c = conn.cursor()
     c.execute('''INSERT INTO equipos (user_id, explotacion_id, descripcion, tipo, marca, modelo,
                      num_registro_roma, fecha_iteaf, notas, propio, nif_propietario)
                  VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
               (uid, exp_id, data.get('descripcion'), data.get('tipo'), data.get('marca'),
                data.get('modelo'), data.get('num_registro_roma'), data.get('fecha_iteaf'), data.get('notas'),
-               data.get('propio'), nif_propietario))
+               propio, nif_propietario))
     conn.commit(); new_id = c.lastrowid; conn.close()
     return jsonify({"status": "ok", "id": new_id}), 201
 
@@ -61,7 +75,8 @@ def manage_equipo(eid):
                      (eid, uid, exp_id))
         conn.commit(); conn.close(); return jsonify({"status": "ok"})
     data = request.json or {}
-    if data.get('propio') is not False:
+    data['propio'] = _coerce_propio(data.get('propio'))
+    if data['propio'] is not False:
         data['nif_propietario'] = None
     fields = ['descripcion', 'tipo', 'marca', 'modelo', 'num_registro_roma', 'fecha_iteaf', 'notas',
               'propio', 'nif_propietario']
