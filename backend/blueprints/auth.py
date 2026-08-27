@@ -41,8 +41,18 @@ def auth_login():
         _generar_alertas(u['id'])
     except Exception:
         pass
-    return jsonify({"id": user.id, "email": user.email,
-                    "nombre": user.nombre, "role": user.role})
+    te = user.trial_ends_at
+    return jsonify({
+        "id": user.id, "email": user.email, "nombre": user.nombre, "role": user.role,
+        "email_verified": bool(u.get('email_verified')),
+        "plan": user.plan_label(), "plan_raw": user.plan,
+        "trial_ends_at": (te.isoformat() if hasattr(te, 'isoformat') else str(te)) if te else None,
+        "plan_active": user.plan_is_active(), "impersonating": None,
+        "pago_fallido": bool(u.get('pago_fallido_desde')),
+        "cortesia": user.es_cortesia,
+        "allows_multi": user.plan_allows_multi(),
+        "explotaciones_limit": user.explotaciones_limit(),
+    })
 
 
 @bp.route('/api/auth/register', methods=['POST'])
