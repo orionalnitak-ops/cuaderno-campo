@@ -137,13 +137,31 @@ def _generar_casos(n):
     return casos
 
 
+_TABLAS_PERMITIDAS = set(TABLA_POR_CATEGORIA.values())
+
+
+def _ultima_fila(conn, tabla):
+    if tabla not in _TABLAS_PERMITIDAS:
+        raise ValueError(f"Tabla no permitida: {tabla!r}")
+    return conn.execute(f"SELECT * FROM {tabla} ORDER BY id DESC LIMIT 1").fetchone()
+
+
 def _contar(conn, tabla):
+    if tabla not in _TABLAS_PERMITIDAS:
+        raise ValueError(f"Tabla no permitida: {tabla!r}")
     return conn.execute(f"SELECT COUNT(*) c FROM {tabla}").fetchone()['c']
 
 
 def run():
     print("test_nlp_random: fuzz de 'Habla que yo escribo'")
     conn, parcela_ids = _db()
+    # Se guardan los originales para restaurarlos al salir: si este archivo se
+    # llegara a importar junto a otros tests en el mismo proceso, el parche no
+    # debe sobrevivir a esta función y contaminar lo que corra después.
+    _orig_nlp_get_db = nlp_mod.get_db
+    _orig_helpers_get_db = helpers.get_db
+    _orig_get_exp = nlp_mod.get_active_explotacion_id
+    _orig_get_uid = nlp_mod.get_uid
     nlp_mod.get_db = lambda: _NoCierra(conn)
     helpers.get_db = lambda: _NoCierra(conn)
     nlp_mod.get_active_explotacion_id = lambda conn=None: EXP_ID
@@ -154,7 +172,28 @@ def run():
     def marcar(caso, motivo, extra=''):
         fallos.append(f"«{caso['texto']}» -> {motivo}" + (f" ({extra})" if extra else ''))
 
-    casos = _generar_casos(150)
+    try:
+        casos = _generar_casos(150)
+        _fuzz(conn, parcela_ids, casos, marcar)
+    finally:
+        conn.close()
+        nlp_mod.get_db = _orig_nlp_get_db
+        helpers.get_db = _orig_helpers_get_db
+        nlp_mod.get_active_explotacion_id = _orig_get_exp
+        nlp_mod.get_uid = _orig_get_uid
+
+    print(f"\n{len(casos)} frases generadas, {len(fallos)} fallos.\n")
+    if fallos:
+        print("FALLOS:")
+        for f in fallos:
+            print(f"  - {f}")
+    else:
+        print("Todo en verde: cada frase fue a su sitio (o fue rechazada cuando debía serlo).")
+
+    assert not fallos, f"{len(fallos)} caso(s) de {len(casos)} mal encaminados (ver arriba)"
+
+
+def _fuzz(conn, parcela_ids, casos, marcar):
     for caso in casos:
         texto = caso['texto']
         finca_id_esperado = parcela_ids[caso['finca']]
@@ -251,23 +290,10 @@ def run():
             if despues != antes + 1:
                 marcar(caso, f'no aumentó la tabla {tabla}', f"{antes} -> {despues}")
                 continue
-            fila = conn.execute(
-                f"SELECT * FROM {tabla} ORDER BY id DESC LIMIT 1").fetchone()
+            fila = _ultima_fila(conn, tabla)
             if fila['parcela_id'] != finca_id_esperado:
                 marcar(caso, f'la fila de {tabla} apunta a otra parcela',
                        f"esperada={finca_id_esperado} guardada={fila['parcela_id']}")
-
-    conn.close()
-
-    print(f"\n{len(casos)} frases generadas, {len(fallos)} fallos.\n")
-    if fallos:
-        print("FALLOS:")
-        for f in fallos:
-            print(f"  - {f}")
-    else:
-        print("Todo en verde: cada frase fue a su sitio (o fue rechazada cuando debía serlo).")
-
-    assert not fallos, f"{len(fallos)} caso(s) de {len(casos)} mal encaminados (ver arriba)"
 
 
 if __name__ == '__main__':
