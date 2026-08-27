@@ -1130,6 +1130,70 @@ function RepartoCosecha({ parcelas, total, unidad, visible }) {
     );
 }
 
+// ── ProductoSiexSelect (feature 019) ────────────────────────────────────────
+// Solo 693 filas en total en el catálogo `Producto Vegetal.xlsx`: a diferencia
+// de variedad (86.136 filas), no hace falta autocompletado con límite — se
+// pide la lista entera ya filtrada por cultivo y se renderiza en un <select>.
+function ProductoSiexSelect({ cultivoIacsCod, value, onChange }) {
+    const [productos, setProductos] = React.useState([]);
+
+    React.useEffect(() => {
+        if (!cultivoIacsCod) { setProductos([]); return; }
+        fetch(`/api/catalogos/productos?cultivo_iacs_cod=${encodeURIComponent(cultivoIacsCod)}`,
+            { credentials: 'include' })
+            .then(r => r.ok ? r.json() : { ok: false })
+            .then(d => setProductos(d.ok ? d.data : []))
+            .catch(() => setProductos([]));
+    }, [cultivoIacsCod]);
+
+    if (!cultivoIacsCod || productos.length === 0) return null;
+
+    return (
+        <FieldGroup label="Producto (catálogo SIEX)">
+            <select className="input-field" value={value || ''}
+                onChange={e => onChange(e.target.value ? Number(e.target.value) : null)}>
+                <option value="">Sin especificar…</option>
+                {productos.map(p => <option key={p.id_producto} value={p.id_producto}>{p.nombre}</option>)}
+            </select>
+        </FieldGroup>
+    );
+}
+
+// ── ClienteProvinciaMunicipio (feature 019) ─────────────────────────────────
+// Mismo patrón de provincia→municipio que el alta de parcela
+// (screens_parcelas.jsx), aplicado al cliente de una venta comercializada.
+function ClienteProvinciaMunicipio({ provinciaCod, municipioCod, onProvincia, onMunicipio }) {
+    const [municipios, setMunicipios] = React.useState([]);
+
+    React.useEffect(() => {
+        if (!provinciaCod) { setMunicipios([]); return; }
+        fetch(`/api/sigpac/municipios?provincia_cod=${provinciaCod}`, { credentials: 'include' })
+            .then(r => r.json()).then(d => setMunicipios(Array.isArray(d) ? d : []))
+            .catch(() => setMunicipios([]));
+    }, [provinciaCod]);
+
+    return (
+        <div className="responsive-grid cols-2">
+            <FieldGroup label="Provincia del cliente">
+                <select className="input-field" value={provinciaCod || ''}
+                    onChange={e => { onProvincia(e.target.value); onMunicipio(''); }}>
+                    <option value="">Seleccionar…</option>
+                    {(typeof PROVINCIAS_ES !== 'undefined' ? PROVINCIAS_ES : []).map(p => (
+                        <option key={p.cod} value={p.cod}>{p.nombre}</option>
+                    ))}
+                </select>
+            </FieldGroup>
+            <FieldGroup label="Municipio del cliente">
+                <select className="input-field" value={municipioCod || ''} disabled={!provinciaCod || municipios.length === 0}
+                    onChange={e => onMunicipio(e.target.value)}>
+                    <option value="">Seleccionar…</option>
+                    {municipios.map(m => <option key={m.codigo} value={m.codigo}>{m.nombre}</option>)}
+                </select>
+            </FieldGroup>
+        </div>
+    );
+}
+
 function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
     const [saving, setSaving]       = React.useState(false);
@@ -1142,13 +1206,23 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
         parcela_id: record?.parcela_id || '', parcela_etiqueta: record?.parcela_etiqueta || '',
         uhc_id: record?.uhc_id || '',
         fecha_inicio: record?.fecha_inicio || today, fecha_fin: record?.fecha_fin || '',
-        cultivo: record?.cultivo || '', variedad: record?.variedad || '',
+        cultivo: record?.cultivo || '', cultivo_iacs_cod: record?.cultivo_iacs_cod || '',
+        variedad: record?.variedad || '',
         superficie_cosechada_ha: record?.superficie_cosechada_ha || '',
         produccion_total_valor: record?.produccion_total_valor || '',
         produccion_total_unidad: record?.produccion_total_unidad || 'kg',
         destino: record?.destino || '', comprador: record?.comprador || '',
         precio_unidad: record?.precio_unidad || '', notas: record?.notas || '',
         campana,
+        // feature 019 (bloque 2/8 SIEX): venta de la cosecha, no la cosecha en sí.
+        fecha_venta: record?.fecha_venta || '',
+        tipo_venta: record?.tipo_venta || '',
+        codigo_producto_siex: record?.codigo_producto_siex || null,
+        albaran: record?.albaran || '', lote: record?.lote || '',
+        nif_cliente: record?.nif_cliente || '',
+        direccion_cliente: record?.direccion_cliente || '',
+        provincia_cliente_cod: record?.provincia_cliente_cod || '',
+        municipio_cliente_cod: record?.municipio_cliente_cod || '',
     });
     const set = (k, v) => setF(x => ({ ...x, [k]: v }));
 
@@ -1170,6 +1244,7 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                 if (c) setF(x => ({
                     ...x,
                     cultivo: x.cultivo || c.cultivo || '',
+                    cultivo_iacs_cod: x.cultivo_iacs_cod || c.cultivo_iacs_cod || '',
                     variedad: x.variedad || c.variedad || '',
                     superficie_cosechada_ha: x.superficie_cosechada_ha || c.superficie_cultivada_ha || '',
                 }));
@@ -1315,7 +1390,52 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                         <ZoomInput label="Precio por unidad (€)" value={f.precio_unidad} placeholder="0.350 €/kg" inputMode="decimal"
                             onConfirm={v => set('precio_unidad', v)} />
                     </FieldGroup>
+
+                    {/* feature 019 (bloque 2/8 SIEX): SIEX modela una VENTA, no una cosecha —
+                        estos campos son opcionales, nunca bloquean el guardado. */}
+                    <FieldGroup label="Fecha de venta">
+                        <input type="date" className="input-field" value={f.fecha_venta}
+                            onChange={e => set('fecha_venta', e.target.value)} />
+                    </FieldGroup>
+                    <FieldGroup label="Tipo de venta">
+                        <select className="input-field" value={f.tipo_venta} onChange={e => set('tipo_venta', e.target.value)}>
+                            <option value="">Sin especificar…</option>
+                            <option value="comercializada">Comercializada (cliente identificado)</option>
+                            <option value="directa">Venta directa</option>
+                        </select>
+                    </FieldGroup>
+                    <ProductoSiexSelect cultivoIacsCod={f.cultivo_iacs_cod} value={f.codigo_producto_siex}
+                        onChange={v => set('codigo_producto_siex', v)} />
                 </div>
+
+                {f.tipo_venta === 'comercializada' && (
+                    <div style={{ background: 'var(--surface-container-low)', borderRadius: 12, padding: '12px 14px', marginTop: 4, marginBottom: 14 }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: 10 }}>
+                            🧾 Datos del cliente (venta comercializada)
+                        </div>
+                        <div className="responsive-grid cols-2">
+                            <FieldGroup label="NIF del cliente">
+                                <ZoomInput label="NIF del cliente" value={f.nif_cliente} placeholder="B12345678"
+                                    onConfirm={v => set('nif_cliente', v)} />
+                            </FieldGroup>
+                            <FieldGroup label="Lote">
+                                <ZoomInput label="Lote" value={f.lote} placeholder="L-2026-014"
+                                    onConfirm={v => set('lote', v)} />
+                            </FieldGroup>
+                            <FieldGroup label="Albarán">
+                                <ZoomInput label="Albarán" value={f.albaran} placeholder="A-2026-014"
+                                    onConfirm={v => set('albaran', v)} />
+                            </FieldGroup>
+                            <FieldGroup label="Dirección del cliente">
+                                <ZoomInput label="Dirección del cliente" value={f.direccion_cliente} placeholder="Calle, número"
+                                    onConfirm={v => set('direccion_cliente', v)} />
+                            </FieldGroup>
+                        </div>
+                        <ClienteProvinciaMunicipio provinciaCod={f.provincia_cliente_cod} municipioCod={f.municipio_cliente_cod}
+                            onProvincia={v => set('provincia_cliente_cod', v)} onMunicipio={v => set('municipio_cliente_cod', v)} />
+                    </div>
+                )}
+
                 <FieldGroup label="Notas">
                     <ZoomInput label="Notas" value={f.notas} placeholder="Observaciones…"
                         multiline onConfirm={v => set('notas', v)} />

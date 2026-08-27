@@ -907,6 +907,41 @@ def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # feature 019 (bloque 2/8 SIEX): SIEX modela una VENTA, no una cosecha, y
+    # separa venta comercializada (con cliente identificado: NIF, dirección,
+    # lote, albarán) de venta directa (sin cliente). Todo nullable — ningún
+    # registro existente se toca y ninguno de estos campos bloquea el guardado.
+    # `comprador` (ya existente) se reutiliza como nombre del cliente en ambos
+    # casos: no se crea una columna `nombre_cliente` aparte, sería el mismo
+    # dato dos veces — ver spec/features/019-siex-cosecha.
+    for col, typ in [
+        ('fecha_venta', 'TEXT'),
+        ('tipo_venta', 'TEXT'),  # 'comercializada' | 'directa'
+        ('codigo_producto_siex', 'INTEGER'),  # ref_productos_siex.id_producto
+        ('albaran', 'TEXT'),
+        ('lote', 'TEXT'),
+        ('nif_cliente', 'TEXT'),
+        ('direccion_cliente', 'TEXT'),
+        ('provincia_cliente_cod', 'TEXT'),
+        ('municipio_cliente_cod', 'TEXT'),
+    ]:
+        _add_col(c, 'cosecha', col, typ)
+
+    # ── REF PRODUCTOS SIEX (feature 019) ──
+    # Catálogo oficial `Producto Vegetal.xlsx` (693 filas). Reutilizado también
+    # por los bloques 023 (análisis) y 025 (post-cosecha) — no es dato de
+    # ningún agricultor, mismo criterio que `ref_variedades_siex` del 018.
+    # Solo 693 filas en total: a diferencia de variedad, no hace falta
+    # autocompletado remoto con límite — el cliente pide la lista entera ya
+    # filtrada por cultivo y la renderiza en un <select>.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS ref_productos_siex (
+            id_producto INTEGER NOT NULL,
+            cod_cultivo_siex TEXT NOT NULL,
+            nombre TEXT NOT NULL,
+            PRIMARY KEY (id_producto, cod_cultivo_siex)
+        )
+    ''')
 
     # ── USERS ──
     c.execute(f'''
@@ -1239,6 +1274,8 @@ def _seed_if_needed(conn):
         # Autocompletado de variedad (feature 018): filtra por cultivo y hace
         # LIKE 'texto%' sobre nombre, así que el índice compuesto cubre las dos.
         ('idx_ref_variedades_siex',  'ref_variedades_siex', 'cod_cultivo_siex, nombre'),
+        # Catálogo de productos por cultivo (feature 019): mismo motivo.
+        ('idx_ref_productos_siex',  'ref_productos_siex', 'cod_cultivo_siex'),
     ]
     # Un índice por explotación en cada tabla acotada (feature 013): ahora TODA
     # consulta de datos del agricultor lleva `AND explotacion_id=?`, y sin índice
