@@ -1643,7 +1643,20 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                             onChange={e => set('fecha_venta', e.target.value)} />
                     </FieldGroup>
                     <FieldGroup label="Tipo de venta">
-                        <select className="input-field" value={f.tipo_venta} onChange={e => set('tipo_venta', e.target.value)}>
+                        <select className="input-field" value={f.tipo_venta}
+                            onChange={e => {
+                                const v = e.target.value;
+                                set('tipo_venta', v);
+                                // Si se deja de marcar "Comercializada", los datos del cliente
+                                // dejan de tener sentido: sin esto quedaban en el estado y se
+                                // guardaban igual aunque el bloque estuviera oculto, colgando
+                                // un NIF de cliente a una venta marcada como directa.
+                                if (v !== 'comercializada') {
+                                    setF(x => ({ ...x, nif_cliente: '', direccion_cliente: '',
+                                        provincia_cliente_cod: '', municipio_cliente_cod: '',
+                                        lote: '', albaran: '' }));
+                                }
+                            }}>
                             <option value="">Sin especificar…</option>
                             <option value="comercializada">Comercializada (cliente identificado)</option>
                             <option value="directa">Venta directa</option>
