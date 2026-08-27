@@ -995,12 +995,16 @@ function FormFertilizacion({ parcelas, record, campana, onClose, isEdit }) {
     // `unidad_cod` (catálogo SIEX kg/L/t) duplicaba la misma información que ya
     // lleva `dosis_unidad` (texto libre): pedir los dos por separado solo abría
     // la puerta a que no coincidieran. Se deriva del prefijo de dosis_unidad.
+    // Códigos verificados contra `Unidades de medida.xlsx`: kg=5, L=4, t=6 —
+    // el mapeo anterior (1/2/3) no correspondía al catálogo real, eran los
+    // primeros códigos de la tabla (m²/ha/m³), no kg/L/t. Bug detectado al
+    // construir el bloque 7 y corregido aparte, sin tocar el resto del PR.
     React.useEffect(() => {
         const u = (f.dosis_unidad || '').toLowerCase();
         let cod = null;
-        if (u.startsWith('kg')) cod = 1;
-        else if (u.startsWith('l')) cod = 2;
-        else if (u.startsWith('t')) cod = 3;
+        if (u.startsWith('kg')) cod = 5;
+        else if (u.startsWith('l')) cod = 4;
+        else if (u.startsWith('t')) cod = 6;
         set('unidad_cod', cod);
     }, [f.dosis_unidad]);
 
