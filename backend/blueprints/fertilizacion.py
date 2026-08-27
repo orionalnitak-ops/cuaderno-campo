@@ -173,6 +173,22 @@ def _validate_abonado(data):
 # FERTILIZACIÓN
 # ─────────────────────────────────────────────
 
+# Allowlist de columnas actualizables en fertilizacion. Mismo patrón que
+# `_RIEGO_UPDATE_ALLOWED` en riego: estos nombres se interpolan en el SQL del
+# UPDATE, así que DEBEN provenir siempre de esta constante y nunca de input
+# del usuario.
+_FERTILIZACION_UPDATE_FIELDS = (
+    'parcela_id', 'parcela_etiqueta', 'fecha_aplicacion', 'tipo_fertilizante',
+    'producto', 'riqueza_npk', 'dosis_valor', 'dosis_unidad', 'densidad_g_ml',
+    'metodo_aplicacion', 'notas', 'campana',
+    'n_aplicado', 'p2o5_aplicado', 'k2o_aplicado',
+    'fecha_enterrado', 'decl_buenas_practicas', 'buena_practica_cod',
+    'material_fertilizante_cod', 'carbono_pct', 'albaran', 'unidad_cod',
+    'tipo_fertilizacion_cod', 'metodo_cod', 'asesor_id', 'fecha_asesoramiento',
+)
+_FERTILIZACION_UPDATE_ALLOWED = frozenset(_FERTILIZACION_UPDATE_FIELDS)
+
+
 def _insert_fertilizacion(c, uid, data, parcela_id, parcela_etiqueta, n_ap, p_ap, k_ap,
                           explotacion_id):
     """Inserta un único registro de fertilización para la parcela dada."""
@@ -181,14 +197,22 @@ def _insert_fertilizacion(c, uid, data, parcela_id, parcela_etiqueta, n_ap, p_ap
             user_id, explotacion_id, parcela_id, parcela_etiqueta, fecha_aplicacion,
             tipo_fertilizante, producto, riqueza_npk,
             dosis_valor, dosis_unidad, densidad_g_ml, metodo_aplicacion, notas, campana,
-            n_aplicado, p2o5_aplicado, k2o_aplicado
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            n_aplicado, p2o5_aplicado, k2o_aplicado,
+            fecha_enterrado, decl_buenas_practicas, buena_practica_cod,
+            material_fertilizante_cod, carbono_pct, albaran, unidad_cod,
+            tipo_fertilizacion_cod, metodo_cod, asesor_id, fecha_asesoramiento
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (uid, explotacion_id, parcela_id, parcela_etiqueta, data.get('fecha_aplicacion'),
           data.get('tipo_fertilizante'), data.get('producto'), data.get('riqueza_npk'),
           _to_real(data.get('dosis_valor')), data.get('dosis_unidad', 'kg/ha'),
           _to_real(data.get('densidad_g_ml')),
           data.get('metodo_aplicacion'), data.get('notas'), data.get('campana', '2025/2026'),
-          n_ap, p_ap, k_ap))
+          n_ap, p_ap, k_ap,
+          data.get('fecha_enterrado'), data.get('decl_buenas_practicas'),
+          data.get('buena_practica_cod'), data.get('material_fertilizante_cod'),
+          _to_real(data.get('carbono_pct')), data.get('albaran'), data.get('unidad_cod'),
+          data.get('tipo_fertilizacion_cod'), data.get('metodo_cod'), data.get('asesor_id'),
+          data.get('fecha_asesoramiento')))
     return c.lastrowid
 
 
@@ -319,12 +343,9 @@ def manage_fertilizacion_one(fid):
         return jsonify({"error": "Parcela no encontrada"}), 403
     n_ap, p_ap, k_ap = _calc_npk(data.get('riqueza_npk'), data.get('dosis_valor'),
                                   data.get('dosis_unidad', 'kg/ha'), data.get('densidad_g_ml'))
-    fields = ['parcela_id', 'parcela_etiqueta', 'fecha_aplicacion', 'tipo_fertilizante',
-              'producto', 'riqueza_npk', 'dosis_valor', 'dosis_unidad', 'densidad_g_ml',
-              'metodo_aplicacion', 'notas', 'campana',
-              'n_aplicado', 'p2o5_aplicado', 'k2o_aplicado']
+    fields = [f for f in _FERTILIZACION_UPDATE_FIELDS if f in _FERTILIZACION_UPDATE_ALLOWED]
     sets = ', '.join(f"{f}=?" for f in fields)
-    _real_f = {'dosis_valor', 'densidad_g_ml'}
+    _real_f = {'dosis_valor', 'densidad_g_ml', 'carbono_pct'}
     npk_map = {'n_aplicado': n_ap, 'p2o5_aplicado': p_ap, 'k2o_aplicado': k_ap}
     values = [_to_real(data.get(f)) if f in _real_f else npk_map.get(f, data.get(f)) for f in fields]
     conn.execute(f"UPDATE fertilizacion SET {sets}"

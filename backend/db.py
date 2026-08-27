@@ -782,6 +782,25 @@ def init_db():
         ('densidad_g_ml', 'REAL'),
     ]:
         _add_col(c, 'fertilizacion', col, typ)
+    # feature 021 (bloque 4/8 SIEX): columnas de catálogo adicionales, todas
+    # nullable, nunca reemplazan tipo_fertilizante/producto/metodo_aplicacion
+    # de texto libre — mismo patrón que riego (feature 020). `asesor_id`
+    # reutiliza la tabla `asesores` ya existente (feature 010), igual que
+    # tratamientos.asesor_id.
+    for col, typ in [
+        ('fecha_enterrado', 'TEXT'),
+        ('decl_buenas_practicas', 'INTEGER'),
+        ('buena_practica_cod', 'INTEGER'),
+        ('material_fertilizante_cod', 'INTEGER'),
+        ('carbono_pct', 'REAL'),
+        ('albaran', 'TEXT'),
+        ('unidad_cod', 'INTEGER'),
+        ('tipo_fertilizacion_cod', 'INTEGER'),
+        ('metodo_cod', 'INTEGER'),
+        ('asesor_id', 'INTEGER'),
+        ('fecha_asesoramiento', 'TEXT'),
+    ]:
+        _add_col(c, 'fertilizacion', col, typ)
 
     # ── RIEGO ──
     c.execute(f'''

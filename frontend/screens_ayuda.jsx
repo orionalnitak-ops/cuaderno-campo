@@ -227,6 +227,11 @@ const HELP_SCREENS = {
                 title: 'Fecha',
                 desc: 'La fecha de aplicación es obligatoria. Si aplicaste en varios días, registra una entrada por día.',
             },
+            {
+                icon: '📋',
+                title: 'Datos SIEX (opcional)',
+                desc: 'Desplegando "más campos" puedes indicar el material fertilizante, tipo y método del catálogo oficial, carbono orgánico, buenas prácticas y el asesor de fertilización — nada de esto es obligatorio para guardar.',
+            },
         ],
     },
     labor: {
