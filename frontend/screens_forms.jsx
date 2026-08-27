@@ -1999,6 +1999,14 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
         if (p) set('parcela_etiqueta', p.nombre_finca);
     }, [f.parcela_id]);
 
+    // El campo "Volumen" ya fija su propia unidad en la etiqueta (m³); pedir
+    // aparte al agricultor que confirme "m³ o Litros" para el mismo número
+    // solo abría la puerta a que las dos cosas se contradigan. `unidad_cantidad_cod`
+    // se deriva sin preguntar: 3 = m³ si hay volumen, null si no hay nada que unir.
+    React.useEffect(() => {
+        set('unidad_cantidad_cod', f.volumen_m3 ? 3 : null);
+    }, [f.volumen_m3]);
+
     React.useEffect(() => {
         fetch(`/api/uhc?campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
             .then(r => r.json())
@@ -2114,14 +2122,6 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
                             onChange={e => set('origen_agua_cod', e.target.value ? Number(e.target.value) : null)}>
                             <option value="">Sin especificar…</option>
                             {ORIGENES_AGUA_SIEX.map(o => <option key={o.cod} value={o.cod}>{o.nombre}</option>)}
-                        </select>
-                    </FieldGroup>
-                    <FieldGroup label="Unidad del volumen indicado arriba">
-                        <select className="input-field" value={f.unidad_cantidad_cod || ''}
-                            onChange={e => set('unidad_cantidad_cod', e.target.value ? Number(e.target.value) : null)}>
-                            <option value="">Sin especificar…</option>
-                            <option value={3}>m³</option>
-                            <option value={4}>Litros</option>
                         </select>
                     </FieldGroup>
                     <FieldGroup label="Dosis">
