@@ -137,7 +137,9 @@ def _generar_casos(n):
     return casos
 
 
-_TABLAS_PERMITIDAS = set(TABLA_POR_CATEGORIA.values())
+# Constante cerrada y explícita: a propósito NO se deriva de TABLA_POR_CATEGORIA.values()
+# para que nada que module ese diccionario en tiempo de ejecución pueda ampliarla.
+_TABLAS_PERMITIDAS = frozenset({'riego', 'cosecha', 'labores'})
 
 
 def _ultima_fila(conn, tabla):
