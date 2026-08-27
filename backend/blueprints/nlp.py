@@ -102,7 +102,9 @@ def extraer_accion(texto):
     acciones = {
         'tratamiento': [
             'tratado', 'tratamiento', 'tratamos', 'trate', 'pulverizado', 'pulverice',
-            'fumigado', 'fumigue', 'fumigaci', 'spray', 'insecticida', 'fungicida',
+            'pulveriz',  # cubre pulverizamos/pulverizar/pulverizando
+            'fumigado', 'fumigue', 'fumigaci', 'fumig',  # cubre fumigamos/fumigar/fumigando
+            'spray', 'insecticida', 'fungicida',
             'herbicida', 'fitosanitario', 'plaguicida', 'mata', 'mato',
         ],
         'fertilizacion': [
@@ -116,12 +118,13 @@ def extraer_accion(texto):
         ],
         'cosecha': [
             'cosechado', 'cosechamos', 'coseche', 'cosecho', 'cosecha ',
-            'recolectado', 'recogie', 'vendimiado', 'vendimia',
+            'recolectado', 'recolect',  # cubre recolectamos/recolectar
+            'recogie', 'vendimiado', 'vendimia',
             'trillado', 'trilla', 'recogi',
         ],
         'labor': [
             'labor', 'labrado', 'labre', 'laboreo',
-            'arado', 'are ', 'are,', 'cave', 'cavado',
+            'arado', 'aramos', 'are ', 'are,', 'cave', 'cavado',
             'poda', 'pode', 'podamos',
             'desyerbado', 'desherbado', 'desbroz',
             'sembrado', 'siembre', 'siembra', 'sembre', 'sembré', 'he sembrado',
@@ -138,8 +141,13 @@ def extraer_accion(texto):
     return {'tipo': None, 'confianza': 0, 'palabra_clave': None}
 
 
-def extraer_producto(texto):
+def extraer_producto(texto, nombre_finca=None):
     tnorm = _norm(texto)
+    # Sin esto, una finca como "La Cebada" hace que sembrar garbanzo en ella
+    # se detecte como producto "Cebada": el nombre de la finca coincide con
+    # una palabra de la lista antes de llegar a la palabra real del cultivo.
+    if nombre_finca:
+        tnorm = tnorm.replace(_norm(nombre_finca), ' ')
     # (palabra_clave_normalizada, nombre_display)
     productos = [
         # Semillas / cultivos
@@ -277,7 +285,7 @@ def parse_texto_libre():
 
     parcela_data = extraer_parcela(texto, uid)
     accion_data = extraer_accion(texto)
-    producto_data = extraer_producto(texto)
+    producto_data = extraer_producto(texto, parcela_data['nombre'] if parcela_data else None)
     dosis_data = extraer_dosis(texto)
     nombre_candidato = None if parcela_data else extraer_nombre_candidato(texto)
 
