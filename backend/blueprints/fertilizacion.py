@@ -337,6 +337,20 @@ def manage_fertilizacion_one(fid):
 # RIEGO
 # ─────────────────────────────────────────────
 
+# Allowlist de columnas actualizables en riego. Estos nombres se interpolan en
+# el SQL del UPDATE (los placeholders `?` no parametrizan identificadores de
+# columna), así que DEBEN provenir siempre de esta constante y nunca de input
+# del usuario — mismo patrón que `_PARCELA_UPDATE_ALLOWED` en parcelas.py.
+_RIEGO_UPDATE_FIELDS = (
+    'parcela_id', 'parcela_etiqueta', 'fecha', 'tipo_riego', 'volumen_m3',
+    'horas_riego', 'fuente_agua', 'notas', 'campana',
+    'superficie_ha', 'sistema_riego_cod', 'unidad_cantidad_cod', 'dosis_valor',
+    'dosis_unidad', 'origen_agua_cod', 'num_contador', 'tipo_energia_cod',
+    'decl_buenas_practicas', 'buena_practica_cod',
+)
+_RIEGO_UPDATE_ALLOWED = frozenset(_RIEGO_UPDATE_FIELDS)
+
+
 def _insert_riego(c, uid, data, parcela_id, parcela_etiqueta, explotacion_id):
     """Inserta un único registro de riego para la parcela dada."""
     c.execute('''
@@ -428,11 +442,7 @@ def manage_riego_one(rid):
     if data.get('parcela_id') and not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):
         conn.close()
         return jsonify({"error": "Parcela no encontrada"}), 403
-    fields = ['parcela_id', 'parcela_etiqueta', 'fecha', 'tipo_riego', 'volumen_m3',
-              'horas_riego', 'fuente_agua', 'notas', 'campana',
-              'superficie_ha', 'sistema_riego_cod', 'unidad_cantidad_cod', 'dosis_valor',
-              'dosis_unidad', 'origen_agua_cod', 'num_contador', 'tipo_energia_cod',
-              'decl_buenas_practicas', 'buena_practica_cod']
+    fields = [f for f in _RIEGO_UPDATE_FIELDS if f in _RIEGO_UPDATE_ALLOWED]
     sets = ', '.join(f"{f}=?" for f in fields)
     numeric = {'volumen_m3', 'horas_riego', 'superficie_ha', 'dosis_valor'}
     values = [_to_real(data.get(f)) if f in numeric else data.get(f) for f in fields]
