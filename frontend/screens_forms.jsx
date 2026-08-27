@@ -1639,6 +1639,83 @@ function FormCompra({ record, campana, onClose, isEdit }) {
     );
 }
 
+// ── Catálogos SIEX de riego (feature 020, bloque 3/8) ───────────────────────
+// Los cuatro caben en un <select> estático: ninguno pasa de 31 filas, no hace
+// falta tabla de referencia ni endpoint — ver spec/features/020-siex-riego.
+// Verificados contra los xlsx oficiales de Catalogos_xlsx.zip, no transcritos
+// del spec (el spec tenía un error: decía que m³ era el código 6 de
+// "Unidades de medida.xlsx", pero ese código es toneladas — m³ es el 3).
+const SISTEMAS_RIEGO_SIEX = [
+    { cod: 1, nombre: 'Superficie o Gravedad' },
+    { cod: 2, nombre: 'Aspersión fija' },
+    { cod: 3, nombre: 'Aspersión móvil' },
+    { cod: 4, nombre: 'Microaspersión' },
+    { cod: 5, nombre: 'Nebulización' },
+    { cod: 6, nombre: 'Goteo' },
+    { cod: 7, nombre: 'Hidropónico a solución perdida' },
+    { cod: 8, nombre: 'Hidropónico con recirculación de solución' },
+];
+
+const ORIGENES_AGUA_SIEX = [
+    { cod: 1, nombre: 'Superficial' },
+    { cod: 2, nombre: 'Subterránea' },
+    { cod: 3, nombre: 'Pluvial' },
+    { cod: 4, nombre: 'Regeneración' },
+    { cod: 5, nombre: 'Desalinización' },
+    { cod: 6, nombre: 'Recursos alternativos (distintos de la regeneración y desalinización)' },
+];
+
+const TIPOS_ENERGIA_SIEX = [
+    { cod: 1, nombre: 'Eléctrica' },
+    { cod: 2, nombre: 'Diésel' },
+    { cod: 3, nombre: 'Gasolina' },
+    { cod: 4, nombre: 'Eléctrica fotovoltaica' },
+    { cod: 5, nombre: 'Eléctrica eólica' },
+    { cod: 6, nombre: 'Biodiésel' },
+    { cod: 7, nombre: 'Biogás' },
+    { cod: 8, nombre: 'Ninguna' },
+    { cod: 9, nombre: 'Gas natural' },
+    { cod: 10, nombre: 'Propano' },
+    { cod: 11, nombre: 'Butano' },
+];
+
+// Solo las de ámbito "Riego" del catálogo "Buenas prácticas.xlsx" (98 filas
+// en total, repartidas entre Fertilización/Riego/Fitosanitario) — nunca se
+// mezclan con las de otro ámbito. Código 0 = "No realiza buenas prácticas".
+const BUENAS_PRACTICAS_RIEGO_SIEX = [
+    { cod: 0, nombre: 'No realiza buenas prácticas' },
+    { cod: 12, nombre: 'Realizar la fertilización nitrogenada mediante fertirrigación (Sólo cuando haya necesidades de regadío)' },
+    { cod: 17, nombre: 'Aplicación de la tecnología de dosificación variable dentro de una misma parcela' },
+    { cod: 21, nombre: 'Dosis y frecuencia de riego ajustadas a las necesidades del cultivo y a la capacidad de retención de humedad del suelo, tomando como referencia las recomendaciones de los servicios de asesoramiento al regante (SIAR) de la comunidad autónoma o el Sistema de Información Agroclimática para el Regadío (SiAR) del Ministerio de Agricultura, Pesca y Alimentación, y/o empleo de sensores de contenido de humedad del suelo' },
+    { cod: 22, nombre: 'En el caso de que el propio material usado en el abonado aporte agua en una cantidad considerable al cultivo (como cuando se utilizan estiércoles líquidos), se tendrá en cuenta el volumen de agua incorporado por el mismo para el cálculo' },
+    { cod: 23, nombre: 'Riego localizado' },
+    { cod: 24, nombre: 'En cultivos con riego por inundación, el abonado nitrogenado se aplicará cuando el suelo se encuentre en sazón y se enterrará inmediatamente mediante una labor' },
+    { cod: 25, nombre: 'En los cultivos con riego localizado, la fertilización se efectuará disolviendo los abonos en el agua de riego y aplicándolos al suelo a través de ésta. Éstos se dosificarán fraccionadamente, durante el periodo de actividad vegetativa del cultivo, pudiéndose adaptar las concentraciones y las cantidades parciales aportadas a los momentos de mayor requerimiento dentro del ciclo del cultivo' },
+    { cod: 26, nombre: 'En el riego localizado, el número de emisores por árbol, el volumen de agua aportado por cada uno de ellos y la frecuencia de riego se recomienda que se establezcan en función de la textura del terreno, de forma que se consiga ajustar la superficie mojada a la profundidad radicular efectiva suficiente para el cultivo y así evitar problemas de saturación, de humedad o de pérdidas de agua en profundidad' },
+    { cod: 27, nombre: 'El aporte de nutrientes conjuntamente con el agua de riego se deberá ajustar de modo que la concentración de nutrientes sea lo más baja posible, adaptándose a su vez a las necesidades hídricas del cultivo. Así mismo, los nutrientes deberán aplicarse en los momentos de máximo requerimiento de cada nutriente, de modo que se maximice el aprovechamiento por parte del cultivo y la efectividad del abonado y se reduzca, así, la acumulación en el suelo de nutrientes en forma de sales' },
+    { cod: 28, nombre: 'Utilización de acolchados (mulching)' },
+    { cod: 29, nombre: 'Siembra directa' },
+    { cod: 30, nombre: 'Mínimo laboreo' },
+    { cod: 31, nombre: 'Diseño en línea clave ("key-line")' },
+    { cod: 32, nombre: 'Utilización de mallas antigranizo' },
+    { cod: 33, nombre: 'Riego por aspersión nocturno' },
+    { cod: 34, nombre: 'Riego deficitario controlado (RDC)' },
+    { cod: 35, nombre: 'Siembra en seco (arroz)' },
+    { cod: 36, nombre: 'Monitorización de condiciones del suelo, clima y cultivo en tiempo real con sensores IoT' },
+    { cod: 37, nombre: 'Uso de drones y satélites para el monitoreo geoespacial de cultivos' },
+    { cod: 38, nombre: 'Análisis de datos agrícolas y apoyo a la toma de decisiones (DSS)' },
+    { cod: 39, nombre: 'Aplicación variable de insumos con equipos de precisión' },
+    { cod: 40, nombre: 'Manejo de maquinaria agrícola equipada con tecnología de precisión' },
+    { cod: 41, nombre: 'Implementación de sistemas de riego automatizado' },
+    { cod: 43, nombre: 'Comunicación en campo mediante redes de sensores inalámbricos' },
+    { cod: 44, nombre: 'Acceso a información y servicios agrícolas a través de aplicaciones móviles' },
+    { cod: 45, nombre: 'Gestión de la explotación agrícola mediante software específico' },
+    { cod: 46, nombre: 'Limpieza y desinfección - Mantener limpias las instalaciones, equipos, vehículos y bebederos' },
+    { cod: 47, nombre: 'Formación continua del personal - Capacitar al personal en bienestar, sanidad, higiene, manejo y bioseguridad' },
+    { cod: 48, nombre: 'Evaluación y mejora continua - Revisar resultados productivos, sanitarios y ambientales para ajustar prácticas' },
+    { cod: 49, nombre: 'Rotación de cultivos' },
+];
+
 function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
     const today = new Date().toISOString().split('T')[0];
     const [saving, setSaving] = React.useState(false);
@@ -1656,6 +1733,18 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
         fuente_agua:      record?.fuente_agua       || '',
         notas:            record?.notas             || '',
         campana,
+        // feature 020 (bloque 3/8 SIEX): catálogo adicional, nunca reemplaza
+        // tipo_riego/fuente_agua de texto libre — ver spec/features/020-siex-riego.
+        superficie_ha:         record?.superficie_ha         || '',
+        sistema_riego_cod:     record?.sistema_riego_cod     || null,
+        unidad_cantidad_cod:   record?.unidad_cantidad_cod   || null,
+        dosis_valor:           record?.dosis_valor           || '',
+        dosis_unidad:          record?.dosis_unidad          || '',
+        origen_agua_cod:       record?.origen_agua_cod       || null,
+        num_contador:          record?.num_contador          || '',
+        tipo_energia_cod:      record?.tipo_energia_cod      || null,
+        decl_buenas_practicas: record?.decl_buenas_practicas ?? null,
+        buena_practica_cod:    record?.buena_practica_cod    || null,
     });
     const set = (k, v) => setF(x => ({ ...x, [k]: v }));
 
@@ -1760,6 +1849,82 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
                         {['Balsa', 'Comunidad de regantes', 'Pozo propio', 'Río', 'Otro'].map(s => <option key={s}>{s}</option>)}
                     </select>
                 </FieldGroup>
+
+                {/* feature 020 (bloque 3/8 SIEX): catálogos adicionales, ninguno
+                    obligatorio — nunca bloquean el guardado. */}
+                <div className="responsive-grid cols-2">
+                    <FieldGroup label="Superficie regada (ha)">
+                        <ZoomInput label="Superficie regada (ha)" value={f.superficie_ha} placeholder="3.25" inputMode="decimal"
+                            onConfirm={v => set('superficie_ha', v)} />
+                    </FieldGroup>
+                    <FieldGroup label="Sistema de riego (catálogo SIEX)">
+                        <select className="input-field" value={f.sistema_riego_cod || ''}
+                            onChange={e => set('sistema_riego_cod', e.target.value ? Number(e.target.value) : null)}>
+                            <option value="">Sin especificar…</option>
+                            {SISTEMAS_RIEGO_SIEX.map(s => <option key={s.cod} value={s.cod}>{s.nombre}</option>)}
+                        </select>
+                    </FieldGroup>
+                    <FieldGroup label="Origen del agua (catálogo SIEX)">
+                        <select className="input-field" value={f.origen_agua_cod || ''}
+                            onChange={e => set('origen_agua_cod', e.target.value ? Number(e.target.value) : null)}>
+                            <option value="">Sin especificar…</option>
+                            {ORIGENES_AGUA_SIEX.map(o => <option key={o.cod} value={o.cod}>{o.nombre}</option>)}
+                        </select>
+                    </FieldGroup>
+                    <FieldGroup label="Unidad del volumen indicado arriba">
+                        <select className="input-field" value={f.unidad_cantidad_cod || ''}
+                            onChange={e => set('unidad_cantidad_cod', e.target.value ? Number(e.target.value) : null)}>
+                            <option value="">Sin especificar…</option>
+                            <option value={3}>m³</option>
+                            <option value={4}>Litros</option>
+                        </select>
+                    </FieldGroup>
+                    <FieldGroup label="Dosis">
+                        <ZoomInput label="Dosis" value={f.dosis_valor} placeholder="30" inputMode="decimal"
+                            onConfirm={v => set('dosis_valor', v)} />
+                    </FieldGroup>
+                    <FieldGroup label="Unidad de la dosis">
+                        <select className="input-field" value={f.dosis_unidad} onChange={e => set('dosis_unidad', e.target.value)}>
+                            <option value="">Sin especificar…</option>
+                            {['mm', 'm³/ha', 'L/ha'].map(u => <option key={u}>{u}</option>)}
+                        </select>
+                    </FieldGroup>
+                    <FieldGroup label="Nº de contador">
+                        <ZoomInput label="Nº de contador" value={f.num_contador} placeholder="CT-00123"
+                            onConfirm={v => set('num_contador', v)} />
+                    </FieldGroup>
+                    <FieldGroup label="Tipo de energía (catálogo SIEX)">
+                        <select className="input-field" value={f.tipo_energia_cod || ''}
+                            onChange={e => set('tipo_energia_cod', e.target.value ? Number(e.target.value) : null)}>
+                            <option value="">Sin especificar…</option>
+                            {TIPOS_ENERGIA_SIEX.map(t => <option key={t.cod} value={t.cod}>{t.nombre}</option>)}
+                        </select>
+                    </FieldGroup>
+                    <FieldGroup label="¿Declara buenas prácticas?">
+                        <select className="input-field"
+                            value={f.decl_buenas_practicas === null ? '' : (f.decl_buenas_practicas ? '1' : '0')}
+                            onChange={e => {
+                                const v = e.target.value;
+                                set('decl_buenas_practicas', v === '' ? null : v === '1');
+                                if (v !== '1') set('buena_practica_cod', null);
+                            }}>
+                            <option value="">Sin especificar…</option>
+                            <option value="1">Sí</option>
+                            <option value="0">No</option>
+                        </select>
+                    </FieldGroup>
+                </div>
+
+                {f.decl_buenas_practicas === true && (
+                    <FieldGroup label="Buena práctica (solo ámbito Riego)">
+                        <select className="input-field" value={f.buena_practica_cod ?? ''}
+                            onChange={e => set('buena_practica_cod', e.target.value ? Number(e.target.value) : null)}>
+                            <option value="">Seleccionar…</option>
+                            {BUENAS_PRACTICAS_RIEGO_SIEX.map(b => <option key={b.cod} value={b.cod}>{b.nombre}</option>)}
+                        </select>
+                    </FieldGroup>
+                )}
+
                 <FieldGroup label="Notas">
                     <ZoomInput label="Notas" value={f.notas} placeholder="Observaciones…"
                         multiline onConfirm={v => set('notas', v)} />

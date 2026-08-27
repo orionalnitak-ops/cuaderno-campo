@@ -802,6 +802,30 @@ def init_db():
             deleted_at TEXT
         )
     ''')
+    # feature 020 (bloque 3/8 SIEX): `tipo_riego` y `fuente_agua` (texto libre)
+    # no se tocan — siguen guardando lo que escriba el agricultor. Estas
+    # columnas de catálogo son adicionales, no un reemplazo (mismo patrón que
+    # `asesor` TEXT conviviendo con `asesor_id` en tratamientos). Todo
+    # nullable, sin excepción: ni siquiera `superficie_ha`, aunque SIEX la
+    # marca obligatoria — decisión de Raúl 2026-08-27, igual criterio que
+    # variedad en el 018 y venta en el 019, nunca bloquear el guardado por un
+    # dato de catálogo.
+    for col, typ in [
+        ('superficie_ha', 'REAL'),
+        ('sistema_riego_cod', 'INTEGER'),
+        # Solo 3 (m³) o 4 (Litros) — el spec 020 decía 4 y 6, pero el catálogo
+        # real `Unidades de medida.xlsx` tiene 6=toneladas, no m³; 3=m³ sí
+        # coincide. Verificado contra el xlsx oficial, no contra el spec.
+        ('unidad_cantidad_cod', 'INTEGER'),
+        ('dosis_valor', 'REAL'),
+        ('dosis_unidad', 'TEXT'),
+        ('origen_agua_cod', 'INTEGER'),
+        ('num_contador', 'TEXT'),
+        ('tipo_energia_cod', 'INTEGER'),
+        ('decl_buenas_practicas', 'INTEGER'),
+        ('buena_practica_cod', 'INTEGER'),
+    ]:
+        _add_col(c, 'riego', col, typ)
 
     # ── ABONADO ──
     c.execute(f'''

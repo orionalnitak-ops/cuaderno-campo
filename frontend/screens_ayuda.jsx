@@ -269,6 +269,11 @@ const HELP_SCREENS = {
                 title: 'Horas y volumen',
                 desc: 'Pon las horas que estuvo el riego en marcha. Si dispones del contador, añade también el volumen en m³ — es el dato más preciso.',
             },
+            {
+                icon: '📋',
+                title: 'Datos SIEX (opcional)',
+                desc: 'Desplegando "más campos" puedes indicar superficie regada, sistema y origen del agua del catálogo oficial, tipo de energía y buenas prácticas — nada de esto es obligatorio para guardar.',
+            },
         ],
     },
     cosecha: {
