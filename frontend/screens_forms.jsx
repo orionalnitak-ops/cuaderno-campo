@@ -2661,6 +2661,16 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
         if (!f.parcela_id) return;
         const p = parcelas.find(x => String(x.id) === String(f.parcela_id));
         if (p) set('parcela_etiqueta', p.nombre_finca);
+        // Sugerencia editable, no forzada: si la superficie regada está vacía,
+        // se rellena con la del cultivo de la parcela — mismo criterio que ya
+        // aplica tratamientos y tratamiento de semilla.
+        fetch(`/api/cultivos-campana?parcela_id=${f.parcela_id}&campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
+            .then(r => r.json()).then(d => {
+                const c = Array.isArray(d) && d[0] ? d[0] : null;
+                if (c && !isEdit && !f.superficie_ha && c.superficie_cultivada_ha) {
+                    set('superficie_ha', c.superficie_cultivada_ha);
+                }
+            }).catch(() => {});
     }, [f.parcela_id]);
 
     // El campo "Volumen" ya fija su propia unidad en la etiqueta (m³); pedir
@@ -3230,7 +3240,8 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
     React.useEffect(() => {
         if (!parcela_id) { setParcelaHa(null); setExistingHa(0); setExistingCultivos([]); return; }
         const p = parcelas.find(x => String(x.id) === String(parcela_id));
-        setParcelaHa(p?.superficie_ha ?? null);
+        const parcelaHaVal = p?.superficie_ha ?? null;
+        setParcelaHa(parcelaHaVal);
         fetch(`/api/cultivos-campana?parcela_id=${parcela_id}&campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
             .then(r => r.json())
             .then(data => {
@@ -3239,6 +3250,16 @@ function FormCultivoCampana({ parcelas, record, campana, onClose, isEdit }) {
                 let allocated = lista.reduce((sum, cv) => sum + (parseFloat(cv.superficie_cultivada_ha) || 0), 0);
                 setExistingHa(allocated);
                 setExistingCultivos(lista);
+                // Lo más habitual es sembrar toda la parcela de un mismo cultivo:
+                // precargamos la superficie disponible, no la pisamos si ya hay algo escrito.
+                if (!isEdit && parcelaHaVal > 0) {
+                    const disponible = Math.round(Math.max(0, parcelaHaVal - allocated) * 100) / 100;
+                    if (disponible > 0) {
+                        setCultivos(prev => (prev.length === 1 && !prev[0].superficie_cultivada_ha)
+                            ? [{ ...prev[0], superficie_cultivada_ha: String(disponible) }]
+                            : prev);
+                    }
+                }
             })
             .catch(() => { setExistingHa(0); setExistingCultivos([]); });
     }, [parcela_id]);
