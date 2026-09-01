@@ -50,7 +50,8 @@ CREATE TABLE tratamientos (
     fecha_recoleccion_minima TEXT, deleted_at TEXT);
 CREATE TABLE ia_alertas (
     id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, tipo TEXT,
-    parcela_id INTEGER, modulo TEXT, mensaje TEXT, expira_en TEXT);
+    parcela_id INTEGER, modulo TEXT, mensaje TEXT, expira_en TEXT,
+    leida INTEGER DEFAULT 0);
 """
 
 
@@ -150,7 +151,39 @@ def test_declarar_cultivo_borra_el_aviso_ya_generado():
     os.remove(path)
 
 
+def test_login_autolimpia_aviso_huerfano():
+    print("C · un aviso ya creado en un login anterior se autolimpia en el siguiente"
+          " si la parcela ya tiene cultivo (caso real: Lourdes lo cerraba con la X y"
+          " volvía a salir en el próximo login):")
+    path = _fresh_db_path()
+    setup = _conn(path)
+    setup.execute("INSERT INTO explotacion (id, user_id, campana_activa) VALUES (?,?,?)",
+                  (EXPL, UID, ACTUAL))
+    _parcela(setup, 1, 'Mollejón Ines')
+    # El cultivo YA está declarado para esta campaña...
+    _cultivo(setup, 1, ACTUAL, CEBADA, 'Cebada')
+    # ...pero el aviso de un login anterior (previo a este fix, o previo a que se
+    # declarara el cultivo) sigue en la tabla, incluso "cerrado" con leida=1: antes
+    # de este fix, la rama que corre cuando SÍ hay cultivo no tocaba `ia_alertas`,
+    # así que esta fila quedaba huérfana para siempre.
+    setup.execute("""INSERT INTO ia_alertas (user_id, tipo, parcela_id, mensaje, leida)
+                     VALUES (?,?,?,?,1)""",
+                  (UID, 'sin_cultivo_campana', 1, 'aviso viejo'))
+    setup.commit()
+    setup.close()
+
+    ia_module.get_db = lambda: _conn(path)
+    ia_module._generar_alertas(UID)
+
+    verify = _conn(path)
+    check("el aviso huérfano desaparece de la tabla (no solo se queda leído)",
+          1 not in _alertas_sin_cultivo(verify))
+    verify.close()
+    os.remove(path)
+
+
 if __name__ == '__main__':
     test_hereda_lenosos_antes_de_avisar()
     test_declarar_cultivo_borra_el_aviso_ya_generado()
+    test_login_autolimpia_aviso_huerfano()
     print("\nTodos los tests pasaron.")

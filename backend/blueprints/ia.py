@@ -302,6 +302,17 @@ def _generar_alertas(user_id):
                     VALUES (?,?,?,?)
                 """, (user_id, 'sin_cultivo_campana', pid,
                       f"La parcela {nombre} no tiene cultivo de campaña asignado"))
+            else:
+                # Sin este borrado, un aviso creado en un login anterior (antes de
+                # que se declarara el cultivo, o antes de que existiera la
+                # herencia de leñosos de arriba) se queda huérfano para siempre:
+                # nadie vuelve a tocarlo porque la rama `if not cultivo` ya no se
+                # ejecuta. Caso real de Lourdes: cerraba el aviso y en el
+                # siguiente login volvía a aparecer, porque el `if` de arriba
+                # nunca corría para regenerarlo pero tampoco nada lo borraba.
+                conn.execute(
+                    "DELETE FROM ia_alertas WHERE user_id=? AND tipo=? AND parcela_id=?",
+                    (user_id, 'sin_cultivo_campana', pid))
 
         conn.commit()
     except Exception:
