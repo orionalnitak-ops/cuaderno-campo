@@ -326,6 +326,7 @@ def _declarar_cultivo_grupo(conn, uid, exp_id, data):
         if one(conn, "SELECT id FROM cultivos_campana WHERE parcela_id=? AND campana=?"
                      " AND cultivo_iacs_cod=?", (pid, campana, cod)):
             res['saltadas'] += 1
+            res.setdefault('parcela_ids', []).append(pid)
             continue
 
         # La superficie de la fila es la de la parcela: ya la sabemos, no se
@@ -461,8 +462,16 @@ def manage_cultivos():
         if resultado.get('error'):
             conn.close()
             return jsonify({"error": resultado['error']}), 400
+        parcela_ids = resultado.pop('parcela_ids', [])
+        # El aviso "sin cultivo de campaña" (ia.py) solo se regenera en el login:
+        # sin este borrado, una parcela recién declarada por grupo UHC sigue
+        # apareciendo como pendiente en Inicio hasta el siguiente login.
+        for pid in parcela_ids:
+            conn.execute(
+                "DELETE FROM ia_alertas WHERE user_id=? AND tipo=? AND parcela_id=?",
+                (uid, 'sin_cultivo_campana', pid))
         conn.commit(); conn.close()
-        for pid in resultado.pop('parcela_ids', []):
+        for pid in parcela_ids:
             _recalcular_patrones(uid, 'cultivo_campana', pid, data.get('fecha_siembra'), exp_id)
         return jsonify({"status": "ok", **resultado}), 201
     parcela = one(conn, "SELECT id, superficie_ha FROM parcelas"
@@ -501,6 +510,10 @@ def manage_cultivos():
           _to_real(data.get('kg_sembrados')), _to_real(data.get('precio_kg_compra')),
           data.get('variedad_cod_siex')))
     new_id = c.lastrowid
+    # Ver comentario equivalente en la declaración por grupo UHC más arriba.
+    conn.execute(
+        "DELETE FROM ia_alertas WHERE user_id=? AND tipo=? AND parcela_id=?",
+        (uid, 'sin_cultivo_campana', parcela_id))
     conn.commit(); conn.close()
     _recalcular_patrones(uid, 'cultivo_campana', parcela_id, data.get('fecha_siembra'), exp_id)
     return jsonify({"status": "ok", "id": new_id}), 201

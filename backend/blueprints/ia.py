@@ -6,7 +6,7 @@ import logging
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, dicts, one, USE_PG
-from helpers import get_uid, get_active_explotacion_id
+from helpers import get_uid, get_active_explotacion_id, heredar_cultivos_lenosos
 # Umbrales compartidos con la "Revisión del cuaderno". Si divergen, esa pantalla
 # y estos recordatorios se contradicen delante del agricultor.
 # Nota: las dos evalúan las mismas reglas por caminos distintos (aquí una fila
@@ -217,6 +217,16 @@ def _generar_alertas(user_id):
                     for e in dicts(conn,
                         "SELECT id, campana_activa FROM explotacion WHERE user_id=?",
                         (user_id,))}
+
+        # Herencia de leñosos (feature 014) antes de comprobar "sin cultivo de
+        # campaña": si no se hace aquí, un olivar o viñedo que ya lo tenía
+        # declarado en la campaña anterior sale marcado como pendiente hasta
+        # que el agricultor visite la Revisión o la pantalla de parcelas, que
+        # son las que hoy disparan la herencia. Mismo aviso del comentario de
+        # cabecera: misma regla, dos caminos — hay que mantenerlos alineados.
+        for expl_id, camp in campanas.items():
+            if heredar_cultivos_lenosos(conn, user_id, camp, expl_id):
+                conn.commit()
 
         parcelas = dicts(conn,
             "SELECT id, nombre_finca, explotacion_id FROM parcelas WHERE user_id=? AND activa=1",
