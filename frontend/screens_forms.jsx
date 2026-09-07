@@ -139,6 +139,52 @@ function SugChip({ campo, sugerencias, valorActual }) {
     );
 }
 
+// ── RecentValueField — desplegable con los valores que el agricultor ya escribió
+// antes en este campo (comprador, proveedor, maquinaria…), para elegir en vez de
+// teclear cada vez. Si no hay valores previos, o pide uno nuevo, cae al mismo
+// ZoomInput de texto libre de siempre.
+function RecentValueField({ modulo, campo, label, value, placeholder, onChange }) {
+    const { useState, useEffect } = React;
+    const [valores, setValores] = useState([]);
+    const [modoOtro, setModoOtro] = useState(false);
+
+    useEffect(() => {
+        fetch(`/api/ia/valores-recientes?modulo=${modulo}&campo=${campo}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => setValores(d.ok && Array.isArray(d.data) ? d.data : []))
+            .catch(() => {});
+    }, [modulo, campo]);
+
+    const sinValoresPrevios = valores.length === 0;
+    const valorFueraDeLista = value && !valores.includes(value);
+
+    if (modoOtro || sinValoresPrevios || valorFueraDeLista) {
+        return (
+            <>
+                <ZoomInput label={label} value={value} placeholder={placeholder} onConfirm={onChange} />
+                {!sinValoresPrevios && (
+                    <button type="button" onClick={() => setModoOtro(false)}
+                        style={{ background: 'none', border: 'none', padding: 0, marginTop: 2,
+                                 fontSize: '0.75rem', color: 'var(--color-primary, #2e7d32)', cursor: 'pointer' }}>
+                        Elegir de los ya usados
+                    </button>
+                )}
+            </>
+        );
+    }
+
+    return (
+        <select className="input-field" value={value || ''} onChange={e => {
+            if (e.target.value === '__otro__') { setModoOtro(true); }
+            else onChange(e.target.value);
+        }}>
+            <option value="">Seleccionar…</option>
+            {valores.map(v => <option key={v} value={v}>{v}</option>)}
+            <option value="__otro__">+ Escribir otro…</option>
+        </select>
+    );
+}
+
 // ── Screen: Forms — 4 módulos con campos progresivos ──
 function ScreenForms({ modulo, record, campana, onClose }) {
     const { useState, useEffect } = React;
@@ -1450,17 +1496,18 @@ function FormLabor({ parcelas, record, campana, onClose, isEdit }) {
                             onConfirm={v => set('descripcion', v)} />
                     </FieldGroup>
                     <FieldGroup label="Maquinaria">
-                        <ZoomInput label="Maquinaria" value={f.maquinaria} placeholder="Tractor, vibrador…"
-                            onConfirm={v => set('maquinaria', v)} />
-                        <SugChip campo="maquinaria" sugerencias={sugerencias} valorActual={f.maquinaria} />
+                        <RecentValueField modulo="labores" campo="maquinaria" label="Maquinaria"
+                            value={f.maquinaria} placeholder="Tractor, vibrador…"
+                            onChange={v => set('maquinaria', v)} />
                     </FieldGroup>
                     <FieldGroup label="Horas trabajadas">
                         <ZoomInput label="Horas trabajadas" value={f.horas_trabajadas} placeholder="4.5" inputMode="decimal"
                             onConfirm={v => set('horas_trabajadas', v)} />
                     </FieldGroup>
                     <FieldGroup label="Operario / Empresa">
-                        <ZoomInput label="Operario / Empresa" value={f.operario} placeholder="Nombre o empresa"
-                            onConfirm={v => set('operario', v)} />
+                        <RecentValueField modulo="labores" campo="operario" label="Operario / Empresa"
+                            value={f.operario} placeholder="Nombre o empresa"
+                            onChange={v => set('operario', v)} />
                     </FieldGroup>
                 </div>
                 <FieldGroup label="Notas">
@@ -1801,8 +1848,9 @@ function FormCosecha({ parcelas, record, campana, onClose, isEdit }) {
                         <SugChip campo="destino" sugerencias={sugerencias} valorActual={f.destino} />
                     </FieldGroup>
                     <FieldGroup label="Comprador / Destinatario">
-                        <ZoomInput label="Comprador / Destinatario" value={f.comprador} placeholder="Nombre de la cooperativa"
-                            onConfirm={v => set('comprador', v)} />
+                        <RecentValueField modulo="cosecha" campo="comprador" label="Comprador / Destinatario"
+                            value={f.comprador} placeholder="Nombre de la cooperativa"
+                            onChange={v => set('comprador', v)} />
                     </FieldGroup>
                     <FieldGroup label="Precio por unidad (€)">
                         <ZoomInput label="Precio por unidad (€)" value={f.precio_unidad} placeholder="0.350 €/kg" inputMode="decimal"
@@ -2501,10 +2549,9 @@ function FormCompra({ record, campana, onClose, isEdit }) {
             </>)}
 
             <FieldGroup label="Proveedor / Vendedor">
-                <ZoomInput label="Proveedor" value={f.proveedor}
-                    placeholder="Cooperativa, almacén agrícola…"
-                    onConfirm={v => set('proveedor', v)} />
-                <SugChip campo="proveedor" sugerencias={sugerencias} valorActual={f.proveedor} />
+                <RecentValueField modulo="compras" campo="proveedor" label="Proveedor"
+                    value={f.proveedor} placeholder="Cooperativa, almacén agrícola…"
+                    onChange={v => set('proveedor', v)} />
             </FieldGroup>
 
             <div className="responsive-grid cols-2">
