@@ -177,6 +177,8 @@ Este proyecto usa Spec-Driven Development. Antes de implementar cualquier featur
 
 Para features ya especificadas ver `spec/features/`. Para nueva feature: crear `spec/features/NNN-nombre/spec.md` antes de tocar código.
 
+**Features grandes (varios archivos o varios módulos tocados):** el `plan.md` incluye una sección `## Fases` con el desglose paso a paso — qué se toca en cada fase y su criterio de "hecho" (tests, verificación manual). No hace falta un `tasks.md` aparte; ver `spec/features/016-uhc-en-cosecha-abonado-cultivo/plan.md` como ejemplo del formato.
+
 ---
 
 ## Pendiente
