@@ -65,12 +65,18 @@ _HAS_DELETED_AT = {'tratamientos'}
 # diferencia de CAMPOS_MODULO (que sugiere el más frecuente de la temporada),
 # aquí se listan TODOS los valores distintos ya usados para que el agricultor
 # elija en un desplegable en vez de teclear cada vez — ver /api/ia/valores-recientes.
-VALORES_RECIENTES_CAMPOS = {
-    'cosecha':  ['comprador'],
-    'compras':  ['proveedor'],
-    'labores':  ['maquinaria', 'operario'],
+#
+# Mapea (modulo, campo) -> nombre de columna real. El valor de la derecha es
+# siempre un literal escrito aquí, nunca el `campo` que llega por request.args:
+# así ese input jamás toca el SQL, ni directamente ni a través de una
+# allowlist que solo "deja pasar o no" el mismo string sin transformarlo
+# (revisión de seguridad del PR #84).
+_COLUMNA_SEGURA = {
+    ('cosecha', 'comprador'):  'comprador',
+    ('compras', 'proveedor'):  'proveedor',
+    ('labores', 'maquinaria'): 'maquinaria',
+    ('labores', 'operario'):   'operario',
 }
-_CAMPOS_VALORES_RECIENTES_PERMITIDOS = {c for cols in VALORES_RECIENTES_CAMPOS.values() for c in cols}
 # compras es la única de las tres con borrado lógico (ver CREATE TABLE en db.py)
 _TABLAS_VALORES_RECIENTES_CON_DELETED_AT = {'compras'}
 
@@ -378,13 +384,14 @@ def get_sugerencias():
 
 def _valores_recientes(conn, uid, modulo, campo, explotacion_id):
     """Valores distintos ya escritos por el usuario en `campo`, más recientes
-    primero (máx. 8). Lanza ValueError si modulo/campo no está en la allowlist
-    — se comprueba aquí, no solo en la ruta, porque esta función interpola
-    `tabla`/`campo` en el SQL."""
-    if (modulo not in VALORES_RECIENTES_CAMPOS
-            or campo not in VALORES_RECIENTES_CAMPOS[modulo]
-            or campo not in _CAMPOS_VALORES_RECIENTES_PERMITIDOS
-            or modulo not in TABLA_MODULO or modulo not in FECHA_MODULO):
+    primero (máx. 8). Lanza ValueError si modulo/campo no está en la allowlist.
+
+    `campo` (y `modulo`) solo se usan como CLAVE de `_COLUMNA_SEGURA`: lo que
+    se interpola en el SQL es siempre el literal de la derecha del diccionario,
+    nunca el valor recibido. Así un futuro refactor no puede colar `campo` en
+    una query aunque se salte la validación de arriba."""
+    col = _COLUMNA_SEGURA.get((modulo, campo))
+    if col is None or modulo not in TABLA_MODULO or modulo not in FECHA_MODULO:
         raise ValueError("modulo/campo no válido")
 
     tabla     = TABLA_MODULO[modulo]
@@ -392,10 +399,10 @@ def _valores_recientes(conn, uid, modulo, campo, explotacion_id):
     soft_del  = " AND deleted_at IS NULL" if tabla in _TABLAS_VALORES_RECIENTES_CON_DELETED_AT else ""
 
     rows = dicts(conn, f"""
-        SELECT {campo} AS val, MAX({fecha_col}) AS ultima
+        SELECT {col} AS val, MAX({fecha_col}) AS ultima
         FROM {tabla}
-        WHERE user_id=? AND explotacion_id=? AND {campo} IS NOT NULL AND {campo} != ''{soft_del}
-        GROUP BY {campo}
+        WHERE user_id=? AND explotacion_id=? AND {col} IS NOT NULL AND {col} != ''{soft_del}
+        GROUP BY {col}
         ORDER BY ultima DESC
         LIMIT 8
     """, (uid, explotacion_id))
@@ -409,15 +416,19 @@ def get_valores_recientes():
     (comprador, proveedor, maquinaria…), más recientes primero, para que los
     elija en un desplegable en vez de teclearlos de nuevo cada vez."""
     uid    = get_uid()
-    modulo = request.args.get('modulo')
-    campo  = request.args.get('campo')
+    modulo = (request.args.get('modulo') or '').strip()
+    campo  = (request.args.get('campo') or '').strip()
+
+    if not modulo or not campo:
+        return jsonify({"ok": False, "error": "Parámetros requeridos"}), 400
 
     conn = get_db()
     try:
         exp_id  = get_active_explotacion_id(conn)
         valores = _valores_recientes(conn, uid, modulo, campo, exp_id)
-    except ValueError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+    except ValueError:
+        # Mensaje genérico: no repetir el modulo/campo recibido en la respuesta.
+        return jsonify({"ok": False, "error": "Parámetros no válidos"}), 400
     finally:
         conn.close()
 
