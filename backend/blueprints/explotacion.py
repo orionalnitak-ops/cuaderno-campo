@@ -2,6 +2,7 @@
 blueprints/explotacion.py — /api/explotacion, /api/explotaciones, /api/stats, /api/historial
 """
 import datetime
+import logging
 
 from flask import Blueprint, jsonify, request, session
 from flask_login import login_required, current_user
@@ -10,6 +11,7 @@ from helpers import (get_uid, get_active_explotacion_id, resolve_default_explota
                      explotaciones_escribibles)
 
 bp = Blueprint('explotacion', __name__)
+logger = logging.getLogger(__name__)
 
 # Campos editables de una explotación
 _EXPL_FIELDS = ['titular', 'nombre_corto', 'nif', 'rega', 'municipio', 'provincia', 'cp',
@@ -294,11 +296,24 @@ def historial():
     # escondía los registros sin parcela asignada (feature 013).
     pf, pp = " AND explotacion_id=?", (exp_id,)
 
+    # Allowlist de defensa en profundidad (mismo criterio que _TABLAS_PERMITIDAS
+    # en ia.py): hoy `date_col`/`alias` los escribe el propio código en cada
+    # llamada a filtro(), nunca el usuario, pero si un futuro refactor los hace
+    # depender de request.args esto evita que se cuelen como identificador SQL.
+    _DATE_COLS_PERMITIDAS = {
+        'fecha_aplicacion', 'fecha', 'fecha_inicio', 'fecha_preparacion',
+        'fecha_actuacion', 'fecha_siembra',
+    }
+    _ALIAS_PERMITIDOS = {'', 'cc.'}
+
     def filtro(date_col, alias=''):
         """SQL + params para acotar por parcela/campaña/fecha en la propia
         consulta. Antes se traía la tabla entera (sin límite, crece con los
         años) y se filtraba en Python; las 10 tablas de este endpoint tienen
         `parcela_id` y `campana`, así que el mismo filtro vale para todas."""
+        if date_col not in _DATE_COLS_PERMITIDAS or alias not in _ALIAS_PERMITIDOS:
+            logger.error("date_col/alias fuera de allowlist en historial(): %r/%r", date_col, alias)
+            return "", []
         sql, params = "", []
         if parcela_id is not None:
             sql += f" AND {alias}parcela_id=?"
