@@ -252,20 +252,47 @@ def _generar_alertas(user_id):
             "SELECT id, nombre_finca, explotacion_id FROM parcelas WHERE user_id=? AND activa=1",
             (user_id,))
 
+        # Antes de este fix, las 3 consultas de dentro del bucle se lanzaban una
+        # vez por parcela (N+1): con 50+ parcelas (caso Lourdes) eso son 150+
+        # queries en cada login. Aquí se traen todos los tratamientos y todos
+        # los cultivos de campaña de todas las parcelas en 2 consultas y se
+        # agrupan en Python — mismas alertas, mismo resultado.
+        parcela_ids = [p['id'] for p in parcelas]
+        tratamientos_por_parcela = {}
+        cultivo_set = set()
+        if parcela_ids:
+            ph = ', '.join(['?'] * len(parcela_ids))
+            tratamientos = dicts(conn, f"""
+                SELECT parcela_id, explotacion_id, producto_comercial,
+                       fecha_aplicacion, fecha_recoleccion_minima
+                FROM tratamientos
+                WHERE user_id=? AND parcela_id IN ({ph}) AND deleted_at IS NULL
+            """, [user_id] + parcela_ids)
+            for t in tratamientos:
+                tratamientos_por_parcela.setdefault(t['parcela_id'], []).append(t)
+
+            cultivos = dicts(conn, f"""
+                SELECT cc.parcela_id, cc.explotacion_id, cc.campana
+                FROM cultivos_campana cc
+                JOIN parcelas p ON cc.parcela_id = p.id
+                WHERE p.user_id=? AND cc.parcela_id IN ({ph})
+            """, [user_id] + parcela_ids)
+            cultivo_set = {(c['parcela_id'], c['explotacion_id'], c['campana']) for c in cultivos}
+
         for p in parcelas:
             pid     = p['id']
             nombre  = p.get('nombre_finca') or f"Parcela {pid}"
             campana = campanas.get(p.get('explotacion_id')) or '2025/2026'
+            expl = p.get('explotacion_id')
+            trats_parcela = [t for t in tratamientos_por_parcela.get(pid, [])
+                              if t.get('explotacion_id') == expl]
 
             # 1. sin_registro_reciente (solo si ya hay historial)
-            expl = p.get('explotacion_id')
-            ultimo = one(conn, """
-                SELECT MAX(fecha_aplicacion) AS ultima FROM tratamientos
-                WHERE user_id=? AND parcela_id=? AND explotacion_id=? AND deleted_at IS NULL
-            """, (user_id, pid, expl))
-            if ultimo and ultimo.get('ultima'):
+            fechas = [t['fecha_aplicacion'] for t in trats_parcela if t.get('fecha_aplicacion')]
+            ultima = max(fechas) if fechas else None
+            if ultima:
                 try:
-                    dt   = datetime.date.fromisoformat(str(ultimo['ultima'])[:10])
+                    dt   = datetime.date.fromisoformat(str(ultima)[:10])
                     dias = (hoy - dt).days
                     if dias > DIAS_SIN_REGISTRO:
                         conn.execute(
@@ -280,11 +307,8 @@ def _generar_alertas(user_id):
                     pass
 
             # 2. plazo_seguridad_proximo (vence en ≤7 días)
-            proximos = dicts(conn, """
-                SELECT producto_comercial, fecha_recoleccion_minima FROM tratamientos
-                WHERE user_id=? AND parcela_id=? AND explotacion_id=? AND deleted_at IS NULL
-                  AND fecha_recoleccion_minima IS NOT NULL AND fecha_recoleccion_minima != ''
-            """, (user_id, pid, expl))
+            proximos = [t for t in trats_parcela
+                        if t.get('fecha_recoleccion_minima')]
             for t in proximos:
                 try:
                     fm   = datetime.date.fromisoformat(str(t['fecha_recoleccion_minima'])[:10])
@@ -307,13 +331,8 @@ def _generar_alertas(user_id):
                     pass
 
             # 3. sin_cultivo_campana
-            cultivo = one(conn, """
-                SELECT cc.id FROM cultivos_campana cc
-                JOIN parcelas p ON cc.parcela_id = p.id
-                WHERE cc.parcela_id=? AND cc.campana=? AND p.user_id=?
-                  AND cc.explotacion_id=?
-            """, (pid, campana, user_id, expl))
-            if not cultivo:
+            tiene_cultivo = (pid, expl, campana) in cultivo_set
+            if not tiene_cultivo:
                 conn.execute(
                     "DELETE FROM ia_alertas WHERE user_id=? AND tipo=? AND parcela_id=?",
                     (user_id, 'sin_cultivo_campana', pid))
