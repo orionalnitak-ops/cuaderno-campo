@@ -225,6 +225,116 @@ def _recalcular_patrones(user_id, modulo, parcela_id, fecha_str, explotacion_id=
         conn.close()
 
 
+def _recalcular_patrones_multi(user_id, modulo, parcela_ids, fecha_str, explotacion_id=None):
+    """Igual que `_recalcular_patrones`, pero para varias parcelas de una vez
+    (alta por grupo UHC o por lote). Antes de este fix, dar de alta un tratamiento
+    en 30 parcelas llamaba a `_recalcular_patrones` 30 veces, y cada llamada abría
+    su propia conexión y hacía SELECT+DELETE+INSERT por cada uno de sus campos
+    (hasta 8 en tratamientos): unas 300-500 consultas dentro del mismo POST antes
+    de responder. Aquí se agrupa por parcela en una sola consulta por campo
+    (mismo patrón que ya se usa en `_generar_alertas` para el login), y el
+    DELETE+INSERT de cada campo se hace en bloque para todas las parcelas que
+    tuvieron resultado, en vez de parcela a parcela."""
+    parcela_ids = [pid for pid in (parcela_ids or []) if pid is not None]
+    if not parcela_ids:
+        return
+    if len(parcela_ids) == 1:
+        # Caso de una sola parcela: no hay nada que agrupar, usar la ruta simple.
+        _recalcular_patrones(user_id, modulo, parcela_ids[0], fecha_str, explotacion_id)
+        return
+    if modulo not in CAMPOS_MODULO:
+        return
+    campos    = CAMPOS_MODULO[modulo]
+    tabla     = TABLA_MODULO[modulo]
+    fecha_col = FECHA_MODULO[modulo]
+    if tabla not in _TABLAS_PERMITIDAS or fecha_col not in _FECHAS_PERMITIDAS \
+            or any(c not in _CAMPOS_PERMITIDOS for c in campos):
+        logger.error("Valores fuera de allowlist en _recalcular_patrones_multi: modulo=%s", modulo)
+        return
+    temporada = _temporada(fecha_str)
+    meses     = TEMPORADA_MESES[temporada]
+    mes_expr  = _mes_in_expr(fecha_col, meses)
+    soft_del  = " AND deleted_at IS NULL" if modulo in _HAS_DELETED_AT else ""
+    expl_sql  = " AND explotacion_id=?"    if explotacion_id else ""
+    expl_cc   = " AND cc.explotacion_id=?" if explotacion_id else ""
+    expl_par  = [explotacion_id]           if explotacion_id else []
+    ph        = ','.join(['?'] * len(parcela_ids))
+
+    conn = get_db()
+    try:
+        for campo in campos:
+            try:
+                if modulo == 'cultivo_campana':
+                    sql = f"""
+                        SELECT cc.parcela_id AS pid, cc.{campo} AS val, COUNT(*) AS cnt,
+                               MAX(cc.{fecha_col}) AS ultima
+                        FROM cultivos_campana cc
+                        JOIN parcelas p ON cc.parcela_id = p.id
+                        WHERE p.user_id=? AND cc.parcela_id IN ({ph})
+                          AND {_cond_no_vacio(campo, 'cc.')}
+                          AND {mes_expr}{expl_cc}
+                        GROUP BY cc.parcela_id, cc.{campo}
+                    """
+                    params = [user_id] + parcela_ids + list(meses) + expl_par
+                else:
+                    sql = f"""
+                        SELECT parcela_id AS pid, {campo} AS val, COUNT(*) AS cnt,
+                               MAX({fecha_col}) AS ultima
+                        FROM {tabla}
+                        WHERE user_id=? AND parcela_id IN ({ph})
+                          AND {_cond_no_vacio(campo)}
+                          {soft_del} AND {mes_expr}{expl_sql}
+                        GROUP BY parcela_id, {campo}
+                    """
+                    params = [user_id] + parcela_ids + list(meses) + expl_par
+
+                filas = dicts(conn, sql, params)
+
+                # Nos quedamos con la fila de mayor frecuencia por parcela (empate:
+                # la más reciente), igual que hacía el SELECT ... LIMIT 1 original.
+                mejor_por_parcela = {}
+                for f in filas:
+                    if f.get('val') is None:
+                        continue
+                    pid = f['pid']
+                    actual = mejor_por_parcela.get(pid)
+                    clave_nueva = (f['cnt'], f.get('ultima') or '')
+                    clave_actual = (actual['cnt'], actual.get('ultima') or '') if actual else None
+                    if actual is None or clave_nueva > clave_actual:
+                        mejor_por_parcela[pid] = f
+
+                if not mejor_por_parcela:
+                    continue
+
+                pids_con_valor = list(mejor_por_parcela.keys())
+                ph2 = ','.join(['?'] * len(pids_con_valor))
+                conn.execute(f"""
+                    DELETE FROM ia_patrones
+                    WHERE user_id=? AND modulo=? AND temporada=? AND campo=?
+                      AND parcela_id IN ({ph2})
+                      AND (explotacion_id=? OR (explotacion_id IS NULL AND ? IS NULL))
+                """, [user_id, modulo, temporada, campo] + pids_con_valor +
+                     [explotacion_id, explotacion_id])
+
+                conn.executemany("""
+                    INSERT INTO ia_patrones
+                        (user_id, modulo, parcela_id, explotacion_id, temporada, campo,
+                         valor_sugerido, frecuencia, ultima_vez)
+                    VALUES (?,?,?,?,?,?,?,?,?)
+                """, [
+                    (user_id, modulo, pid, explotacion_id, temporada, campo,
+                     str(f['val']), f['cnt'], f['ultima'])
+                    for pid, f in mejor_por_parcela.items()
+                ])
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                logger.exception("Error recalculando patrón (multi) user_id=%s modulo=%s campo=%s",
+                                 user_id, modulo, campo)
+    finally:
+        conn.close()
+
+
 def _generar_alertas(user_id):
     """Regenera alertas activas del usuario. Llamar en cada login exitoso."""
     conn = get_db()

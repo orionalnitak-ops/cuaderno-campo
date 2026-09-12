@@ -13,7 +13,7 @@ from flask_login import login_required
 from db import get_db, one, dicts
 from helpers import (get_uid, get_active_explotacion_id, _to_real,
                      repartir_por_superficie)
-from blueprints.ia import _recalcular_patrones
+from blueprints.ia import _recalcular_patrones, _recalcular_patrones_multi
 from blueprints.fertilizacion import _parcelas_uhc, parcela_es_del_usuario
 
 bp = Blueprint('labores', __name__)
@@ -149,8 +149,8 @@ def manage_labores():
             return jsonify({"error": "El grupo UHC no existe o no tiene parcelas asignadas"}), 400
         ids = [_insert_labor(c, uid, data, p['id'], p['nombre_finca'], exp_id) for p in parcelas]
         conn.commit(); conn.close()
-        for p in parcelas:
-            _recalcular_patrones(uid, 'labores', p['id'], data.get('fecha'), exp_id)
+        _recalcular_patrones_multi(uid, 'labores', [p['id'] for p in parcelas],
+                                    data.get('fecha'), exp_id)
         return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
 
     if not parcela_es_del_usuario(conn, data.get('parcela_id'), uid, exp_id):
@@ -266,8 +266,8 @@ def manage_cosecha():
                                        sup=_to_real(p.get('superficie_ha')) or 0,
                                        prod=reparto.get(p['id'], 0)))
         conn.commit(); conn.close()
-        for p in parcelas:
-            _recalcular_patrones(uid, 'cosecha', p['id'], data.get('fecha_inicio'), exp_id)
+        _recalcular_patrones_multi(uid, 'cosecha', [p['id'] for p in parcelas],
+                                    data.get('fecha_inicio'), exp_id)
         return jsonify({"status": "ok", "count": len(ids), "ids": ids}), 201
 
     if not parcela_es_del_usuario(conn, data['parcela_id'], uid, exp_id):

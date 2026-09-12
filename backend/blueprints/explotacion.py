@@ -2,6 +2,7 @@
 blueprints/explotacion.py — /api/explotacion, /api/explotaciones, /api/stats, /api/historial
 """
 import datetime
+import logging
 
 from flask import Blueprint, jsonify, request, session
 from flask_login import login_required, current_user
@@ -10,6 +11,7 @@ from helpers import (get_uid, get_active_explotacion_id, resolve_default_explota
                      explotaciones_escribibles)
 
 bp = Blueprint('explotacion', __name__)
+logger = logging.getLogger(__name__)
 
 # Campos editables de una explotación
 _EXPL_FIELDS = ['titular', 'nombre_corto', 'nif', 'rega', 'municipio', 'provincia', 'cp',
@@ -274,44 +276,72 @@ def stats():
 def historial():
     uid = get_uid()
     conn = get_db()
-    parcela_id = request.args.get('parcela_id')
+    parcela_id_raw = request.args.get('parcela_id')
     modulo = request.args.get('modulo', 'todos')
     fecha_desde = request.args.get('fecha_desde', '')
     fecha_hasta = request.args.get('fecha_hasta', '')
     campana = request.args.get('campana', '')
     exp_id = get_active_explotacion_id(conn)
 
+    parcela_id = None
+    if parcela_id_raw:
+        try:
+            parcela_id = int(parcela_id_raw)
+        except (ValueError, TypeError):
+            conn.close()
+            return jsonify({"error": "parcela_id debe ser un entero"}), 400
+
     # Filtro por explotación activa. Se acota por la columna `explotacion_id` de
     # cada tabla, no por sus parcelas: `parcela_scope_clause()` es LEGADO y
     # escondía los registros sin parcela asignada (feature 013).
     pf, pp = " AND explotacion_id=?", (exp_id,)
 
+    # Allowlist de defensa en profundidad (mismo criterio que _TABLAS_PERMITIDAS
+    # en ia.py): hoy `date_col`/`alias` los escribe el propio código en cada
+    # llamada a filtro(), nunca el usuario, pero si un futuro refactor los hace
+    # depender de request.args esto evita que se cuelen como identificador SQL.
+    _DATE_COLS_PERMITIDAS = {
+        'fecha_aplicacion', 'fecha', 'fecha_inicio', 'fecha_preparacion',
+        'fecha_actuacion', 'fecha_siembra',
+    }
+    _ALIAS_PERMITIDOS = {'', 'cc.'}
+
+    def filtro(date_col, alias=''):
+        """SQL + params para acotar por parcela/campaña/fecha en la propia
+        consulta. Antes se traía la tabla entera (sin límite, crece con los
+        años) y se filtraba en Python; las 10 tablas de este endpoint tienen
+        `parcela_id` y `campana`, así que el mismo filtro vale para todas."""
+        if date_col not in _DATE_COLS_PERMITIDAS or alias not in _ALIAS_PERMITIDOS:
+            logger.error("date_col/alias fuera de allowlist en historial(): %r/%r", date_col, alias)
+            return "", []
+        sql, params = "", []
+        if parcela_id is not None:
+            sql += f" AND {alias}parcela_id=?"
+            params.append(parcela_id)
+        if campana:
+            sql += f" AND {alias}campana=?"
+            params.append(campana)
+        if fecha_desde:
+            sql += f" AND {alias}{date_col} >= ?"
+            params.append(fecha_desde)
+        if fecha_hasta:
+            sql += f" AND {alias}{date_col} <= ?"
+            params.append(fecha_hasta)
+        return sql, params
+
     records = []
 
-    def apply_filters(rows, date_field='fecha'):
-        result = []
-        for r in rows:
-            if parcela_id and str(r.get('parcela_id')) != str(parcela_id):
-                continue
-            if campana and r.get('campana') != campana:
-                continue
-            f = r.get(date_field, '') or ''
-            if fecha_desde and f < fecha_desde:
-                continue
-            if fecha_hasta and f > fecha_hasta:
-                continue
-            result.append(r)
-        return result
-
     if modulo in ('todos', 'tratamientos'):
-        rows = dicts(conn, "SELECT * FROM tratamientos WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha_aplicacion DESC", (uid,) + pp)
-        for r in apply_filters(rows, 'fecha_aplicacion'):
+        f_sql, f_par = filtro('fecha_aplicacion')
+        rows = dicts(conn, "SELECT * FROM tratamientos WHERE user_id=? AND deleted_at IS NULL" + pf + f_sql + " ORDER BY fecha_aplicacion DESC", (uid,) + pp + tuple(f_par))
+        for r in rows:
             records.append({**r, '_modulo': 'tratamientos', '_fecha': r.get('fecha_aplicacion', ''),
                             '_resumen': f"{r.get('producto_comercial','')} — {r.get('plaga_objetivo','')}"})
 
     if modulo in ('todos', 'fertilizacion'):
-        rows = dicts(conn, "SELECT * FROM fertilizacion WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha_aplicacion DESC", (uid,) + pp)
-        for r in apply_filters(rows, 'fecha_aplicacion'):
+        f_sql, f_par = filtro('fecha_aplicacion')
+        rows = dicts(conn, "SELECT * FROM fertilizacion WHERE user_id=? AND deleted_at IS NULL" + pf + f_sql + " ORDER BY fecha_aplicacion DESC", (uid,) + pp + tuple(f_par))
+        for r in rows:
             records.append({**r, '_modulo': 'fertilizacion', '_fecha': r.get('fecha_aplicacion', ''),
                             '_resumen': (
                                 f"{r.get('tipo_fertilizante','')} — {r.get('producto','')}"
@@ -320,73 +350,82 @@ def historial():
                             )})
 
     if modulo in ('todos', 'labores'):
-        rows = dicts(conn, "SELECT * FROM labores WHERE user_id=?" + pf + " ORDER BY fecha DESC", (uid,) + pp)
-        for r in apply_filters(rows, 'fecha'):
+        f_sql, f_par = filtro('fecha')
+        rows = dicts(conn, "SELECT * FROM labores WHERE user_id=?" + pf + f_sql + " ORDER BY fecha DESC", (uid,) + pp + tuple(f_par))
+        for r in rows:
             desc = r.get('descripcion') or r.get('notas') or ''
             records.append({**r, '_modulo': 'labores', '_fecha': r.get('fecha', ''),
                             '_resumen': f"{r.get('tipo_labor','')} — {desc}".rstrip(' —')})
 
     if modulo in ('todos', 'cosecha'):
-        rows = dicts(conn, "SELECT * FROM cosecha WHERE user_id=?" + pf + " ORDER BY fecha_inicio DESC", (uid,) + pp)
-        for r in apply_filters(rows, 'fecha_inicio'):
+        f_sql, f_par = filtro('fecha_inicio')
+        rows = dicts(conn, "SELECT * FROM cosecha WHERE user_id=?" + pf + f_sql + " ORDER BY fecha_inicio DESC", (uid,) + pp + tuple(f_par))
+        for r in rows:
             records.append({**r, '_modulo': 'cosecha', '_fecha': r.get('fecha_inicio', ''),
                             '_resumen': f"{r.get('cultivo','')} — {r.get('produccion_total_valor','')} {r.get('produccion_total_unidad','')}"})
 
     if modulo in ('todos', 'compras'):
-        rows = dicts(conn, "SELECT * FROM compras WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha DESC", (uid,) + pp)
-        for r in apply_filters(rows, 'fecha'):
+        f_sql, f_par = filtro('fecha')
+        rows = dicts(conn, "SELECT * FROM compras WHERE user_id=? AND deleted_at IS NULL" + pf + f_sql + " ORDER BY fecha DESC", (uid,) + pp + tuple(f_par))
+        for r in rows:
             records.append({**r, '_modulo': 'compras', '_fecha': r.get('fecha', ''),
                             '_resumen': f"{r.get('tipo_producto','')} — {r.get('producto','')} · {r.get('proveedor','')}"})
 
     if modulo in ('todos', 'riego'):
-        rows = dicts(conn, "SELECT * FROM riego WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha DESC", (uid,) + pp)
-        for r in apply_filters(rows, 'fecha'):
+        f_sql, f_par = filtro('fecha')
+        rows = dicts(conn, "SELECT * FROM riego WHERE user_id=? AND deleted_at IS NULL" + pf + f_sql + " ORDER BY fecha DESC", (uid,) + pp + tuple(f_par))
+        for r in rows:
             vol = f"{r['volumen_m3']} m³" if r.get('volumen_m3') else f"{r.get('horas_riego','')} h"
             records.append({**r, '_modulo': 'riego', '_fecha': r.get('fecha', ''),
                             '_resumen': f"{r.get('tipo_riego','')} — {vol}"})
 
     if modulo in ('todos', 'abonado'):
-        rows = dicts(conn, "SELECT * FROM abonado WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha_preparacion DESC", (uid,) + pp)
-        for r in apply_filters(rows, 'fecha_preparacion'):
+        f_sql, f_par = filtro('fecha_preparacion')
+        rows = dicts(conn, "SELECT * FROM abonado WHERE user_id=? AND deleted_at IS NULL" + pf + f_sql + " ORDER BY fecha_preparacion DESC", (uid,) + pp + tuple(f_par))
+        for r in rows:
             records.append({**r, '_modulo': 'abonado', '_fecha': r.get('fecha_preparacion', ''),
                             '_resumen': f"{r.get('cultivo','')} — N:{r.get('n_necesario_kg_ha','')} P:{r.get('p_necesario_kg_ha','')} K:{r.get('k_necesario_kg_ha','')} kg/ha"})
 
     if modulo in ('todos', 'analisis'):
-        rows = dicts(conn, "SELECT * FROM analisis WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha DESC", (uid,) + pp)
+        f_sql, f_par = filtro('fecha')
+        rows = dicts(conn, "SELECT * FROM analisis WHERE user_id=? AND deleted_at IS NULL" + pf + f_sql + " ORDER BY fecha DESC", (uid,) + pp + tuple(f_par))
         _MATERIAL_NOMBRE = {1: 'Cultivo', 2: 'Producto cosechado', 3: 'Suelo', 4: 'Agua de riego'}
-        for r in apply_filters(rows, 'fecha'):
+        for r in rows:
             material = _MATERIAL_NOMBRE.get(r.get('material_cod'), '')
             lab = f" — {r['rs_laboratorio']}" if r.get('rs_laboratorio') else ''
             records.append({**r, '_modulo': 'analisis', '_fecha': r.get('fecha', ''),
                             '_resumen': f"{material}{lab}"})
 
     if modulo in ('todos', 'tratamiento_semillas'):
-        rows = dicts(conn, "SELECT * FROM tratamiento_semillas WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha_actuacion DESC", (uid,) + pp)
+        f_sql, f_par = filtro('fecha_actuacion')
+        rows = dicts(conn, "SELECT * FROM tratamiento_semillas WHERE user_id=? AND deleted_at IS NULL" + pf + f_sql + " ORDER BY fecha_actuacion DESC", (uid,) + pp + tuple(f_par))
         _TRAT_SEMILLA_NOMBRE = {2: 'Realizado en la explotación', 3: 'Realizado en centro de acondicionamiento',
                                  4: 'Adquirida tratada en España', 5: 'Adquirida tratada fuera de España'}
-        for r in apply_filters(rows, 'fecha_actuacion'):
+        for r in rows:
             tipo = _TRAT_SEMILLA_NOMBRE.get(r.get('tratamiento_cod'), '')
             prod = f" — {r['producto_comercial']}" if r.get('producto_comercial') else ''
             records.append({**r, '_modulo': 'tratamiento_semillas', '_fecha': r.get('fecha_actuacion', ''),
                             '_resumen': f"{tipo}{prod}"})
 
     if modulo in ('todos', 'post_cosecha'):
-        rows = dicts(conn, "SELECT * FROM post_cosecha WHERE user_id=? AND deleted_at IS NULL" + pf + " ORDER BY fecha_actuacion DESC", (uid,) + pp)
-        for r in apply_filters(rows, 'fecha_actuacion'):
+        f_sql, f_par = filtro('fecha_actuacion')
+        rows = dicts(conn, "SELECT * FROM post_cosecha WHERE user_id=? AND deleted_at IS NULL" + pf + f_sql + " ORDER BY fecha_actuacion DESC", (uid,) + pp + tuple(f_par))
+        for r in rows:
             prod = f" — {r['producto_comercial']}" if r.get('producto_comercial') else ''
             records.append({**r, '_modulo': 'post_cosecha', '_fecha': r.get('fecha_actuacion', ''),
                             '_resumen': f"Post-cosecha{prod}"})
 
     if modulo in ('todos', 'cultivos_campana'):
         try:
-            rows = dicts(conn, """
+            f_sql, f_par = filtro('fecha_siembra', alias='cc.')
+            rows = dicts(conn, f"""
                 SELECT cc.*, p.nombre_finca AS parcela_etiqueta
                 FROM cultivos_campana cc
                 JOIN parcelas p ON cc.parcela_id = p.id
-                WHERE p.user_id=? AND p.explotacion_id=?
+                WHERE p.user_id=? AND p.explotacion_id=?{f_sql}
                 ORDER BY cc.fecha_siembra DESC
-            """, (uid, exp_id))
-            for r in apply_filters(rows, 'fecha_siembra'):
+            """, (uid, exp_id) + tuple(f_par))
+            for r in rows:
                 sup = f"{r['superficie_cultivada_ha']} ha" if r.get('superficie_cultivada_ha') else ''
                 variedad = f" · {r['variedad']}" if r.get('variedad') else ''
                 records.append({**r, '_modulo': 'cultivos_campana',

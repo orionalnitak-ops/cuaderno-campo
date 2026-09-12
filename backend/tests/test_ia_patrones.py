@@ -136,6 +136,71 @@ def test_recalculo_completo():
           all(r['valor_sugerido'] != 'Otro de la otra finca' for r in rows.values()))
 
 
+def test_multi_agrupa_por_parcela_sin_mezclar():
+    """`_recalcular_patrones_multi` (alta por grupo UHC/lote) tiene que dar el
+    mismo resultado que llamar a `_recalcular_patrones` parcela a parcela, sin
+    mezclar el producto más frecuente de una parcela con el de otra —  que es
+    justo el riesgo de agrupar con GROUP BY parcela_id en una sola consulta."""
+    print("\n[4] _recalcular_patrones_multi no mezcla parcelas distintas")
+
+    PARCELA2 = 8
+    conn = _db()
+    conn.executemany("""
+        INSERT INTO tratamientos
+            (user_id, parcela_id, explotacion_id, fecha_aplicacion, producto_comercial,
+             num_registro_mapa, sustancia_activa, plaga_objetivo,
+             dosis_valor, dosis_unidad, equipo_id, aplicador_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    """, [
+        (UID, PARCELA2, EXPL, '2026-04-10', 'Movento', 'ES-00456', 'spirotetramat',
+         'Mosca blanca', 1.0, 'l/ha', 5, 2),
+        (UID, PARCELA2, EXPL, '2026-04-20', 'Movento', 'ES-00456', 'spirotetramat',
+         'Mosca blanca', 1.0, 'l/ha', 5, 2),
+    ])
+    conn.commit()
+
+    original = ia.get_db
+    ia.get_db = lambda: _NoCloseConn(conn)
+    try:
+        ia._recalcular_patrones_multi(UID, 'tratamientos', [PARCELA, PARCELA2],
+                                       '2026-05-02', EXPL)
+    finally:
+        ia.get_db = original
+
+    rows = {(r['parcela_id'], r['campo']): r for r in
+            (dict(x) for x in conn.execute(
+                "SELECT parcela_id, campo, valor_sugerido, frecuencia FROM ia_patrones WHERE user_id=?",
+                (UID,)).fetchall())}
+
+    check("parcela 1 conserva su producto (Karate Zeon)",
+          rows[(PARCELA, 'producto_comercial')]['valor_sugerido'] == 'Karate Zeon')
+    check("parcela 2 tiene su propio producto (Movento)",
+          rows[(PARCELA2, 'producto_comercial')]['valor_sugerido'] == 'Movento')
+    check("no se mezclan las frecuencias entre parcelas",
+          rows[(PARCELA2, 'producto_comercial')]['frecuencia'] == 2)
+
+
+def test_multi_con_una_sola_parcela_usa_la_ruta_simple():
+    """Con una sola parcela en la lista, debe comportarse igual que la función
+    original (caso de alta de un solo registro, no de grupo UHC)."""
+    print("\n[5] _recalcular_patrones_multi con 1 parcela == ruta simple")
+
+    conn = _db()
+    original = ia.get_db
+    ia.get_db = lambda: _NoCloseConn(conn)
+    try:
+        ia._recalcular_patrones_multi(UID, 'tratamientos', [PARCELA], '2026-05-02', EXPL)
+    finally:
+        ia.get_db = original
+
+    rows = {r['campo']: r for r in
+            (dict(x) for x in conn.execute(
+                "SELECT campo, valor_sugerido FROM ia_patrones WHERE user_id=?",
+                (UID,)).fetchall())}
+    check("producto más frecuente correcto también por la ruta de 1 parcela",
+          rows['producto_comercial']['valor_sugerido'] == 'Karate Zeon')
+
+
 def test_fallo_aislado_por_campo():
     """Si un campo falla, los demás deben guardarse igualmente."""
     print("\n[3] Un campo roto no arrastra a los demás")
@@ -163,5 +228,7 @@ def test_fallo_aislado_por_campo():
 if __name__ == '__main__':
     test_condicion_no_vacia()
     test_recalculo_completo()
+    test_multi_agrupa_por_parcela_sin_mezclar()
+    test_multi_con_una_sola_parcela_usa_la_ruta_simple()
     test_fallo_aislado_por_campo()
     print("\nTODOS LOS TESTS PASAN\n")
