@@ -19,7 +19,7 @@ from flask import Blueprint, jsonify, request
 from flask_login import login_required
 from db import get_db, one, dicts
 from helpers import get_uid, get_active_explotacion_id, _to_real
-from blueprints.ia import _recalcular_patrones
+from blueprints.ia import _recalcular_patrones, _recalcular_patrones_multi
 
 bp = Blueprint('tratamientos', __name__)
 
@@ -307,8 +307,8 @@ def manage_tratamientos():
 
         conn.commit()
         conn.close()
-        for p in parcelas:
-            _recalcular_patrones(uid, 'tratamientos', p['id'], data.get('fecha_aplicacion'), exp_id)
+        _recalcular_patrones_multi(uid, 'tratamientos', [p['id'] for p in parcelas],
+                                    data.get('fecha_aplicacion'), exp_id)
         resp = {"status": "ok", "count": len(ids), "ids": ids}
         if avisos:
             resp["aviso"] = " ".join(avisos)

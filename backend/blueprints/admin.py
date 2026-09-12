@@ -27,15 +27,23 @@ def admin_users():
     conn = get_db()
     if request.method == 'GET':
         users = dicts(conn, "SELECT id,email,nombre,role,active,created_at,plan,trial_ends_at,subscription_ends_at,unlimited_explotaciones FROM users ORDER BY created_at DESC")
+
+        # Antes: 3 COUNT(*) por usuario (N+1) — con pocos usuarios no dolía, pero
+        # escala mal con la captación. Una consulta agrupada por tabla en vez de
+        # una por usuario y por tabla.
+        tratam_por_user = {r['user_id']: r['n'] for r in dicts(conn,
+            "SELECT user_id, COUNT(*) as n FROM tratamientos GROUP BY user_id")}
+        parcelas_por_user = {r['user_id']: r['n'] for r in dicts(conn,
+            "SELECT user_id, COUNT(*) as n FROM parcelas WHERE activa=1 GROUP BY user_id")}
+        labores_por_user = {r['user_id']: r['n'] for r in dicts(conn,
+            "SELECT user_id, COUNT(*) as n FROM labores GROUP BY user_id")}
+
         for u in users:
             uid = u['id']
-            t = one(conn, "SELECT COUNT(*) as n FROM tratamientos WHERE user_id=?", (uid,))
-            p = one(conn, "SELECT COUNT(*) as n FROM parcelas WHERE user_id=? AND activa=1", (uid,))
-            l = one(conn, "SELECT COUNT(*) as n FROM labores WHERE user_id=?", (uid,))
             u['stats'] = {
-                "tratamientos": t['n'] if t else 0,
-                "parcelas": p['n'] if p else 0,
-                "labores": l['n'] if l else 0,
+                "tratamientos": tratam_por_user.get(uid, 0),
+                "parcelas": parcelas_por_user.get(uid, 0),
+                "labores": labores_por_user.get(uid, 0),
             }
             u['plan_label'], u['plan_active'] = compute_plan_status(
                 u['plan'], u['trial_ends_at'], u['role'], u.get('subscription_ends_at'))

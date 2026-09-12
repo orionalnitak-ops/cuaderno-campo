@@ -13,7 +13,7 @@ from helpers import (get_uid, _to_real, get_active_explotacion_id, estado_sigpac
                      campana_activa, sugerencias_lenosos, declarar_cultivos_lote,
                      repartir_por_superficie, cod_siex_de_cultivo)
 from blueprints.fertilizacion import _parcelas_uhc
-from blueprints.ia import _recalcular_patrones
+from blueprints.ia import _recalcular_patrones, _recalcular_patrones_multi
 from blueprints.sigpac import superficie_sigpac_parcela, referencia_catastral_parcela
 
 bp = Blueprint('parcelas', __name__)
@@ -466,13 +466,14 @@ def manage_cultivos():
         # El aviso "sin cultivo de campaña" (ia.py) solo se regenera en el login:
         # sin este borrado, una parcela recién declarada por grupo UHC sigue
         # apareciendo como pendiente en Inicio hasta el siguiente login.
-        for pid in parcela_ids:
+        if parcela_ids:
+            ph = ','.join(['?'] * len(parcela_ids))
             conn.execute(
-                "DELETE FROM ia_alertas WHERE user_id=? AND tipo=? AND parcela_id=?",
-                (uid, 'sin_cultivo_campana', pid))
+                f"DELETE FROM ia_alertas WHERE user_id=? AND tipo=? AND parcela_id IN ({ph})",
+                [uid, 'sin_cultivo_campana'] + parcela_ids)
         conn.commit(); conn.close()
-        for pid in parcela_ids:
-            _recalcular_patrones(uid, 'cultivo_campana', pid, data.get('fecha_siembra'), exp_id)
+        _recalcular_patrones_multi(uid, 'cultivo_campana', parcela_ids,
+                                    data.get('fecha_siembra'), exp_id)
         return jsonify({"status": "ok", **resultado}), 201
     parcela = one(conn, "SELECT id, superficie_ha FROM parcelas"
                         " WHERE id=? AND user_id=? AND explotacion_id=?",
