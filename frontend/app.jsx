@@ -223,6 +223,7 @@ function App() {
     const [campana, setCampana]         = useState('2025/2026');
     const [installPrompt, setInstallPrompt] = useState(null);
     const [showInstallBanner, setShowInstallBanner] = useState(false);
+    const [showUpdateBanner, setShowUpdateBanner] = useState(false);
     const [showOnboarding, setShowOnboarding] = useState(false);
     const [isOnline, setIsOnline]         = useState(navigator.onLine);
     const [pendingCount, setPendingCount] = useState(0);
@@ -338,6 +339,37 @@ function App() {
         };
         window.addEventListener('beforeinstallprompt', handler);
         return () => window.removeEventListener('beforeinstallprompt', handler);
+    }, []);
+
+    // PWA update available: el Service Worker nuevo toma el control con
+    // skipWaiting()+clients.claim() (service-worker.js) en cuanto se instala,
+    // pero eso NO recarga la pestaña ya abierta — el JS viejo sigue corriendo
+    // en memoria hasta que el usuario cierra la app del todo y la reabre. Como
+    // una PWA instalada casi nunca se cierra así (se queda en segundo plano),
+    // sin este aviso alguien puede pasarse semanas con una versión vieja sin
+    // enterarse. Caso real: Lourdes, 13-sep-2026, solo se arregló reinstalando.
+    useEffect(() => {
+        if (!('serviceWorker' in navigator)) return;
+        const onControllerChange = () => setShowUpdateBanner(true);
+        navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+
+        // El navegador solo comprueba solo si hay versión nueva de vez en cuando
+        // (heurística de hasta 24h) y al navegar. Forzarlo al volver a primer
+        // plano hace que una actualización no se quede esperando indefinidamente
+        // porque la app nunca llegó a recargarse de forma natural.
+        const onVisibility = () => {
+            if (document.visibilityState === 'visible') {
+                navigator.serviceWorker.getRegistration()
+                    .then(reg => reg && reg.update())
+                    .catch(() => {});
+            }
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+
+        return () => {
+            navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+            document.removeEventListener('visibilitychange', onVisibility);
+        };
     }, []);
 
     const showMsg = useCallback((msg) => {
@@ -969,6 +1001,38 @@ function App() {
                             color: 'rgba(255,255,255,0.60)', fontSize: 14, cursor: 'pointer',
                             flexShrink: 0,
                         }}>✕</button>
+                </div>
+            )}
+
+            {/* ── PWA Update Banner ── */}
+            {showUpdateBanner && (
+                <div style={{
+                    position: 'fixed', bottom: 84, left: 8, right: 8,
+                    background: '#111827', borderRadius: 16,
+                    padding: '14px 16px', zIndex: 250,
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
+                    animation: 'slideUp 0.3s ease',
+                }}>
+                    <span style={{ fontSize: 28, flexShrink: 0 }}>🔄</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '0.88rem', color: '#fff', marginBottom: 2 }}>
+                            Hay una versión nueva
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.55)', lineHeight: 1.4 }}>
+                            Actualiza para tener las últimas mejoras
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => window.location.reload()}
+                        style={{
+                            background: 'var(--primary)', color: '#fff',
+                            border: 'none', borderRadius: 10,
+                            padding: '9px 14px', fontWeight: 700, fontSize: '0.78rem',
+                            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                        }}>
+                        Actualizar
+                    </button>
                 </div>
             )}
 
