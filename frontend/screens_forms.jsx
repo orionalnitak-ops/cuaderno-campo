@@ -510,20 +510,23 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
 
     React.useEffect(() => {
         if (!f.parcela_id) return;
+        const p = parcelas.find(x => String(x.id) === String(f.parcela_id));
+        if (p) set('parcela_etiqueta', p.nombre_finca);
         fetch(`/api/cultivos-campana?parcela_id=${f.parcela_id}&campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
             .then(r => r.json()).then(d => {
                 const c = Array.isArray(d) && d[0] ? d[0] : {};
                 setCultivo(c);
                 // Sugerencia editable, no forzada: si la superficie tratada está
                 // vacía, se rellena con la del cultivo de la parcela — igual que
-                // ya hace cosecha con superficie_cosechada_ha. El agricultor la
-                // cambia si trató solo una parte.
-                if (!isEdit && !f.superficie_tratada_ha && c.superficie_cultivada_ha) {
-                    set('superficie_tratada_ha', c.superficie_cultivada_ha);
+                // ya hace cosecha con superficie_cosechada_ha. Si la parcela aún no
+                // tiene cultivo declarado en la campaña, se usa la superficie de la
+                // parcela entera como respaldo. El agricultor la cambia si trató
+                // solo una parte.
+                const sugerida = c.superficie_cultivada_ha || p?.superficie_ha;
+                if (!isEdit && !f.superficie_tratada_ha && sugerida) {
+                    set('superficie_tratada_ha', sugerida);
                 }
             });
-        const p = parcelas.find(x => String(x.id) === String(f.parcela_id));
-        if (p) set('parcela_etiqueta', p.nombre_finca);
     }, [f.parcela_id]);
 
     React.useEffect(() => {
@@ -2141,18 +2144,21 @@ function FormTratamientoSemilla({ parcelas, record, campana, onClose, isEdit }) 
 
     React.useEffect(() => {
         if (!f.parcela_id) return;
+        const p = parcelas.find(x => String(x.id) === String(f.parcela_id));
+        if (p) set('parcela_etiqueta', p.nombre_finca);
         // Sugerencia editable, no forzada: si la superficie tratada está vacía,
         // se rellena con la del cultivo de la parcela — mismo criterio que ya
-        // aplica tratamientos.py (bloque 022) para superficie_tratada_ha.
+        // aplica tratamientos.py (bloque 022) para superficie_tratada_ha. Si la
+        // parcela aún no tiene cultivo declarado en la campaña, se usa la
+        // superficie de la parcela entera como respaldo.
         fetch(`/api/cultivos-campana?parcela_id=${f.parcela_id}&campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
             .then(r => r.json()).then(d => {
                 const c = Array.isArray(d) && d[0] ? d[0] : null;
-                if (c && !isEdit && !f.superficie_tratada_ha && c.superficie_cultivada_ha) {
-                    set('superficie_tratada_ha', c.superficie_cultivada_ha);
+                const sugerida = c?.superficie_cultivada_ha || p?.superficie_ha;
+                if (!isEdit && !f.superficie_tratada_ha && sugerida) {
+                    set('superficie_tratada_ha', sugerida);
                 }
             }).catch(() => {});
-        const p = parcelas.find(x => String(x.id) === String(f.parcela_id));
-        if (p) set('parcela_etiqueta', p.nombre_finca);
     }, [f.parcela_id]);
 
     React.useEffect(() => {
@@ -2712,12 +2718,15 @@ function FormRiego({ parcelas, record, campana, onClose, isEdit }) {
         if (p) set('parcela_etiqueta', p.nombre_finca);
         // Sugerencia editable, no forzada: si la superficie regada está vacía,
         // se rellena con la del cultivo de la parcela — mismo criterio que ya
-        // aplica tratamientos y tratamiento de semilla.
+        // aplica tratamientos y tratamiento de semilla. Si la parcela aún no
+        // tiene cultivo declarado en la campaña, se usa la superficie de la
+        // parcela entera como respaldo.
         fetch(`/api/cultivos-campana?parcela_id=${f.parcela_id}&campana=${encodeURIComponent(campana)}`, { credentials: 'include' })
             .then(r => r.json()).then(d => {
                 const c = Array.isArray(d) && d[0] ? d[0] : null;
-                if (c && !isEdit && !f.superficie_ha && c.superficie_cultivada_ha) {
-                    set('superficie_ha', c.superficie_cultivada_ha);
+                const sugerida = c?.superficie_cultivada_ha || p?.superficie_ha;
+                if (!isEdit && !f.superficie_ha && sugerida) {
+                    set('superficie_ha', sugerida);
                 }
             }).catch(() => {});
     }, [f.parcela_id]);
