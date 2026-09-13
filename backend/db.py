@@ -118,7 +118,15 @@ class _PgConn:
         self._conn.commit()
 
     def close(self):
-        self._conn.close()
+        # No cierra la conexión de verdad: la devuelve al pool para que la
+        # reutilice la siguiente petición. rollback() primero descarta
+        # cualquier escritura sin commit -- mismo comportamiento que antes,
+        # cuando cerrar sin commit perdía los cambios pendientes.
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
+        _get_pg_pool().putconn(self._conn)
 
     def execute(self, sql, params=None):
         c = self.cursor()
@@ -133,10 +141,36 @@ class _PgConn:
 # Public interface
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Pool de conexiones a Postgres. Antes cada get_db() abría una conexión nueva
+# con psycopg2.connect() -- TCP + TLS + auth contra Supabase en cada petición,
+# y encima flask_login (load_user) abre la suya propia en cada request
+# autenticada. Con la pantalla de Parcelas disparando 2 peticiones en paralelo
+# eso eran 4+ conexiones nuevas solo por abrir la pantalla, y desde el móvil de
+# Lourdes en el campo (más latencia) se notaba como lentitud real.
+#
+# _pg_pool_pid guarda en qué proceso se creó el pool: gunicorn con --preload
+# importa app.py (que llama a init_db()) ANTES de hacer fork a los workers, así
+# que si el pool se creara una sola vez a nivel de módulo, los workers
+# heredarían duplicados de los mismos file descriptors de conexión. Comprobar
+# el pid en cada llamada hace que el primer get_db() de cada worker (proceso
+# distinto) cree su propio pool real.
+_pg_pool = None
+_pg_pool_pid = None
+
+
+def _get_pg_pool():
+    global _pg_pool, _pg_pool_pid
+    pid = os.getpid()
+    if _pg_pool is None or _pg_pool_pid != pid:
+        from psycopg2.pool import ThreadedConnectionPool
+        _pg_pool = ThreadedConnectionPool(1, 10, DATABASE_URL)
+        _pg_pool_pid = pid
+    return _pg_pool
+
+
 def get_db():
     if USE_PG:
-        import psycopg2
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = _get_pg_pool().getconn()
         return _PgConn(conn)
     import sqlite3
     conn = sqlite3.connect(DATABASE_NAME)

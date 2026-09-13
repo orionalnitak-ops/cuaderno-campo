@@ -675,24 +675,37 @@ function ScreenParcelas({ campana, showToast, onNavigate }) {
         }
     };
 
+    // Enseña la última copia guardada del móvil al instante (si hay) y deja el
+    // fetch de red corriendo detrás para refrescarla. Antes, aunque hubiera copia
+    // local, se veía el spinner "Cargando parcelas…" todo el tiempo que tardara
+    // la red — con una conexión floja eso podía ser varios segundos en blanco
+    // pudiendo mostrar ya la lista de la última vez. Ver auditoría de lentitud
+    // en el móvil de Lourdes (13-sep-2026).
     const fetchParcelas = () => {
-        setLoading(true);
-        fetch('/api/parcelas', { credentials: 'include' }).then(r => r.json()).then(data => {
-            const list = Array.isArray(data) ? data : [];
-            setParcelas(list);
-            setLoading(false);
-            if (list.length > 0 && window.OfflineDB) {
-                window.OfflineDB.cacheParcelas(list);
-            }
-        }).catch(() => {
-            if (window.OfflineDB) {
-                window.OfflineDB.getCachedParcelas().then(cached => {
-                    setParcelas(cached);
-                    setLoading(false);
-                });
-            } else {
+        let showedCached = false;
+        const fromCache = window.OfflineDB
+            ? window.OfflineDB.getCachedParcelas().then(cached => {
+                  if (cached && cached.length > 0) {
+                      setParcelas(cached);
+                      setLoading(false);
+                      showedCached = true;
+                  }
+              }).catch(() => {})
+            : Promise.resolve();
+
+        fromCache.then(() => {
+            fetch('/api/parcelas', { credentials: 'include' }).then(r => r.json()).then(data => {
+                const list = Array.isArray(data) ? data : [];
+                setParcelas(list);
                 setLoading(false);
-            }
+                if (list.length > 0 && window.OfflineDB) {
+                    window.OfflineDB.cacheParcelas(list);
+                }
+            }).catch(() => {
+                // Si ya se pintó la copia local, se queda como está: mejor lo
+                // último guardado que un error o un spinner colgado.
+                if (!showedCached) setLoading(false);
+            });
         });
     };
     useEffect(() => { fetchParcelas(); }, []);
