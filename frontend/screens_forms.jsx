@@ -54,6 +54,7 @@ function FieldZoomOverlay({ label, value, type, inputMode, placeholder, multilin
                     {multiline ? (
                         <textarea
                             ref={inputRef}
+                            className="zoom-input"
                             value={val}
                             onChange={e => setVal(e.target.value)}
                             placeholder={placeholder}
@@ -64,6 +65,7 @@ function FieldZoomOverlay({ label, value, type, inputMode, placeholder, multilin
                         <input
                             ref={inputRef}
                             type="text"
+                            className="zoom-input"
                             inputMode={inputMode || (type === 'number' ? 'decimal' : undefined)}
                             value={val}
                             onChange={e => setVal(e.target.value)}
@@ -679,7 +681,7 @@ function FormTratamiento({ parcelas, record, campana, onClose, isEdit }) {
                 </FieldGroup>
                 <FieldGroup label={f.motivo_sin_registro ? 'Nº Registro MAPA' : 'Nº Registro MAPA *'}>
                     {!f.motivo_sin_registro && (
-                        <ZoomInput label="Nº Registro MAPA" value={f.num_registro_mapa} placeholder="ES-00000-0"
+                        <ZoomInput label="Nº Registro MAPA" value={f.num_registro_mapa} placeholder="Ej: 25551 o 25551/2"
                             onConfirm={v => set('num_registro_mapa', v)} />
                     )}
                     <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 6,
@@ -2521,7 +2523,7 @@ function FormCompra({ record, campana, onClose, isEdit }) {
                 <FieldGroup label={f.motivo_sin_registro ? 'Nº de registro MAPA' : 'Nº de registro MAPA *'}>
                     {!f.motivo_sin_registro && (
                         <ZoomInput label="Nº de registro MAPA" value={f.num_registro_mapa}
-                            placeholder="ES-XXXXX-X"
+                            placeholder="Ej: 25551 o 25551/2"
                             onConfirm={v => set('num_registro_mapa', v)} />
                     )}
                     <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 6,
