@@ -1,73 +1,7 @@
-// ── Field Zoom Overlay — campo individual a pantalla grande para móvil ──
-function FieldZoomOverlay({ label, value, type, placeholder, onConfirm, onClose }) {
-    const [val, setVal] = React.useState(value || '');
-    const inputRef = React.useRef(null);
-
-    React.useEffect(() => {
-        setTimeout(() => { if (inputRef.current) inputRef.current.focus(); }, 80);
-    }, []);
-
-    const confirm = () => onConfirm(val.trim());
-
-    return (
-        <div style={{
-            position: 'fixed', inset: 0, zIndex: 999,
-            background: 'rgba(0,0,0,0.65)',
-            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-        }} onClick={onClose}>
-            <div style={{
-                background: '#fff', borderRadius: '0 0 24px 24px',
-                width: '100%', maxWidth: 640,
-                boxShadow: '0 8px 40px rgba(0,0,0,0.35)',
-            }} onClick={e => e.stopPropagation()}>
-                <div style={{
-                    background: 'linear-gradient(135deg, #1D9E75, #00694c)',
-                    padding: '24px 20px',
-                }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                            <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
-                                Editando
-                            </div>
-                            <h2 style={{ fontFamily: 'Manrope', fontWeight: 800, color: '#fff', fontSize: '1.4rem', margin: 0 }}>
-                                {label}
-                            </h2>
-                        </div>
-                        <button onClick={onClose} style={{
-                            background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
-                            width: 36, height: 36, color: '#fff', cursor: 'pointer', fontSize: 18,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>✕</button>
-                    </div>
-                </div>
-                <div style={{ padding: '28px 20px 16px' }}>
-                    <input
-                        ref={inputRef}
-                        type={type || 'text'}
-                        className="zoom-input"
-                        value={val}
-                        onChange={e => setVal(e.target.value)}
-                        placeholder={placeholder}
-                        onKeyDown={e => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') onClose(); }}
-                        style={{
-                            width: '100%', boxSizing: 'border-box',
-                            fontSize: '1.35rem', fontFamily: 'Manrope, Work Sans, sans-serif',
-                            fontWeight: 600, padding: '16px 18px',
-                            border: '2px solid #1D9E75', borderRadius: 14,
-                            outline: 'none', background: '#f0fdf4', color: '#111827',
-                        }}
-                    />
-                </div>
-                {/* multiline no se usa en settings pero se deja por consistencia */}
-                <div style={{ padding: '0 20px 28px' }}>
-                    <button className="btn-primary" onClick={confirm} style={{ width: '100%', fontSize: '1rem', padding: '16px', minHeight: 52 }}>
-                        ✓ Listo
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
+// FieldZoomOverlay vive en screens_forms.jsx (se carga antes en index.html y
+// es la versión completa, con soporte multiline/inputMode). No redeclarar
+// aquí: los scripts comparten ámbito global, y una segunda declaración con
+// el mismo nombre pisaría silenciosamente a la primera en TODA la app.
 
 // ── Explotación modal (position:fixed → teclado Android funciona) ──
 function ExplotacionModal({ data, onSave, onClose }) {
