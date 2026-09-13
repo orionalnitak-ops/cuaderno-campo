@@ -44,6 +44,7 @@ function FieldZoomOverlay({ label, value, type, placeholder, onConfirm, onClose 
                     <input
                         ref={inputRef}
                         type={type || 'text'}
+                        className="zoom-input"
                         value={val}
                         onChange={e => setVal(e.target.value)}
                         placeholder={placeholder}
