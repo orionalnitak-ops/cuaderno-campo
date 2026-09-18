@@ -789,10 +789,9 @@ function App() {
                     <span className="tb-title">📋 Cuaderno de Campo</span>
                     <span className="tb-spacer" />
                     <span className="tb-campaign">Campaña {campana}</span>
-                    <button className="tb-export-btn"
-                        onClick={() => window.open(`/api/export/pdf?campana=${encodeURIComponent(campana)}`)}>
+                    <BotonPdfOficial campana={campana} className="tb-export-btn">
                         ⬇ PDF oficial
-                    </button>
+                    </BotonPdfOficial>
                     <button className="tb-export-btn"
                         onClick={() => window.open(`/api/export/excel?campana=${encodeURIComponent(campana)}`)}>
                         ⬇ Exportar Excel

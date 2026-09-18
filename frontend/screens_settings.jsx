@@ -3,6 +3,96 @@
 // aquí: los scripts comparten ámbito global, y una segunda declaración con
 // el mismo nombre pisaría silenciosamente a la primera en TODA la app.
 
+// ── Botón del PDF oficial, con aviso si falta el NIF (feature 028) ──
+// El NIF ya no se pide al entrar, así que puede faltar cuando llegue una
+// inspección. El aviso salta AQUÍ, que es donde el agricultor ya entiende para
+// qué se le pide. Se puede descargar igualmente: avisamos, no bloqueamos.
+// Lo usan los dos sitios que abren el PDF: Ajustes y la barra superior (app.jsx).
+function BotonPdfOficial({ campana, className, style, children }) {
+    const { useState } = React;
+    const [preguntando, setPreguntando] = useState(false);
+    const [nif, setNif] = useState('');
+    const [guardando, setGuardando] = useState(false);
+
+    const url = `/api/export/pdf?campana=${encodeURIComponent(campana)}`;
+
+    // Anchor en vez de window.open: tras un `await` el navegador ya no considera
+    // la descarga parte del clic y el bloqueador de ventanas la corta.
+    const descargar = () => {
+        const a = document.createElement('a');
+        a.href = url;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    };
+
+    const pulsar = async () => {
+        try {
+            const res = await fetch('/api/explotacion', { credentials: 'include' });
+            const ex = res.ok ? await res.json() : {};
+            if (!ex.nif || !String(ex.nif).trim()) { setPreguntando(true); return; }
+        } catch (e) {
+            // Sin conexión no se puede comprobar: mejor dejar descargar que bloquear.
+        }
+        descargar();
+    };
+
+    const guardarYDescargar = async () => {
+        setGuardando(true);
+        try {
+            await fetch('/api/explotacion', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nif: nif.trim() }),   // solo el NIF: no pisa nada más
+                credentials: 'include',
+            });
+        } finally {
+            setGuardando(false);
+            setPreguntando(false);
+            descargar();
+        }
+    };
+
+    return (
+        <React.Fragment>
+            <button className={className || 'btn-primary'} style={style} onClick={pulsar}>
+                {children}
+            </button>
+            {preguntando && (
+                <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:9000,
+                              display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+                    <div style={{ background:'#fff', borderRadius:20, padding:24, maxWidth:420, width:'100%' }}>
+                        <h3 style={{ fontFamily:'var(--font-heading)', fontWeight:800, fontSize:'1.05rem', margin:'0 0 8px' }}>
+                            Te falta el NIF
+                        </h3>
+                        <p style={{ fontSize:'0.85rem', color:'#4b5563', lineHeight:1.5, margin:'0 0 16px' }}>
+                            El cuaderno que se enseña en una inspección lleva el NIF del titular.
+                            Si lo pones ahora, sale en el PDF.
+                        </p>
+                        <label className="field-label">NIF / CIF</label>
+                        <input type="text" className="input-field" value={nif} autoFocus
+                               placeholder="12345678A" onChange={e => setNif(e.target.value)} />
+                        <button className="btn-primary" style={{ width:'100%', marginTop:16 }}
+                                onClick={guardarYDescargar} disabled={guardando || !nif.trim()}>
+                            {guardando ? 'Guardando…' : 'Guardar y descargar'}
+                        </button>
+                        <button style={{ width:'100%', marginTop:10, background:'none', border:'none',
+                                         color:'#6b7280', fontSize:'0.85rem', cursor:'pointer', padding:8 }}
+                                onClick={() => { setPreguntando(false); descargar(); }}>
+                            Descargar sin el NIF
+                        </button>
+                        <button style={{ width:'100%', marginTop:2, background:'none', border:'none',
+                                         color:'#9ca3af', fontSize:'0.8rem', cursor:'pointer', padding:6 }}
+                                onClick={() => setPreguntando(false)}>
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            )}
+        </React.Fragment>
+    );
+}
+
 // ── Explotación modal (position:fixed → teclado Android funciona) ──
 function ExplotacionModal({ data, onSave, onClose }) {
     const { useState } = React;
@@ -584,10 +674,10 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
                             <p style={{ fontSize:'0.82rem', color:'#6b7280', margin:'0 0 14px' }}>
                                 Genera el Cuaderno de Explotación en formato PDF oficial (A4): portada, parcelas SIGPAC, tratamientos fitosanitarios, abono, labores y cosecha. Válido conforme a RD 1311/2012 Anexo III.
                             </p>
-                            <button className="btn-primary" style={{ background:'linear-gradient(135deg,#1a4731,#00694c)' }}
-                                onClick={() => window.open(`/api/export/pdf?campana=${encodeURIComponent(campana)}`)}>
+                            <BotonPdfOficial campana={campana}
+                                style={{ background:'linear-gradient(135deg,#1a4731,#00694c)' }}>
                                 ⬇ Descargar PDF (campaña {campana})
-                            </button>
+                            </BotonPdfOficial>
                         </div>
                         <div className="card card-p" style={{ marginBottom:12 }}>
                             <h3 style={{ fontFamily:'Manrope', fontWeight:700, fontSize:'0.95rem', margin:'0 0 8px' }}>📊 Exportar cuaderno Excel</h3>
