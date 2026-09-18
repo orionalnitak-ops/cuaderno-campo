@@ -48,12 +48,19 @@ def run():
     conn = _db()
 
     # ── decisión 4: aislamiento entre usuarios (IDOR) ──
-    err, aviso = _check_asesor(conn, {'asesor_id': 12}, UID)
-    check("asesor de otro usuario -> error", err == "Asesor no encontrado")
+    # Se comprueba el COMPORTAMIENTO, no el texto exacto del mensaje: la feature
+    # 022 (PR #73) lo cambió a "Asesor de validación Intermedia/Final no
+    # encontrado" al añadir el segundo asesor, y este test se quedó clavado en el
+    # texto viejo. La protección nunca falló; lo que fallaba era la expectativa.
+    err_ajeno, aviso = _check_asesor(conn, {'asesor_id': 12}, UID)
+    check("asesor de otro usuario -> error", bool(err_ajeno) and 'no encontrado' in err_ajeno)
     check("asesor de otro usuario -> sin aviso", aviso is None)
 
-    err, aviso = _check_asesor(conn, {'asesor_id': 9999}, UID)
-    check("asesor inexistente -> error", err == "Asesor no encontrado")
+    err_inexistente, aviso = _check_asesor(conn, {'asesor_id': 9999}, UID)
+    check("asesor inexistente -> error", bool(err_inexistente) and 'no encontrado' in err_inexistente)
+    # Mismo mensaje en los dos casos: el de otro usuario no se distingue del que
+    # no existe, o el error confirmaría qué ids hay dados de alta.
+    check("el error no delata que el asesor ajeno existe", err_ajeno == err_inexistente)
 
     # ── decisión 2: sin ROPO avisa pero no bloquea ──
     err, aviso = _check_asesor(conn, {'asesor_id': 11}, UID)
