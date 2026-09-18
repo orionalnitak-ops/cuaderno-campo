@@ -18,6 +18,29 @@ _EXPL_FIELDS = ['titular', 'nombre_corto', 'nif', 'rega', 'municipio', 'provinci
                 'telefono', 'email', 'campana_activa', 'fecha_apertura']
 
 
+def actualizar_explotacion(conn, eid, uid, data):
+    """Guarda SOLO los campos que vienen en `data`. Devuelve los campos tocados.
+
+    Antes se escribía siempre la lista entera de `_EXPL_FIELDS` con `data.get()`,
+    así que un formulario parcial metía NULL en todo lo que no mandara: guardar
+    el municipio borraba el NIF, el teléfono y el resto. La pantalla de entrada
+    manda tres campos (feature 028), o sea que ese fallo latente pasaba a ser
+    seguro.
+
+    Regla: campo ausente = se deja como está; campo presente y vacío = borrado
+    a propósito (hay que poder vaciar un dato). `_EXPL_FIELDS` sigue siendo la
+    lista blanca: nada que venga del cliente se interpola en el SQL.
+    """
+    campos = [f for f in _EXPL_FIELDS if f in data]
+    if not campos:
+        return []
+    sets = ', '.join(f"{f}=?" for f in campos)
+    conn.execute(f"UPDATE explotacion SET {sets} WHERE id=? AND user_id=?",
+                 [data[f] for f in campos] + [eid, uid])
+    conn.commit()
+    return campos
+
+
 def _active_expl(conn, uid):
     """id de la explotación activa del usuario (crea una por defecto si no existe).
 
@@ -57,11 +80,8 @@ def explotacion():
 
     data = request.json or {}
     exp_id = _active_expl(conn, uid)
-    c = conn.cursor()
-    sets = ', '.join(f"{f}=?" for f in _EXPL_FIELDS)
-    c.execute(f"UPDATE explotacion SET {sets} WHERE id=? AND user_id=?",
-              [data.get(f) for f in _EXPL_FIELDS] + [exp_id, uid])
-    conn.commit(); conn.close()
+    actualizar_explotacion(conn, exp_id, uid, data)
+    conn.close()
     return jsonify({"status": "ok", "id": exp_id})
 
 
@@ -143,12 +163,10 @@ def explotacion_item(eid):
         conn.commit(); conn.close()
         return jsonify({"status": "ok"})
 
-    # PUT → editar
+    # PUT → editar (solo los campos presentes, igual que /api/explotacion)
     data = request.json or {}
-    sets = ', '.join(f"{f}=?" for f in _EXPL_FIELDS)
-    conn.execute(f"UPDATE explotacion SET {sets} WHERE id=? AND user_id=?",
-                 [data.get(f) for f in _EXPL_FIELDS] + [eid, uid])
-    conn.commit(); conn.close()
+    actualizar_explotacion(conn, eid, uid, data)
+    conn.close()
     return jsonify({"status": "ok"})
 
 
