@@ -16,6 +16,36 @@ jobs:
       - run: pip install ruff
       - run: ruff check backend/ --exclude backend/venv --select E,W,F --ignore E501,E402,E401,E701,E702,E741,F401
 
+  tests:
+    name: Tests backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
+      # Los tests son scripts sueltos (sin pytest): cada uno se ejecuta y se
+      # espera código de salida 0. El bucle NO corta en el primer fallo, para
+      # ver de una pasada todo lo que está roto.
+      - name: Ejecutar backend/tests
+        env:
+          SECRET_KEY: ci-test
+          PYTHONIOENCODING: utf-8
+        run: |
+          fallos=""
+          for t in backend/tests/test_*.py; do
+            echo "── $t"
+            python "$t" || fallos="$fallos $t"
+          done
+          if [ -n "$fallos" ]; then
+            echo "Tests en rojo:$fallos"
+            exit 1
+          fi
+          echo "Todos los tests en verde."
+
   security-scan:
     name: Security Scan (Bandit)
     runs-on: ubuntu-latest
