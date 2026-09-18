@@ -1,39 +1,43 @@
-// ── Screen: Datos de la Explotación — pantalla obligatoria para usuarios nuevos ──
+// ── Screen: primeros datos — pantalla obligatoria para usuarios nuevos ──
 // Se muestra justo después del LOPD si el titular no está rellenado.
+//
+// Feature 028: pedía ocho campos (NIF, CP, teléfono…) antes de dejar ver nada,
+// y 3 de cada 7 personas que entraron a probar no pasaron de aquí. Ahora pide
+// tres, y cada uno dice para qué sirve. El resto se rellena cuando hace falta,
+// en Ajustes → Explotación.
 
 function ScreenOnboarding({ currentUser, onComplete }) {
     const { useState } = React;
     const [form, setForm] = useState({
         titular: currentUser?.nombre || '',
-        nif: '',
         municipio: '',
-        provincia: '',
-        cp: '',
-        telefono: '',
-        email: currentUser?.email || '',
         campana_activa: '2025/2026',
     });
     const [saving, setSaving] = useState(false);
     const [zoomField, setZoomField] = useState(null);
 
     const FIELDS = [
-        ['titular',       'Titular',        'text',  'Nombre completo'],
-        ['nif',           'NIF / CIF',       'text',  '12345678A'],
-        ['municipio',     'Municipio',       'text',  'Santa Cruz de Mudela'],
-        ['provincia',     'Provincia',       'text',  'Ciudad Real'],
-        ['cp',            'Código postal',   'text',  '13730'],
-        ['telefono',      'Teléfono',        'tel',   '600 000 000'],
-        ['email',         'Email',           'email', 'titular@explotacion.es'],
-        ['campana_activa','Campaña activa',  'text',  '2025/2026'],
+        ['titular',        'Tu nombre',      'text', 'Nombre y apellidos',
+            'Es el nombre que sale en el cuaderno.'],
+        ['municipio',      'Tu municipio',   'text', 'Valdepeñas',
+            'Con él te ponemos el tiempo y los avisos de tu zona.'],
+        ['campana_activa', 'Campaña',        'text', '2026/2027',
+            'La campaña en la que vas a ir apuntando.'],
     ];
 
     const save = async () => {
-        if (!form.titular.trim()) { alert('El nombre del titular es obligatorio'); return; }
+        if (!form.titular.trim()) { alert('Escribe tu nombre para continuar'); return; }
         setSaving(true);
+        // Se mandan SOLO estos tres campos. El backend guarda lo que recibe y deja
+        // el resto como esté (blueprints/explotacion.py → actualizar_explotacion).
         const res = await fetch('/api/explotacion', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(form),
+            body: JSON.stringify({
+                titular: form.titular,
+                municipio: form.municipio,
+                campana_activa: form.campana_activa,
+            }),
             credentials: 'include',
         });
         setSaving(false);
@@ -55,16 +59,17 @@ function ScreenOnboarding({ currentUser, onComplete }) {
                 <div style={{ textAlign: 'center', marginBottom: 24 }}>
                     <div style={{ fontSize: 48, marginBottom: 8 }}>🏡</div>
                     <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.4rem', color: '#111827', margin: 0 }}>
-                        Datos de la Explotación
+                        Empecemos
                     </h1>
                     <p style={{ color: '#6b7280', fontSize: '0.88rem', margin: '8px 0 0', lineHeight: 1.5 }}>
-                        Identifícate como titular. Aparecerán en el PDF oficial del cuaderno.
+                        Solo tres cosas y ya puedes entrar. El NIF y los demás datos
+                        se ponen luego, en Ajustes.
                     </p>
                 </div>
 
                 <div style={{ background: '#fff', borderRadius: 20, padding: 24, boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
-                    {FIELDS.map(([k, l, t, ph]) => (
-                        <div key={k} style={{ marginBottom: 14 }}>
+                    {FIELDS.map(([k, l, t, ph, ayuda]) => (
+                        <div key={k} style={{ marginBottom: 16 }}>
                             <label className="field-label">{l}{k === 'titular' ? ' *' : ''}</label>
                             <input
                                 type={t}
@@ -75,10 +80,13 @@ function ScreenOnboarding({ currentUser, onComplete }) {
                                 onClick={() => setZoomField({ key: k, label: l, type: t, placeholder: ph })}
                                 style={{ cursor: 'pointer' }}
                             />
+                            <p style={{ color: '#6b7280', fontSize: '0.78rem', margin: '5px 2px 0', lineHeight: 1.4 }}>
+                                {ayuda}
+                            </p>
                         </div>
                     ))}
                     <button className="btn-primary" style={{ width: '100%', marginTop: 8 }} onClick={save} disabled={saving}>
-                        {saving ? 'Guardando…' : '💾 Guardar datos'}
+                        {saving ? 'Guardando…' : 'Entrar en mi cuaderno'}
                     </button>
                 </div>
 
