@@ -16,6 +16,9 @@
 | 008 | Plan de abonado avanzado | En spec | 🟡 Media |
 | 009 | Offline PWA | En spec | 🟡 Media |
 | 010 | UHC (Unidades Homogéneas de Cultivo) | Desplegado (PRs #20-23) | 🟡 Media |
+| 028 | Entrada mínima — la pantalla obligatoria pasa a pedir solo nombre, municipio y campaña; aviso de NIF al exportar el PDF; arreglo del guardado que borra campos | En spec | 🔴 Alta |
+| 026 | SIEX en exportaciones — PDF y Excel con campos y códigos SIEX, en el orden del cuaderno oficial (para pasarlo a mano o entregarlo a una entidad habilitada) | Pendiente de spec | 🔴 Alta |
+| 027 | Exportación JSON con el formato FEGA (Anexo VI / descriptor CUE). No se presenta como "súbelo a SIEX": el cuaderno público no importa ficheros, el JSON solo entra por IUWS. Base para una futura conexión | Pendiente de spec (después del 026) | 🟡 Media |
 
 > **Sobre el 001 — por qué se cierra.** Stripe está en modo live desde agosto de 2026: precios en EUR con IVA incluido (14,99 €/mes o 150 €/año Básico; 29,99 €/mes o 300 €/año Pro — PR #46), factura deducible con NIF/dirección/IVA desglosado (PR #58), y los identificadores de Stripe Test se limpiaron de las cuentas de producción antes de cambiar la clave a `sk_live_` (PR #54). `backend/blueprints/stripe_bp.py` lee precios y claves de variables de entorno (`STRIPE_PRICE_*`, `STRIPE_SECRET_KEY`), sin hardcodear ningún importe.
 >
