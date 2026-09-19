@@ -50,7 +50,22 @@ def _alt_row(ws, row_num):
             cell.fill = fill
 
 
-def export_excel(user_id, campana='2025/2026', explotacion_id=None):
+# Clave de sección (helpers.SECCIONES) → título de la hoja que genera.
+# PORTADA no está: va siempre y no es elegible.
+_HOJA_POR_SECCION = {
+    'parcelas':         'PARCELAS',
+    'cultivos_campana': 'CULTIVOS POR CAMPAÑA',
+    'tratamientos':     'TRATAMIENTOS FITOSANITARIOS',
+    'fertilizacion':    'FERTILIZACIÓN',
+    'labores':          'LABORES',
+    'riego':            'RIEGO',
+    'cosecha':          'COSECHA',
+    'plan_abonado':     'PLAN DE ABONADO',
+    'compras':          'COMPRAS-VENTAS',
+}
+
+
+def export_excel(user_id, campana='2025/2026', explotacion_id=None, secciones=None):
     if not OPENPYXL:
         return ("openpyxl no instalado. Ejecuta: pip install openpyxl", 500)
 
@@ -367,6 +382,18 @@ def export_excel(user_id, campana='2025/2026', explotacion_id=None):
         _auto_width(ws8, cmp_cols)
 
     conn.close()
+
+    # ── Filtro por secciones (feature 029) ──
+    # Se generan todas y se quitan las no pedidas, en vez de envolver los nueve
+    # bloques en un `if`: mismo resultado con una fracción del diff y sin tocar
+    # código que ya funciona. El coste son unas consultas de más sobre tablas
+    # pequeñas, que no se nota.
+    # PORTADA nunca se quita: identifica al titular y evita que openpyxl se
+    # quede sin hojas (un libro vacío no se puede guardar).
+    if secciones is not None:
+        for clave, titulo in _HOJA_POR_SECCION.items():
+            if clave not in secciones and titulo in wb.sheetnames:
+                wb.remove(wb[titulo])
 
     # ── Save to BytesIO and send ──
     buf = io.BytesIO()
