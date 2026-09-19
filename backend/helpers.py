@@ -682,7 +682,11 @@ def parse_secciones(arg):
     if not arg:
         return todas, True
 
-    pedidas = {t.strip().lower() for t in str(arg).split(',')}
+    # Tope de longitud antes de partir por comas. Nueve claves no llegan a 120
+    # caracteres, así que 512 sobra de largo para cualquier uso legítimo y corta
+    # el caso de una cadena enorme que generase millones de trozos. El servidor
+    # ya limita el tamaño de la URL, pero esto no depende de esa suposición.
+    pedidas = {t.strip().lower() for t in str(arg)[:512].split(',')}
     validas = pedidas & todas
 
     if not validas or validas == todas:
