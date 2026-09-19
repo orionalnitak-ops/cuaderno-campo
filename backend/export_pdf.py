@@ -307,6 +307,60 @@ def _section_parcelas(conn, user_id, styles, story, explotacion_id=None):
         styles['note']))
 
 
+def _section_cultivos_campana(conn, user_id, campana, styles, story, explotacion_id=None):
+    """Qué se ha sembrado en cada parcela esta campaña.
+
+    Estaba solo en el Excel. Se trae al PDF (feature 029) porque es donde vive
+    la VARIEDAD, y la variedad es lo primero que pregunta un comprador —una
+    bodega, por ejemplo— cuando recibe el extracto de fitosanitarios.
+    """
+    import sqlite3
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    clause, cparams = parcela_scope_clause(explotacion_id, 'cc')
+    c.execute("""
+        SELECT cc.*, p.nombre_finca FROM cultivos_campana cc
+        LEFT JOIN parcelas p ON cc.parcela_id = p.id
+        WHERE p.user_id=? AND cc.campana=?""" + clause + """
+        ORDER BY p.nombre_finca ASC
+    """, (user_id, campana) + cparams)
+    rows = [dict(r) for r in c.fetchall()]
+
+    story.append(PageBreak())
+    story.append(_section_banner(
+        'Cultivos por Campaña',
+        'Qué se ha sembrado en cada parcela y con qué variedad — RD 1311/2012',
+        '🌾', C_LIME, styles))
+    story.append(Spacer(1, 4))
+
+    if not rows:
+        story.append(Paragraph('Sin cultivos declarados en esta campaña.', styles['empty']))
+        return
+
+    cols = ['Parcela', 'Cultivo', 'Variedad', 'F. Siembra',
+            'F. Recol. Prevista', 'Sup. Cultivada (ha)', 'Notas']
+    widths = [3.0*cm, 3.0*cm, 3.2*cm, 2.2*cm,
+              2.6*cm, 2.4*cm, 3.0*cm]
+    total = sum(widths)
+    widths = [w * INNER_W / total for w in widths]
+
+    data_rows = []
+    for r in rows:
+        data_rows.append([
+            _v(r.get('nombre_finca')),
+            _v(r.get('cultivo')),
+            _v(r.get('variedad')),
+            _fmt_date(r.get('fecha_siembra')),
+            _fmt_date(r.get('fecha_recoleccion_prevista')),
+            _v(r.get('superficie_cultivada_ha')),
+            _v(r.get('notas')),
+        ])
+
+    story.append(_data_table(cols, data_rows, widths, C_LIME, styles))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(f'Total cultivos declarados: {len(rows)}', styles['note']))
+
+
 def _trat_table(rows, styles):
     """Tabla tratamientos con dos filas por registro: aplicación + trazabilidad legal."""
     s = styles

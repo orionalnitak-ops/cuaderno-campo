@@ -654,8 +654,11 @@ def repartir_por_superficie(total, parcelas):
 
 # ── Exportación por secciones (feature 029) ──────────────────────────────────
 
-SECCIONES = ('parcelas', 'tratamientos', 'fertilizacion', 'labores',
-             'riego', 'cosecha', 'plan_abonado', 'compras')
+# En el orden en que salen en el documento. Las nueve están en los DOS
+# formatos: la 029 igualó el PDF y el Excel, que hasta entonces no llevaban lo
+# mismo (al PDF le faltaba `cultivos_campana`, al Excel `plan_abonado`).
+SECCIONES = ('parcelas', 'cultivos_campana', 'tratamientos', 'fertilizacion',
+             'labores', 'riego', 'cosecha', 'plan_abonado', 'compras')
 
 
 def parse_secciones(arg):
@@ -671,7 +674,7 @@ def parse_secciones(arg):
     además openpyxl revienta si el libro se queda sin hojas. Cualquier entrada
     que no se entienda cae del lado seguro: el cuaderno completo.
 
-    Las ocho claves equivalen a "todas": un extracto de todo es el cuaderno
+    Las nueve claves equivalen a "todas": un extracto de todo es el cuaderno
     completo, no un extracto, y no tendría que perder el sello por escribirlas
     a mano en la URL.
     """
