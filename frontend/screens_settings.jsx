@@ -3,22 +3,56 @@
 // aquí: los scripts comparten ámbito global, y una segunda declaración con
 // el mismo nombre pisaría silenciosamente a la primera en TODA la app.
 
-// ── Botón del PDF oficial, con aviso si falta el NIF (feature 028) ──
-// El NIF ya no se pide al entrar, así que puede faltar cuando llegue una
-// inspección. El aviso salta AQUÍ, que es donde el agricultor ya entiende para
-// qué se le pide. Se puede descargar igualmente: avisamos, no bloqueamos.
-// Lo usan los dos sitios que abren el PDF: Ajustes y la barra superior (app.jsx).
-function BotonPdfOficial({ campana, className, style, children }) {
+// ── Botón de exportar: PDF y Excel, mismo camino (features 028 + 029) ──
+// Hasta la 029 había dos caminos distintos: el PDF pasaba por el aviso del NIF
+// y el Excel era un `window.open` suelto. Decisión de Raúl (19-09-2026): el
+// documento final es distinto, pero llegar a él se hace igual. Así que hay UN
+// componente con un parámetro `formato`, y todos los botones de la app pasan
+// por aquí. Si vuelve a aparecer un `/api/export/` llamado a pelo desde otro
+// sitio, es un camino que se salta el aviso y la lista.
+//
+// Dos pasos dentro del MISMO modal, nunca dos ventanas una encima de otra:
+//     (si falta el NIF) paso 'nif'  →  paso 'lista'  →  descarga
+//
+// El NIF va primero porque no depende de lo que se elija: la portada lleva el
+// titular tanto en el cuaderno completo como en un extracto para una bodega.
+// Pedirlo al final sería hacer aparecer un obstáculo cuando la persona ya ha
+// dicho "adelante". Y avisa, no bloquea: "Continuar sin el NIF" siempre está.
+
+// Las nueve secciones, en el orden en que salen en el documento. Tiene que
+// coincidir con SECCIONES de backend/helpers.py; si se añade una allí, va aquí.
+const SECCIONES_EXPORT = [
+    { clave: 'parcelas', nombre: 'Parcelas' },
+    { clave: 'cultivos_campana', nombre: 'Cultivos por campaña' },
+    { clave: 'tratamientos', nombre: 'Tratamientos fitosanitarios' },
+    { clave: 'fertilizacion', nombre: 'Fertilización' },
+    { clave: 'labores', nombre: 'Labores' },
+    { clave: 'riego', nombre: 'Riego' },
+    { clave: 'cosecha', nombre: 'Cosecha' },
+    { clave: 'plan_abonado', nombre: 'Plan de abonado' },
+    { clave: 'compras', nombre: 'Compras y ventas' },
+];
+
+function BotonExportar({ formato, campana, className, style, children }) {
     const { useState } = React;
-    const [preguntando, setPreguntando] = useState(false);
+    const [paso, setPaso] = useState(null);      // null | 'nif' | 'lista'
     const [nif, setNif] = useState('');
     const [guardando, setGuardando] = useState(false);
+    const [todas, setTodas] = useState(true);
+    const [seleccion, setSeleccion] = useState([]);
 
-    const url = `/api/export/pdf?campana=${encodeURIComponent(campana)}`;
+    const esPdf = formato === 'pdf';
 
-    // Anchor en vez de window.open: tras un `await` el navegador ya no considera
-    // la descarga parte del clic y el bloqueador de ventanas la corta.
-    const descargar = () => {
+    const descargar = (claves) => {
+        let url = `/api/export/${formato}?campana=${encodeURIComponent(campana)}`;
+        // Sin `secciones` el backend devuelve el cuaderno completo, byte por
+        // byte igual que antes de esta feature. Por eso el caso "Todas" no
+        // manda el parámetro: es el camino de siempre, intacto.
+        if (claves && claves.length) {
+            url += `&secciones=${encodeURIComponent(claves.join(','))}`;
+        }
+        // Anchor en vez de window.open: tras un `await` el navegador ya no
+        // considera la descarga parte del clic y el bloqueador la corta.
         const a = document.createElement('a');
         a.href = url;
         document.body.appendChild(a);
@@ -27,17 +61,19 @@ function BotonPdfOficial({ campana, className, style, children }) {
     };
 
     const pulsar = async () => {
+        setTodas(true);
+        setSeleccion([]);
         try {
             const res = await fetch('/api/explotacion', { credentials: 'include' });
             const ex = res.ok ? await res.json() : {};
-            if (!ex.nif || !String(ex.nif).trim()) { setPreguntando(true); return; }
+            if (!ex.nif || !String(ex.nif).trim()) { setPaso('nif'); return; }
         } catch (e) {
-            // Sin conexión no se puede comprobar: mejor dejar descargar que bloquear.
+            // Sin conexión no se puede comprobar: mejor seguir que bloquear.
         }
-        descargar();
+        setPaso('lista');
     };
 
-    const guardarYDescargar = async () => {
+    const guardarYContinuar = async () => {
         setGuardando(true);
         try {
             await fetch('/api/explotacion', {
@@ -48,50 +84,139 @@ function BotonPdfOficial({ campana, className, style, children }) {
             });
         } finally {
             setGuardando(false);
-            setPreguntando(false);
-            descargar();
+            setPaso('lista');
         }
     };
+
+    // La máquina de estados de la lista. La regla que evita el estado que no
+    // significa nada ("Todas" marcado Y dos hojas sueltas):
+    //   - tocar una hoja teniendo "Todas" → queda marcada SOLO esa
+    //   - marcar las nueve a mano → se enciende "Todas"
+    //   - quitar la última → vuelve "Todas" (nunca se descarga un fichero vacío)
+    const alternar = (clave) => {
+        if (todas) { setTodas(false); setSeleccion([clave]); return; }
+        const nueva = seleccion.includes(clave)
+            ? seleccion.filter(c => c !== clave)
+            : seleccion.concat([clave]);
+        if (nueva.length === 0 || nueva.length === SECCIONES_EXPORT.length) {
+            setTodas(true);
+            setSeleccion([]);
+        } else {
+            setSeleccion(nueva);
+        }
+    };
+
+    const marcarTodas = () => { setTodas(true); setSeleccion([]); };
+
+    const confirmar = () => {
+        setPaso(null);
+        descargar(todas ? null : seleccion);
+    };
+
+    const fila = (marcado, texto, onClick, key) => (
+        <button key={key} onClick={onClick}
+                style={{
+                    display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+                    minHeight: 44, padding: '10px 12px', marginBottom: 2,
+                    background: marcado ? '#ecfdf5' : 'transparent',
+                    border: 'none', borderRadius: 10, cursor: 'pointer',
+                    textAlign: 'left', font: 'inherit',
+                }}>
+            <span style={{
+                width: 22, height: 22, flexShrink: 0, borderRadius: 6,
+                border: `2px solid ${marcado ? '#00694c' : '#d1d5db'}`,
+                background: marcado ? '#00694c' : '#fff',
+                color: '#fff', fontSize: '0.8rem', lineHeight: '19px',
+                textAlign: 'center',
+            }}>{marcado ? '✓' : ''}</span>
+            <span style={{ fontSize: '0.9rem', color: '#111827' }}>{texto}</span>
+        </button>
+    );
 
     return (
         <React.Fragment>
             <button className={className || 'btn-primary'} style={style} onClick={pulsar}>
                 {children}
             </button>
-            {preguntando && (
-                <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:9000,
-                              display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-                    <div style={{ background:'#fff', borderRadius:20, padding:24, maxWidth:420, width:'100%' }}>
-                        <h3 style={{ fontFamily:'var(--font-heading)', fontWeight:800, fontSize:'1.05rem', margin:'0 0 8px' }}>
-                            Te falta el NIF
-                        </h3>
-                        <p style={{ fontSize:'0.85rem', color:'#4b5563', lineHeight:1.5, margin:'0 0 16px' }}>
-                            El cuaderno que se enseña en una inspección lleva el NIF del titular.
-                            Si lo pones ahora, sale en el PDF.
-                        </p>
-                        <label className="field-label">NIF / CIF</label>
-                        <input type="text" className="input-field" value={nif} autoFocus
-                               placeholder="12345678A" onChange={e => setNif(e.target.value)} />
-                        <button className="btn-primary" style={{ width:'100%', marginTop:16 }}
-                                onClick={guardarYDescargar} disabled={guardando || !nif.trim()}>
-                            {guardando ? 'Guardando…' : 'Guardar y descargar'}
-                        </button>
-                        <button style={{ width:'100%', marginTop:10, background:'none', border:'none',
-                                         color:'#6b7280', fontSize:'0.85rem', cursor:'pointer', padding:8 }}
-                                onClick={() => { setPreguntando(false); descargar(); }}>
-                            Descargar sin el NIF
-                        </button>
-                        <button style={{ width:'100%', marginTop:2, background:'none', border:'none',
-                                         color:'#9ca3af', fontSize:'0.8rem', cursor:'pointer', padding:6 }}
-                                onClick={() => setPreguntando(false)}>
-                            Cancelar
-                        </button>
+
+            {paso && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9000,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                    <div style={{ background: '#fff', borderRadius: 20, padding: 24, maxWidth: 420,
+                                  width: '100%', maxHeight: '86vh', overflowY: 'auto' }}>
+
+                        {paso === 'nif' && (
+                            <React.Fragment>
+                                <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.05rem', margin: '0 0 8px' }}>
+                                    Te falta el NIF
+                                </h3>
+                                <p style={{ fontSize: '0.85rem', color: '#4b5563', lineHeight: 1.5, margin: '0 0 16px' }}>
+                                    El cuaderno que se enseña en una inspección lleva el NIF del titular.
+                                    Si lo pones ahora, sale en el documento.
+                                </p>
+                                <label className="field-label">NIF / CIF</label>
+                                <input type="text" className="input-field" value={nif} autoFocus
+                                       placeholder="12345678A" onChange={e => setNif(e.target.value)} />
+                                <button className="btn-primary" style={{ width: '100%', marginTop: 16 }}
+                                        onClick={guardarYContinuar} disabled={guardando || !nif.trim()}>
+                                    {guardando ? 'Guardando…' : 'Guardar y continuar'}
+                                </button>
+                                <button style={{ width: '100%', marginTop: 10, background: 'none', border: 'none',
+                                                 color: '#6b7280', fontSize: '0.85rem', cursor: 'pointer', padding: 8 }}
+                                        onClick={() => setPaso('lista')}>
+                                    Continuar sin el NIF
+                                </button>
+                                <button style={{ width: '100%', marginTop: 2, background: 'none', border: 'none',
+                                                 color: '#9ca3af', fontSize: '0.8rem', cursor: 'pointer', padding: 6 }}
+                                        onClick={() => setPaso(null)}>
+                                    Cancelar
+                                </button>
+                            </React.Fragment>
+                        )}
+
+                        {paso === 'lista' && (
+                            <React.Fragment>
+                                <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.05rem', margin: '0 0 4px' }}>
+                                    ¿Qué quieres exportar?
+                                </h3>
+                                <p style={{ fontSize: '0.82rem', color: '#6b7280', margin: '0 0 14px' }}>
+                                    {esPdf ? 'PDF' : 'Excel'} · campaña {campana}
+                                </p>
+
+                                {fila(todas, 'Todas — el cuaderno completo', marcarTodas, 'todas')}
+
+                                <div style={{ height: 1, background: '#e5e7eb', margin: '8px 4px 10px' }} />
+
+                                {SECCIONES_EXPORT.map(s =>
+                                    fila(!todas && seleccion.includes(s.clave), s.nombre,
+                                         () => alternar(s.clave), s.clave))}
+
+                                {!todas && (
+                                    <p style={{ fontSize: '0.78rem', color: '#92400e', background: '#fffbeb',
+                                                borderRadius: 10, padding: '10px 12px', margin: '12px 0 0', lineHeight: 1.45 }}>
+                                        Saldrá marcado como <strong>extracto</strong>. No sustituye al
+                                        cuaderno completo en una inspección.
+                                    </p>
+                                )}
+
+                                <button className="btn-primary" style={{ width: '100%', marginTop: 16 }}
+                                        onClick={confirmar}>
+                                    ⬇ Descargar {esPdf ? 'PDF' : 'Excel'}
+                                </button>
+                                <button style={{ width: '100%', marginTop: 8, background: 'none', border: 'none',
+                                                 color: '#9ca3af', fontSize: '0.85rem', cursor: 'pointer', padding: 8 }}
+                                        onClick={() => setPaso(null)}>
+                                    Cancelar
+                                </button>
+                            </React.Fragment>
+                        )}
                     </div>
                 </div>
             )}
         </React.Fragment>
     );
 }
+
 
 // ── Explotación modal (position:fixed → teclado Android funciona) ──
 function ExplotacionModal({ data, onSave, onClose }) {
@@ -672,21 +797,21 @@ function ScreenSettings({ campana, onCampana, showToast, currentUser, onLogout, 
                         <div className="card card-p" style={{ marginBottom:12 }}>
                             <h3 style={{ fontFamily:'Manrope', fontWeight:700, fontSize:'0.95rem', margin:'0 0 8px' }}>📄 Exportar PDF oficial</h3>
                             <p style={{ fontSize:'0.82rem', color:'#6b7280', margin:'0 0 14px' }}>
-                                Genera el Cuaderno de Explotación en formato PDF oficial (A4): portada, parcelas SIGPAC, tratamientos fitosanitarios, abono, labores y cosecha. Válido conforme a RD 1311/2012 Anexo III.
+                                Genera el Cuaderno de Explotación en formato PDF oficial (A4), válido conforme a RD 1311/2012 Anexo III. Puedes descargarlo entero o elegir solo las secciones que necesites — por ejemplo, los fitosanitarios para una bodega.
                             </p>
-                            <BotonPdfOficial campana={campana}
+                            <BotonExportar formato="pdf" campana={campana}
                                 style={{ background:'linear-gradient(135deg,#1a4731,#00694c)' }}>
                                 ⬇ Descargar PDF (campaña {campana})
-                            </BotonPdfOficial>
+                            </BotonExportar>
                         </div>
                         <div className="card card-p" style={{ marginBottom:12 }}>
                             <h3 style={{ fontFamily:'Manrope', fontWeight:700, fontSize:'0.95rem', margin:'0 0 8px' }}>📊 Exportar cuaderno Excel</h3>
                             <p style={{ fontSize:'0.82rem', color:'#6b7280', margin:'0 0 14px' }}>
-                                Genera un fichero .xlsx con 7 hojas: portada, parcelas, cultivos por campaña, tratamientos, abono, labores y cosecha.
+                                Genera un fichero .xlsx con el cuaderno de la campaña. Puedes descargarlo entero o elegir solo las hojas que necesites.
                             </p>
-                            <button className="btn-primary" onClick={() => window.open(`/api/export/excel?campana=${encodeURIComponent(campana)}`)}>
+                            <BotonExportar formato="excel" campana={campana}>
                                 ⬇ Descargar Excel (campaña {campana})
-                            </button>
+                            </BotonExportar>
                         </div>
                         {currentUser && currentUser.role === 'admin' && (
                         <div className="card card-p" style={{ marginBottom:12 }}>

@@ -370,6 +370,23 @@ def test_pdf_sello():
     check("los nombres de sección del PDF coinciden con helpers.SECCIONES",
           tuple(SECCIONES) == ep.SECCIONES_ORDEN)
 
+    # La ruta de admin (`blueprints/admin.py`) llama `export_pdf(uid, campana)`
+    # con dos argumentos y nada más. Tiene que seguir dando el cuaderno entero
+    # y sellado: los parámetros nuevos nacen con el valor de "como siempre".
+    import db as db_mod
+    conn = _db_prueba()
+    original = db_mod.get_db
+    db_mod.get_db = lambda *a, **k: conn
+    try:
+        with _flask_app().test_request_context():
+            resp = ep.export_pdf(1, '2025/2026')
+            resp.direct_passthrough = False
+            antiguo_txt = _texto_pdf(resp.get_data())
+    finally:
+        db_mod.get_db = original
+    check("llamada antigua de dos argumentos: cuaderno completo y sellado",
+          'Cuaderno oficial' in antiguo_txt and FIRMA_PIE in antiguo_txt)
+
 
 if __name__ == '__main__':
     test_parse()
