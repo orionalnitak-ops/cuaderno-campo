@@ -650,3 +650,38 @@ def repartir_por_superficie(total, parcelas):
             acumulado += cantidad
         reparto[p['id']] = cantidad
     return reparto
+
+
+# ── Exportación por secciones (feature 029) ──────────────────────────────────
+
+SECCIONES = ('parcelas', 'tratamientos', 'fertilizacion', 'labores',
+             'riego', 'cosecha', 'plan_abonado', 'compras')
+
+
+def parse_secciones(arg):
+    """Interpreta el parámetro `?secciones=a,b,c` de las rutas de exportación.
+
+    Devuelve `(secciones, completo)`:
+      - `secciones`: conjunto de claves de SECCIONES que hay que imprimir.
+      - `completo`:  True si sale el cuaderno entero. Cuando es False el PDF
+                     se marca como *Extracto* y pierde el sello del Anexo III.
+
+    El invariante que sostiene todo lo demás: **nunca devuelve un conjunto
+    vacío**. Un fichero sin contenido es peor que uno con secciones de más, y
+    además openpyxl revienta si el libro se queda sin hojas. Cualquier entrada
+    que no se entienda cae del lado seguro: el cuaderno completo.
+
+    Las ocho claves equivalen a "todas": un extracto de todo es el cuaderno
+    completo, no un extracto, y no tendría que perder el sello por escribirlas
+    a mano en la URL.
+    """
+    todas = set(SECCIONES)
+    if not arg:
+        return todas, True
+
+    pedidas = {t.strip().lower() for t in str(arg).split(',')}
+    validas = pedidas & todas
+
+    if not validas or validas == todas:
+        return todas, True
+    return validas, False
