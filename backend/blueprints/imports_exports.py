@@ -8,7 +8,8 @@ import os
 import requests as req_lib
 from flask import Blueprint, jsonify, request, send_file
 from flask_login import login_required
-from helpers import get_uid, admin_required, requires_active_plan, get_active_explotacion_id
+from helpers import (get_uid, admin_required, requires_active_plan,
+                     get_active_explotacion_id, parse_secciones)
 from blueprints.sigpac import _sigpac_get, SIGPAC_BASE
 from extensions import limiter
 
@@ -214,8 +215,9 @@ def route_export_excel():
     uid = get_uid()
     campana = request.args.get('campana', '2025/2026')
     exp_id = get_active_explotacion_id()
+    secciones, _completo = parse_secciones(request.args.get('secciones'))
     try:
-        return export_excel(uid, campana, exp_id)
+        return export_excel(uid, campana, exp_id, secciones)
     except Exception as e:
         import traceback
         logger.error("export_excel uid=%s campana=%s error: %s\n%s", uid, campana, e, traceback.format_exc())
@@ -230,7 +232,8 @@ def route_export_pdf():
     uid = get_uid()
     campana = request.args.get('campana', '2025/2026')
     exp_id = get_active_explotacion_id()
-    return export_pdf(uid, campana, exp_id)
+    secciones, completo = parse_secciones(request.args.get('secciones'))
+    return export_pdf(uid, campana, exp_id, secciones, completo)
 
 
 @bp.route('/api/backup/export')

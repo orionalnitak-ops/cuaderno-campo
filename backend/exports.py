@@ -50,7 +50,22 @@ def _alt_row(ws, row_num):
             cell.fill = fill
 
 
-def export_excel(user_id, campana='2025/2026', explotacion_id=None):
+# Clave de sección (helpers.SECCIONES) → título de la hoja que genera.
+# PORTADA no está: va siempre y no es elegible.
+_HOJA_POR_SECCION = {
+    'parcelas':         'PARCELAS',
+    'cultivos_campana': 'CULTIVOS POR CAMPAÑA',
+    'tratamientos':     'TRATAMIENTOS FITOSANITARIOS',
+    'fertilizacion':    'FERTILIZACIÓN',
+    'labores':          'LABORES',
+    'riego':            'RIEGO',
+    'cosecha':          'COSECHA',
+    'plan_abonado':     'PLAN DE ABONADO',
+    'compras':          'COMPRAS-VENTAS',
+}
+
+
+def export_excel(user_id, campana='2025/2026', explotacion_id=None, secciones=None):
     if not OPENPYXL:
         return ("openpyxl no instalado. Ejecuta: pip install openpyxl", 500)
 
@@ -305,7 +320,37 @@ def export_excel(user_id, campana='2025/2026', explotacion_id=None):
     _auto_width(ws7, c_cols)
 
     # ══════════════════════════════════════════
-    # HOJA 8 — COMPRAS / VENTAS (solo si hay datos)
+    # HOJA 8 — PLAN DE ABONADO
+    # Estaba solo en el PDF. Se trae al Excel (feature 029) para que los dos
+    # formatos lleven lo mismo y la lista de exportar no mienta.
+    # ══════════════════════════════════════════
+    ws_abonado = wb.create_sheet("PLAN DE ABONADO")
+    ab_cols = ["ID", "Parcela", "Fecha Preparación", "Cultivo", "Cultivo Anterior",
+               "Rend. Esperado (kg/ha)", "N Necesario (kg/ha)", "P Necesario (kg/ha)",
+               "K Necesario (kg/ha)", "Datos Suelo", "Abono Recomendado",
+               "Dosis Recomendada (kg/ha)", "Notas", "Campaña"]
+    _header_row(ws_abonado, ab_cols, AMBER_FILL)
+    _cl, _cp = parcela_scope_clause(explotacion_id, 'a')
+    abonados = dicts(conn, """
+        SELECT a.*, p.nombre_finca FROM abonado a
+        LEFT JOIN parcelas p ON a.parcela_id = p.id
+        WHERE a.user_id=? AND a.campana=? AND a.deleted_at IS NULL""" + _cl + """
+        ORDER BY a.fecha_preparacion ASC
+    """, (user_id, campana) + _cp)
+    for ri, r in enumerate(abonados, 2):
+        row_data = [r.get('id'), r.get('nombre_finca') or r.get('parcela_etiqueta'),
+                    r.get('fecha_preparacion'), r.get('cultivo'), r.get('cultivo_anterior'),
+                    r.get('rendimiento_esperado_kg_ha'), r.get('n_necesario_kg_ha'),
+                    r.get('p_necesario_kg_ha'), r.get('k_necesario_kg_ha'),
+                    r.get('datos_suelo'), r.get('abono_recomendado'),
+                    r.get('dosis_recomendada_kg_ha'), r.get('notas'), r.get('campana')]
+        for ci, val in enumerate(row_data, 1):
+            ws_abonado.cell(row=ri, column=ci, value=val)
+        _alt_row(ws_abonado, ri)
+    _auto_width(ws_abonado, ab_cols)
+
+    # ══════════════════════════════════════════
+    # HOJA 9 — COMPRAS / VENTAS (solo si hay datos)
     # Obligatorio por RD 1311/2012 Anexo III Sección 5 cuando hay trazabilidad comercial
     # ══════════════════════════════════════════
     # Compras no cuelga de parcela, así que `parcela_scope_clause()` nunca la
@@ -337,6 +382,18 @@ def export_excel(user_id, campana='2025/2026', explotacion_id=None):
         _auto_width(ws8, cmp_cols)
 
     conn.close()
+
+    # ── Filtro por secciones (feature 029) ──
+    # Se generan todas y se quitan las no pedidas, en vez de envolver los nueve
+    # bloques en un `if`: mismo resultado con una fracción del diff y sin tocar
+    # código que ya funciona. El coste son unas consultas de más sobre tablas
+    # pequeñas, que no se nota.
+    # PORTADA nunca se quita: identifica al titular y evita que openpyxl se
+    # quede sin hojas (un libro vacío no se puede guardar).
+    if secciones is not None:
+        for clave, titulo in _HOJA_POR_SECCION.items():
+            if clave not in secciones and titulo in wb.sheetnames:
+                wb.remove(wb[titulo])
 
     # ── Save to BytesIO and send ──
     buf = io.BytesIO()

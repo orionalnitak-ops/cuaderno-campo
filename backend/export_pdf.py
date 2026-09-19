@@ -21,6 +21,22 @@ from reportlab.platypus import (
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
+# ── Secciones del documento (feature 029) ──
+# Clave (helpers.SECCIONES) → nombre que se le enseña a una persona.
+# El orden del dict ES el orden del documento.
+_NOMBRE_SECCION = {
+    'parcelas':         'Parcelas',
+    'cultivos_campana': 'Cultivos por campaña',
+    'tratamientos':     'Tratamientos fitosanitarios',
+    'fertilizacion':    'Fertilización',
+    'labores':          'Labores',
+    'riego':            'Riego',
+    'cosecha':          'Cosecha',
+    'plan_abonado':     'Plan de abonado',
+    'compras':          'Compras y ventas',
+}
+SECCIONES_ORDEN = tuple(_NOMBRE_SECCION)
+
 # ── Color palette (Stitch / "Surco Moderno") ──
 C_DARK    = colors.HexColor('#141b2b')   # secondary-fixed
 C_GREEN   = colors.HexColor('#00694c')   # primary
@@ -146,9 +162,12 @@ def _asesor_text(r):
 # PAGE TEMPLATE — header + footer on every page
 # ─────────────────────────────────────────────────────────
 class _PageTemplate:
-    def __init__(self, titular, campana):
+    def __init__(self, titular, campana, completo=True):
         self.titular = titular
         self.campana = campana
+        # Si el documento no lleva todas las secciones, el pie NO puede seguir
+        # citando el Anexo III: sería sellar como oficial algo que no lo es.
+        self.completo = completo
 
     def __call__(self, canvas, doc):
         canvas.saveState()
@@ -174,7 +193,9 @@ class _PageTemplate:
         canvas.setFont('Helvetica', 7)
         canvas.setFillColor(C_MUTED)
         canvas.drawString(MARGIN, 0.32 * cm,
-                          'RD 1311/2012 Anexo III · Generado con Cuaderno de Campo Digital')
+                          'RD 1311/2012 Anexo III · Generado con Cuaderno de Campo Digital'
+                          if self.completo else
+                          'EXTRACTO — no sustituye al cuaderno completo · Cuaderno de Campo Digital')
         canvas.drawRightString(w - MARGIN, 0.32 * cm,
                                f'Página {doc.page}')
 
@@ -305,6 +326,60 @@ def _section_parcelas(conn, user_id, styles, story, explotacion_id=None):
         f'Total: {len(rows)} parcelas  ·  Superficie total: '
         f'{sum(float(r.get("superficie_ha") or 0) for r in rows):.4f} ha',
         styles['note']))
+
+
+def _section_cultivos_campana(conn, user_id, campana, styles, story, explotacion_id=None):
+    """Qué se ha sembrado en cada parcela esta campaña.
+
+    Estaba solo en el Excel. Se trae al PDF (feature 029) porque es donde vive
+    la VARIEDAD, y la variedad es lo primero que pregunta un comprador —una
+    bodega, por ejemplo— cuando recibe el extracto de fitosanitarios.
+    """
+    import sqlite3
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    clause, cparams = parcela_scope_clause(explotacion_id, 'cc')
+    c.execute("""
+        SELECT cc.*, p.nombre_finca FROM cultivos_campana cc
+        LEFT JOIN parcelas p ON cc.parcela_id = p.id
+        WHERE p.user_id=? AND cc.campana=?""" + clause + """
+        ORDER BY p.nombre_finca ASC
+    """, (user_id, campana) + cparams)
+    rows = [dict(r) for r in c.fetchall()]
+
+    story.append(PageBreak())
+    story.append(_section_banner(
+        'Cultivos por Campaña',
+        'Qué se ha sembrado en cada parcela y con qué variedad — RD 1311/2012',
+        '🌾', C_LIME, styles))
+    story.append(Spacer(1, 4))
+
+    if not rows:
+        story.append(Paragraph('Sin cultivos declarados en esta campaña.', styles['empty']))
+        return
+
+    cols = ['Parcela', 'Cultivo', 'Variedad', 'F. Siembra',
+            'F. Recol. Prevista', 'Sup. Cultivada (ha)', 'Notas']
+    widths = [3.0*cm, 3.0*cm, 3.2*cm, 2.2*cm,
+              2.6*cm, 2.4*cm, 3.0*cm]
+    total = sum(widths)
+    widths = [w * INNER_W / total for w in widths]
+
+    data_rows = []
+    for r in rows:
+        data_rows.append([
+            _v(r.get('nombre_finca')),
+            _v(r.get('cultivo')),
+            _v(r.get('variedad')),
+            _fmt_date(r.get('fecha_siembra')),
+            _fmt_date(r.get('fecha_recoleccion_prevista')),
+            _v(r.get('superficie_cultivada_ha')),
+            _v(r.get('notas')),
+        ])
+
+    story.append(_data_table(cols, data_rows, widths, C_LIME, styles))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(f'Total cultivos declarados: {len(rows)}', styles['note']))
 
 
 def _trat_table(rows, styles):
@@ -788,7 +863,7 @@ def _section_compras(conn, user_id, campana, styles, story, explotacion_id=None)
 # ─────────────────────────────────────────────────────────
 # COVER PAGE
 # ─────────────────────────────────────────────────────────
-def _cover_page(ex, campana, styles):
+def _cover_page(ex, campana, styles, completo=True, nombres_secciones=None):
     """Return a list of flowables for the cover page."""
     story = []
 
@@ -806,8 +881,14 @@ def _cover_page(ex, campana, styles):
     ]))
     story.append(cover_tbl)
 
+    if completo:
+        _sub_txt = 'Cuaderno oficial de explotación agrícola  ·  RD 1311/2012 Anexo III'
+    else:
+        _sub_txt = 'EXTRACTO del Cuaderno de Explotación  ·  no sustituye al cuaderno completo'
+        if nombres_secciones:
+            _sub_txt += '<br/>Incluye: ' + ', '.join(nombres_secciones)
     sub_data = [[
-        Paragraph('Cuaderno oficial de explotación agrícola  ·  RD 1311/2012 Anexo III', styles['cover_sub']),
+        Paragraph(_sub_txt, styles['cover_sub']),
     ]]
     sub_tbl = Table(sub_data, colWidths=[INNER_W])
     sub_tbl.setStyle(TableStyle([
@@ -906,7 +987,8 @@ def _cover_page(ex, campana, styles):
 # ─────────────────────────────────────────────────────────
 # MAIN ENTRY POINT
 # ─────────────────────────────────────────────────────────
-def export_pdf(user_id, campana='2025/2026', explotacion_id=None):
+def export_pdf(user_id, campana='2025/2026', explotacion_id=None,
+               secciones=None, completo=True):
     from db import get_db
     import sqlite3
 
@@ -934,49 +1016,52 @@ def export_pdf(user_id, campana='2025/2026', explotacion_id=None):
         rightMargin=MARGIN,
         topMargin=1.5 * cm,
         bottomMargin=1.5 * cm,
-        title=f'Cuaderno de Campo — {titular} — Campaña {campana}',
+        title=(f'Cuaderno de Campo — {titular} — Campaña {campana}' if completo
+               else f'Extracto del Cuaderno — {titular} — Campaña {campana}'),
         author=titular,
-        subject='Cuaderno oficial RD 1311/2012',
+        subject=('Cuaderno oficial RD 1311/2012' if completo
+                 else 'Extracto del Cuaderno de Explotación'),
         creator='Cuaderno de Campo Digital v2.0',
     )
 
-    page_cb = _PageTemplate(titular, campana)
+    page_cb = _PageTemplate(titular, campana, completo)
     story = []
 
     # ── Cover ──
-    story.extend(_cover_page(ex, campana, styles))
+    _nombres = [_NOMBRE_SECCION[k] for k in SECCIONES_ORDEN
+                if secciones is None or k in secciones]
+    story.extend(_cover_page(ex, campana, styles, completo, _nombres))
     story.append(PageBreak())
 
-    # ── Section 1: Parcelas ──
-    _section_parcelas(conn, user_id, styles, story, explotacion_id)
-    story.append(Spacer(1, 10))
+    # ── Secciones (feature 029: solo las pedidas) ──
+    # `_section_parcelas` no recibe campaña; las demás sí. Por eso la lista
+    # lleva la función y un booleano en vez de llamarlas todas igual.
+    _ORDEN = [
+        ('parcelas',         _section_parcelas,         False),
+        ('cultivos_campana', _section_cultivos_campana, True),
+        ('tratamientos',     _section_tratamientos,     True),
+        ('fertilizacion',    _section_fertilizacion,    True),
+        ('labores',          _section_labores,          True),
+        ('riego',            _section_riego,            True),
+        ('cosecha',          _section_cosecha,          True),
+        ('plan_abonado',     _section_plan_abonado,     True),
+        ('compras',          _section_compras,          True),
+    ]
 
-    # ── Section 2: Tratamientos ──
-    _section_tratamientos(conn, user_id, campana, styles, story, explotacion_id)
-    story.append(Spacer(1, 10))
-
-    # ── Section 3: Fertilización ──
-    _section_fertilizacion(conn, user_id, campana, styles, story, explotacion_id)
-    story.append(Spacer(1, 10))
-
-    # ── Section 4: Labores ──
-    _section_labores(conn, user_id, campana, styles, story, explotacion_id)
-    story.append(Spacer(1, 10))
-
-    # ── Section 5: Riego ──
-    _section_riego(conn, user_id, campana, styles, story, explotacion_id)
-    story.append(Spacer(1, 10))
-
-    # ── Section 6: Cosecha ──
-    _section_cosecha(conn, user_id, campana, styles, story, explotacion_id)
-    story.append(Spacer(1, 10))
-
-    # ── Section 7: Plan Abonado ──
-    _section_plan_abonado(conn, user_id, campana, styles, story, explotacion_id)
-    story.append(Spacer(1, 10))
-
-    # ── Section 8: Compras ──
-    _section_compras(conn, user_id, campana, styles, story, explotacion_id)
+    primera = True
+    for clave, fn, con_campana in _ORDEN:
+        if secciones is not None and clave not in secciones:
+            continue
+        # El separador va ANTES de cada sección menos la primera que salga.
+        # Si fuese después, el documento arrancaría con un hueco cuando la
+        # sección de cabeza estuviera filtrada.
+        if not primera:
+            story.append(Spacer(1, 10))
+        if con_campana:
+            fn(conn, user_id, campana, styles, story, explotacion_id)
+        else:
+            fn(conn, user_id, styles, story, explotacion_id)
+        primera = False
 
     # ── Firma / cierre ──
     story.append(Spacer(1, 20))

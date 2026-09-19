@@ -17,13 +17,32 @@
 | 009 | Offline PWA | En spec | 🟡 Media |
 | 010 | UHC (Unidades Homogéneas de Cultivo) | Desplegado (PRs #20-23) | 🟡 Media |
 | 028 | Entrada mínima — la pantalla obligatoria pasa a pedir solo nombre, municipio y campaña; aviso de NIF al exportar el PDF; arreglo del guardado que borra campos | Desplegado (PR #91, 19-09-2026) | 🟢 Cerrado — ver nota |
-| 026 | SIEX en exportaciones — PDF y Excel con campos y códigos SIEX, en el orden del cuaderno oficial (para pasarlo a mano o entregarlo a una entidad habilitada) | Pendiente de spec | 🔴 Alta |
-| 027 | Exportación JSON con el formato FEGA (Anexo VI / descriptor CUE). No se presenta como "súbelo a SIEX": el cuaderno público no importa ficheros, el JSON solo entra por IUWS. Base para una futura conexión | Pendiente de spec (después del 026) | 🟡 Media |
+| 026 | SIEX en exportaciones — PDF y Excel con campos y códigos SIEX | **Aparcado (19-09-2026)** — ver nota | ⚪ Parado |
+| 027 | Exportación JSON con el formato FEGA (Anexo VI / descriptor CUE). No se presenta como "súbelo a SIEX": el cuaderno público no importa ficheros, el JSON solo entra por IUWS. Base para una futura conexión | Pendiente de spec (**ya no depende del 026**) | 🟡 Media |
+| 029 | Exportar por secciones — casillas para elegir qué tablas salen en PDF/Excel, preset "Para la bodega" (solo tratamientos) y marca de *Extracto* que retira el sello del Anexo III | Spec escrita, pendiente de plan | 🔴 Alta |
 
 > **Sobre el 001 — por qué se cierra.** Stripe está en modo live desde agosto de 2026: precios en EUR con IVA incluido (14,99 €/mes o 150 €/año Básico; 29,99 €/mes o 300 €/año Pro — PR #46), factura deducible con NIF/dirección/IVA desglosado (PR #58), y los identificadores de Stripe Test se limpiaron de las cuentas de producción antes de cambiar la clave a `sk_live_` (PR #54). `backend/blueprints/stripe_bp.py` lee precios y claves de variables de entorno (`STRIPE_PRICE_*`, `STRIPE_SECRET_KEY`), sin hardcodear ningún importe.
 >
 > **Sobre el 003 — por qué se cierra.** Resend está montado (`backend/email_service.py`, envío HTTP directo, nunca lanza excepción si falla). Cuatro correos transaccionales enganchados y con tests: bienvenida + verificación de email al registrarse, reset de contraseña, y aviso de fin de trial (`backend/blueprints/push.py`, vía el job programado). Dominio `tualiado.es` verificado, `EMAIL_FROM=cuadernodigital@...`.
 >
+> **Sobre el 026 — por qué se aparca (19-09-2026).** Raúl habló con la enóloga
+> de una bodega: los campos que les han dicho a las bodegas que tienen que
+> pedir a sus viticultores **son exactamente los que la app ya imprime hoy**.
+> Y de las dos hojas de fitosanitarios de la competencia que vio, ninguna
+> traía la fecha mínima de recolección, que la nuestra sí calcula e imprime.
+> No hay hueco que tapar en la salida impresa.
+>
+> Además, meter códigos SIEX en el PDF nunca iba a cumplir una obligación
+> legal: **el Anexo III del RD 1311/2012 (el cuaderno que se imprime) y el
+> Anexo VI del FEGA (el formato de intercambio) son cosas distintas**. La vía
+> de salida de los datos SIEX es el JSON del IUWS, no el papel.
+>
+> Los datos SIEX **siguen capturándose y guardándose** (bloques 018-025, ya en
+> `main`). Lo que se para es reflejarlos en `export_pdf.py`/`exports.py`. Por
+> eso el **027 (JSON del FEGA) ya no depende del 026**: lee las columnas de la
+> base de datos directamente. Se retoma el 026 solo si una entidad habilitada,
+> una bodega o una inspección pide por escrito un campo que hoy no se imprime.
+
 > **Sobre el 028 — qué se midió y qué queda.** El embudo real, medido en producción el 18-09-2026: de las 7 personas que entraron a probar entre el 1 y el 4 de septiembre, **3 no pasaron de la primera pantalla**, 2 crearon parcelas y **ninguna registró una actividad**. Hay tres escalones, y este PR ataca solo el primero, a propósito: la pantalla pasa de ocho campos a tres (nombre, municipio y campaña), cada uno diciendo para qué sirve. Los otros dos escalones —crear parcelas y apuntar el primer tratamiento— siguen abiertos, y ahí es donde irían los bocadillos de ayuda contextual, aparcados hasta ver si esto mueve los números. **Volver a medir el embudo a finales de octubre de 2026** con la consulta de `spec/features/028-onboarding-minimo/`; si el primer escalón se arregla y la gente sigue sin crear parcelas, el trabajo siguiente está en el módulo de parcelas, no en más ayuda.
 >
 > **Sobre el 004 — por qué se cierra.** La pantalla ya está implementada y en producción (`frontend/screens_ayuda.jsx`): guía de inicio de 6 slides con carrusel + swipe, y ayuda contextual `?` en todas las pantallas, cacheada offline. Los slides usan mini-maquetas `<div>`, no los SVG que constaban como "aprobados" (que no están en el repo). Decisión (2026-08-11): se da por hecha con lo que hay; el cambio a SVG es cosmético y solo se retomará si se detecta que la ayuda no se entiende bien en uso real.

@@ -104,8 +104,6 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
         fetchRecords();
     };
 
-    const exportExcel = () => window.open(`/api/export/excel?campana=${encodeURIComponent(fCampana || campana)}`);
-
     const fmtDate = (d) => {
         if (!d) return '';
         try { return new Date(d + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }); }
@@ -130,10 +128,12 @@ function ScreenHistorial({ campana, onEdit, showToast }) {
                         </p>
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <button className="btn-ghost" onClick={exportExcel}
+                        {/* Se respeta `fCampana || campana`: si hay un filtro de
+                            campaña puesto, se exporta esa y no la activa. */}
+                        <BotonExportar formato="excel" campana={fCampana || campana} className="btn-ghost"
                             style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.20)', padding: '9px 14px', fontSize: '0.8rem', minHeight: 40, background: 'rgba(104,219,174,0.12)' }}>
                             📊 Exportar Excel
-                        </button>
+                        </BotonExportar>
                         <button className="btn-ghost" onClick={() => setShowFilters(true)}
                             style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.20)', padding: '9px 14px', fontSize: '0.8rem', minHeight: 40, position: 'relative' }}>
                             🔍 Filtrar
